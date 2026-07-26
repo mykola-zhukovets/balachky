@@ -86,24 +86,57 @@ Everything below works without the internet, once the models you need are downlo
 - **Text where the cursor is.** Hold the hotkey and speak — text appears in any field: email, messenger, Word, an AI chat. You choose where it goes: "Into the selected app" or "Keep in Balachky".
 - **Three cleanup levels, one slider.** "Verbatim", "No filler words", or "With punctuation". The verbatim version is always kept intact in History — you can go back and compare.
 - **Re-listen and fix yourself.** Every dictation in History can be replayed in your own voice and corrected. The original recording is never touched. We haven't seen this in any other dictation app.
+
+<p align="center">
+  <img src="docs/screenshots/05-history-en.png" alt="Searchable dictation history with replay, correction, and copy controls" width="800">
+  <br>
+  <sub>Replay, correct, copy, or search past transcripts without sending them anywhere.</sub>
+</p>
+
 - **A dictionary that learns once.** Fix a word once — the mistake never repeats. Dictionaries are isolated: work and home don't pollute each other, and any remembered fix can be undone. An error diary shows which corrections repeat most — one click adds them to the dictionary.
+
+<p align="center">
+  <img src="docs/screenshots/06-vocab-en.png" alt="Separate dictionaries with learned corrections and pronunciation hints" width="800">
+  <br>
+  <sub>Keep work and personal vocabulary separate, and inspect every learned correction.</sub>
+</p>
+
 - **Your choice of language.** Ukrainian by default. Pick any of the ~99 languages the model knows, or let the app detect the language itself.
 - **Navigate documents by voice.** Edit text and move across Word fields and Excel cells with commands such as "next field" and "next cell".
 - **A profile per window.** The app switches dictionary and mode based on the active window. To prevent text from landing in the wrong place, you can pin the insert target.
 - **Hotkeys without surprises.** Native key handling, no keyboard hooks. If a combination is taken by the system, the app honestly shows the conflict instead of silently failing.
+- **Existing recordings too.** Drop in a voice message, recorder clip, or other audio file. Balachky transcribes it locally and lets you copy or export the result.
+
+<p align="center">
+  <img src="docs/screenshots/02-files-en.png" alt="Local transcription of existing audio files with copy and export controls" width="800">
+  <br>
+  <sub>Transcribe existing recordings and export the result without leaving Balachky.</sub>
+</p>
 
 ### Meetings
 
 A "Meeting" is a recording, its transcript, and the minutes in one place.
 
+<p align="center">
+  <img src="docs/screenshots/03-meeting-en.png" alt="Meeting screen with local recording control and meeting settings" width="800">
+  <br>
+  <sub>Start a local meeting recording with one button; the recording and transcript stay on this computer.</sub>
+</p>
+
 - **Tracks instead of mush.** Your voice and the other voices are recorded as separate tracks. In the player each track can be muted, turned down, or soloed — all in sync.
 - **"Who said what".** Not a word is lost: the app splits the conversation by speaker — "Speaker 1", "Speaker 2" — and you rename them. The speaker count can be set in advance. If the diarization model isn't installed, the meeting works as usual.
 - **AI minutes — locally.** Summary, decisions, tasks with timecodes, and sections, generated on your machine (Gemma 4, two sizes to choose from). Export to Word — including the statutory report form.
-  <!-- SCREENSHOT: Meeting page — meeting card with per-speaker transcript and the minutes button. 2x retina, ~1600px -->
 - **Ask the meeting.** "What did we decide about deadlines?" — the answer comes with clickable timecode quotes: click, and the player jumps there. If the model is missing, the app honestly says "install the component" instead of showing an empty stub.
 - **Editing without destruction.** Classified fragments can be muted — only in the chosen track; other voices stay untouched. Redaction leaves the original intact — only the exported version is changed.
 - **Bilingual memory.** A meeting can keep context in Ukrainian and English in parallel.
 - **Video and screen.** Built-in screen recording, and a built-in video player: seek and 0.5x-2x speed with voice pitch preserved.
+
+<p align="center">
+  <img src="docs/screenshots/04-screen-en.png" alt="Screen recording controls for a monitor, window, or selected area" width="800">
+  <br>
+  <sub>Record a monitor, a window, or a selected area with the quality and format you choose.</sub>
+</p>
+
 - **Thoughtful details.** With your consent, the meeting name comes from your local calendar; notes export to Obsidian.
 
 ### Privacy and provability
@@ -129,6 +162,13 @@ A "Meeting" is a recording, its transcript, and the minutes in one place.
 ### Little things you get used to
 
 - **A model control center** in Settings: every model in one place — speech recognition, speaker voices, AI minutes, punctuation, and the upcoming read-aloud. You see each model's size, whether it is already downloaded, which one is active, and how much disk space they take together.
+
+<p align="center">
+  <img src="docs/screenshots/07-settings-en.png" alt="Model control center showing speech, diarization, meeting, and read-aloud components" width="800">
+  <br>
+  <sub>See which components are active, what they need, and how much disk space they use.</sub>
+</p>
+
 - **Workspace background — your choice:** the beetle mascot, a solid color, or your own image (PNG, JPG, or WEBP up to 20 MB).
 - **The model frees memory by itself.** If you don't dictate for a while (10 minutes, say), the app unloads the model from video memory — the graphics card is free for other work. Your next recording loads it back, with nothing to press.
 - Glass panels, a beetle-and-microphones background pattern, an animated beetle on the splash screen.
