@@ -26,10 +26,10 @@
   <sub>Windows 10/11 (x64) · 158.9 MB installer · free, no account</sub>
 </p>
 
-<!-- MAIN IMAGE: currently a live dictation screenshot (docs/screenshots/01-dictation.png); a GIF demo (~10-15 s, 15 fps). Shot: user holds the hotkey, speaks
-     Ukrainian, finished text appears under the cursor in any field. Light theme. File: assets/hero.gif -->
+<!-- MAIN IMAGE: currently a live English dictation screenshot (docs/screenshots/01-dictation-en.png); a GIF demo (~10-15 s, 15 fps). Shot: user holds the hotkey,
+     speaks, and the finished text appears under the cursor in any field. Light theme. File: assets/hero.gif -->
 <p align="center">
-  <img src="docs/screenshots/01-dictation.png" alt="Dictation: speech becomes text right where the cursor is" width="800">
+  <img src="docs/screenshots/01-dictation-en.png" alt="Dictation: speech becomes text right where the cursor is" width="800">
 </p>
 
 ---
