@@ -6,7 +6,7 @@
 повний текст у файлі LICENSE, додаткові дозволи — у COMMERCIAL-LICENSE.md. Повні
 тексти сторонніх ліцензій — у теці licenses\.
 
-The application "Balachky u Korosteni" itself is licensed under the PolyForm
+The application "Balachky" itself is licensed under the PolyForm
 Noncommercial License 1.0.0 (full text: LICENSE file in this directory;
 additional permissions: COMMERCIAL-LICENSE.md). The distribution bundles the
 third-party components listed below. Full license texts are provided in the

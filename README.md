@@ -6,7 +6,7 @@
   <img src="assets/mascot-512.png" alt="Balachky — a beetle with a microphone" width="160">
 </p>
 
-<h1 align="center">Balachky — Chats in Korosten</h1>
+<h1 align="center">Balachky</h1>
 
 <p align="center">Offline dictation and meetings, Ukrainian-first. Fully private. For Windows.</p>
 

@@ -80,4 +80,6 @@
 
 ## EN
 Той самий тон, не сухіший за укр. Sentence case (крім eyebrow-CAPS). Ті самі “ ” і ’.
-Бренд не перекладаємо: **Balachky** / *What’s said in Korosten stays in Korosten*.
+Назва бренду за мовою: українською — **Балачки у Коростені**, англійською — **Balachky**.
+Не вживати англійською *Balachky u Korosteni* або *Chats in Korosten*.
+Англійський слоган: *What’s said in Korosten stays in Korosten*.

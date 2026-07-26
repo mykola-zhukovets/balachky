@@ -1,5 +1,5 @@
 PERMISSIVE AND WEAK-COPYLEFT LICENSE TEXTS
-Consolidated license file for the "Balachky u Korosteni" desktop application.
+Consolidated license file for the "Balachky" desktop application.
 See THIRD-PARTY-NOTICES.txt in the application root for the component index.
 
 Each section below reproduces the license text of one bundled python package,

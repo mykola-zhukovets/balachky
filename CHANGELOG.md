@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **Балачки у Коростені / Balachky u Korosteni** are documented in this file.
+All notable changes to **Балачки у Коростені / Balachky** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- **Назва бренду за мовою.** Український інтерфейс зберігає назву **Балачки у Коростені**, англійський використовує коротку назву **Balachky**.
+- **Language-specific brand name.** The Ukrainian interface keeps **Балачки у Коростені**; the English interface now uses **Balachky**.
 
 ---
 

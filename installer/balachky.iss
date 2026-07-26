@@ -5,15 +5,15 @@
 #include "version.iss"
 
 #define AppExeName "Balachky.exe"
-#define AppDisplayName "Балачки у Коростені"
+#define AppDisplayName "Balachky"
 
 [Setup]
 ; AppId — НЕ ЗМІНЮВАТИ НІКОЛИ: за цим GUID Windows та Inno впізнають
 ; встановлену програму (оновлення поверх, коректне видалення).
 AppId={{2C5BBCE3-5047-47A6-96B0-C78B12E059F9}
-AppName={#AppDisplayName}
+AppName={cm:AppDisplayName}
 AppVersion={#AppVersion}
-AppVerName={#AppDisplayName} {#AppVersion}
+AppVerName={cm:AppDisplayName} {#AppVersion}
 AppPublisher=Mykola Zhukovets
 VersionInfoVersion={#AppVersion}.0
 VersionInfoCompany=Mykola Zhukovets
@@ -54,8 +54,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 ; Тексти кастомного вікна деінсталятора — двомовні (обирається за ActiveLanguage).
 [CustomMessages]
+ukrainian.AppDisplayName=Балачки у Коростені
+english.AppDisplayName=Balachky
 ukrainian.UninstTitle=Балачки у Коростені — видалення
-english.UninstTitle=Uninstall Balachky u Korosteni
+english.UninstTitle=Uninstall Balachky
 ukrainian.UninstPrompt=Програму буде видалено. За замовчуванням Ваші налаштування, словники та історія зберігаються —  при повторному встановленні будуть доступні.
 english.UninstPrompt=Balachky will be removed. Your settings, dictionaries, and history are kept by default, so they’ll be available if you reinstall it.
 ukrainian.UninstRemoveData=Видалити локальні дані (Ваші налаштування, словники та історію)
@@ -83,11 +85,11 @@ Type: files; Name: "{app}\balachky-tts-worker.exe"
 Source: "..\dist\Balachky\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppDisplayName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppDisplayName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{cm:AppDisplayName}"; Filename: "{app}\{#AppExeName}"
+Name: "{autodesktop}\{cm:AppDisplayName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppDisplayName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{cm:AppDisplayName}}"; Flags: nowait postinstall skipifsilent
 
 ; Користувацькі дані (%LOCALAPPDATA%\Balachky: config.toml, profiles\) інсталер
 ; типово НЕ чіпає — вони переживають перевстановлення і видалення програми

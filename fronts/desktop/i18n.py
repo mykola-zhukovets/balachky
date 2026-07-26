@@ -2130,7 +2130,7 @@ STRINGS = {
         "common_empty_here": "Nothing here yet",
 
         # --- app / toasts ---
-        "app_title": "Balachky u Korosteni",
+        "app_title": "Balachky",
         "splash_eyebrow": "Loading…",
         "app_loading_model": "Preparing the model…",
         "app_preparing_model": "Preparing the model…",
@@ -2378,7 +2378,7 @@ STRINGS = {
 
         # --- brand / sidebar ---
         "brand_top": "Balachky",
-        "brand_bottom": "u Korosteni",
+        "brand_bottom": "",
         "brand_slogan": "What’s said in Korosten stays in Korosten",
         "sidebar_version": "version {ver}",
         "sidebar_test_mode": "test log active",
@@ -2766,7 +2766,7 @@ STRINGS = {
         "hint_panic_hotkey": "Instantly unloads vault encryption keys from memory, clears the clipboard, and minimizes Balachky window. Accessing encrypted meetings will require re-authentication.",
         "panic_toast_locked": "Vault locked, window minimized, clipboard cleared",
         "set_about_eyebrow": "ABOUT",
-        "set_about_lead": "“Balachky u Korosteni” turns your voice into text.",
+        "set_about_lead": "“Balachky” turns your voice into text.",
         "set_about_body": "<b>What it does.</b> Hold a keyboard shortcut, speak, "
                           "and the text appears where your cursor is. You can "
                           "also transcribe an existing audio file.<br><br>"
