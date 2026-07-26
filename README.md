@@ -1,7 +1,6 @@
 <a id="використання"></a>
 <p align="center"><strong>English</strong> · <a href="README.uk.md">Українська</a></p>
 
-<!-- LOGO: beetle-with-microphone mascot, ~160px, centered. File: assets/mascot-512.png -->
 <p align="center">
   <img src="assets/mascot-512.png" alt="Balachky — a beetle with a microphone" width="160">
 </p>
@@ -26,8 +25,6 @@
   <sub>Windows 10/11 (x64) · 158.9 MB installer · free, no account</sub>
 </p>
 
-<!-- MAIN IMAGE: currently a live English dictation screenshot (docs/screenshots/01-dictation-en.png); a GIF demo (~10-15 s, 15 fps). Shot: user holds the hotkey,
-     speaks, and the finished text appears under the cursor in any field. Light theme. File: assets/hero.gif -->
 <p align="center">
   <img src="docs/screenshots/01-dictation-en.png" alt="Dictation: speech becomes text right where the cursor is" width="800">
 </p>
@@ -36,7 +33,7 @@
 
 Balachky is a Windows app that turns your speech into text in any field of any program and turns meeting recordings into ready-to-use minutes. Recognition happens on your computer: voice and transcripts are not uploaded. The app goes online only for user-requested model, optional component, and update downloads, plus update checks if you enable them. Ukrainian is not "one of a hundred languages" in a dropdown here — it is the main one: interface, recognition, dictionaries, and minutes.
 
-> This is a beta: ready for daily work, but small things will still change. Every change is honestly listed in the changelog (SemVer).
+> This is a public beta. Features, interface details, and future terms for modules outside basic dictation may change. Basic local dictation remains free.
 
 "Balachky" (Балачки) is Ukrainian for "chit-chat". Korosten is the town in Ukraine where the app is made — hence the motto.
 
@@ -59,7 +56,7 @@ Balachky is a Windows app that turns your speech into text in any field of any p
       <p>If a component isn't installed, the app says "install the component" instead of showing an empty stub. The "Listen" button clearly states that its engine must be installed first. Beta means beta: everything unfinished is marked as such.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>Free, no subscriptions</h3>
+      <h3>Free dictation; meetings free during beta</h3>
       <p>Dictation is free forever — even for companies. Meetings are free during the beta. No accounts, no cards, no "trial periods".</p>
     </td>
   </tr>
@@ -85,7 +82,7 @@ Everything below works without the internet, once the models you need are downlo
 
 - **Text where the cursor is.** Hold the hotkey and speak — text appears in any field: email, messenger, Word, an AI chat. You choose where it goes: "Into the selected app" or "Keep in Balachky".
 - **Three cleanup levels, one slider.** "Verbatim", "No filler words", or "With punctuation". The verbatim version is always kept intact in History — you can go back and compare.
-- **Re-listen and fix yourself.** Every dictation in History can be replayed in your own voice and corrected. The original recording is never touched. We haven't seen this in any other dictation app.
+- **Re-listen and fix yourself.** Every dictation in History can be replayed in your own voice and corrected. Corrections are stored separately, while the original recording remains unchanged.
 
 <p align="center">
   <img src="docs/screenshots/05-history-en.png" alt="Searchable dictation history with replay, correction, and copy controls" width="800">
