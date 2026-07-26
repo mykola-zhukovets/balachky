@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "💬 Питання та обговорення / Questions & Discussions"
+    url: https://github.com/mykola-zhukovets/balachky/discussions
+    about: "Не баг, а просто запитання чи ідея? Пишіть сюди. / Not a bug, just a question or idea? Post here."

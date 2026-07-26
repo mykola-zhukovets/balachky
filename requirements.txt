@@ -1,0 +1,80 @@
+# Балачки — прямі залежності (Python 3.12)
+# Піни зафіксовано зі стану, що працює станом на 2026-07-08.
+faster-whisper==1.2.1
+ctranslate2==4.7.2
+sounddevice==0.5.5
+# Режим «Нарада»: WASAPI loopback (системний звук) через форк PyAudio. Apache-2.0;
+# власна копія PortAudio влінкована у _portaudiowpatch*.pyd (самодостатня) [A].
+PyAudioWPatch==0.2.12.8
+keyboard==0.13.5
+# PyAutoGUI прибрано (ліцензія PolyForm NC): у коді не імпортується (ввід —
+# власний ctypes SendInput у fronts/desktop/wininput.py), а транзитивно тягнув
+# GPL-пакети PyMsgBox і MouseInfo, несумісні з нашим дистрибутивом. Решта
+# asweigart-пакетів (pyperclip, PyGetWindow тощо) — BSD/MIT, лишаються.
+pyperclip==1.11.0
+numpy==2.4.6
+# Офлайн-діаризація системної доріжки нарад (Apache-2.0). onnxruntime пінимо
+# ЯВНО (а не покладаємось на резолвер): frozen залежить від версії DLL — при
+# апгрейді змінюємо ОБИДВА піни разом і переганяємо frozen-тести (див. дизайн §7).
+sherpa-onnx==1.13.4
+onnxruntime==1.27.0
+# Режим «Нарада»: захоплення екрана через ctypes, без зовнішніх DLL.
+mss==10.1.0
+av==18.0.0  # LGPL-збірка (BtbN win64-lgpl-shared, без x264/x265) — див. THIRD-PARTY-NOTICES §1 і SWAP-PLAN
+# Local meeting storage encryption (AES-256-GCM/HKDF/scrypt).
+cryptography>=44,<49
+
+# Desktop GUI (fronts/desktop) — пінимо як і решту: плаваючий PySide6 підтягнув
+# би іншу версію Qt, несумісну з PyInstaller-spec/плагінами, а qtawesome без
+# піна міг би змінити набір іконних шрифтів (fa6s.*)
+PySide6==6.11.1
+qtawesome==1.4.2
+
+# Експорт розшифровки у .docx (вкладка «Аудіофайли»). SRT/VTT генеруємо самі
+# (без бібліотек). lxml — компільована залежність python-docx; пінимо явно,
+# бо PyInstaller може не підхопити транзитивну (як ctranslate2 вище).
+python-docx==1.1.2
+lxml==6.1.1
+
+# Порівняння версій у тихій перевірці оновлень (whisper_core/updates.py).
+# packaging — транзитивна залежність pip/setuptools, але PyInstaller може її
+# не підхопити у frozen-бандл, тож пінимо явно (як ctranslate2/lxml вище).
+packaging==26.2
+
+# Telegram bot (fronts/telegram, опційно)
+aiogram==3.29.1
+
+# --- Постобробка тексту після STT (feature/punctuation-plus) — ОПЦІЙНО ---
+# Обидва кроки — opt-in і мають graceful degradation: якщо пакета немає, чекбокс
+# у Налаштуваннях лишається неактивним із поясненням, а build НЕ падає. Дані
+# (частотний словник, ONNX-модель) не вшиваються — качаються з UI за потреби.
+# symspellpy — автокорекція одруків (MIT, pure-Python, легкий):
+symspellpy==6.10.0
+# punctuators — пунктуатор/ITN pcs_47lang (Apache-2.0, ONNX; тягне onnxruntime,
+# який уже є в стеку sherpa-onnx). Розкоментуй, якщо потрібен цей крок:
+# punctuators==0.0.5
+
+# --- AI-протокол наради (feature/protocol-activation) — ОПЦІЙНО ---
+# Локальна LLM (Gemma 4 GGUF) у sidecar-підпроцесі (whisper_core.protocol.worker),
+# запакованому окремим balachky-protocol-worker.exe (balachky.spec). Opt-in із
+# graceful degradation: без пакета кнопка «Створити протокол» неактивна з підказкою,
+# build НЕ падає (worker.llama_available()→False → FakeBackend; spec guarded
+# find_spec). Ваги (~5-7 ГБ) не вшиваються — качаються з UI за згодою.
+#
+# У СПІЛЬНИЙ dev/frozen venv важку залежність НЕ пінимо (зачепила б 70+ worktree —
+# канон §2). Ставимо ЛИШЕ у СКЛАДАЛЬНИЙ venv (C:\Projects\tts-build-venv), звідки
+# робиться реліз-білд — CPU-колесо (працює на будь-якому залізі; GPU-шлях опційний):
+#   pip install "llama-cpp-python==0.3.34" --extra-index-url \
+#     https://abetlen.github.io/llama-cpp-python/whl/cpu --only-binary=:all:
+# llama-cpp-python==0.3.34  # у складальному venv (не в спільному); MIT (+ llama.cpp MIT)
+
+# feature/tts-listen (§3.3): HeavyModelCoordinator визначає RAM машини через psutil,
+# щоб не тримати STT і TTS резидентно разом на слабкому залізі (<12 ГБ). Без psutil
+# координатор fail-closed (ексклюзивний режим); явна залежність усуває це погіршення.
+psutil>=5.9
+
+# feature/tts-listen (§6.4): словник вимови — «поширити на відмінки?» генерує
+# відмінкові форми української через pymorphy3 (з підтвердженням користувача). Пряма
+# залежність + українські дані окремим пакетом.
+pymorphy3>=2.0
+pymorphy3-dicts-uk

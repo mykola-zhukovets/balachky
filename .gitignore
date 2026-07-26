@@ -1,0 +1,79 @@
+# Whisper model cache (large — downloaded on first run)
+models/
+
+# Private dictation history & per-user profiles (never commit)
+history.jsonl
+history.txt
+profiles/
+
+# Personal config (copy from config.example.toml)
+config.toml
+
+# Журнал мережевої активності (доказова офлайновість) — рантайм-дані, як history.jsonl
+network_log.jsonl
+
+# Контекстні профілі застосунків (feature/context-profiles) — особисті
+context_profiles.toml
+
+# Personal voice snippets (copy from snippets.example.toml)  # feature/snippets
+snippets.toml
+
+# Перефарбовані SVG-іконки контролів під вибраний колір інтерфейсу
+# (feature/ui-color) — генеруються й кешуються з assets/ui/*-night.svg,
+# не бандл-ресурс.
+ui_icons/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# PyInstaller / Inno Setup build artifacts
+build/
+dist/
+installer/Output/
+build-logs/
+
+# Downloaded runtime components and local experiments
+components/
+scratch/
+
+# Audio samples
+*.wav
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Системні скріншоти прототипування (приватне — повний робочий стіл)
+shots/
+
+# Внутрішні прев'ю-рендери (не для публічного репо)
+preview/
+preview-en/
+screenshots/review-*/
+
+# Дев-прототипи / старий моноліт — не частина застосунку, що випускається
+dev/
+
+# Візуальний гейт: звіт регенерується щопрогону (артефакт, не джерело).
+# Базлайн (visual_gate_baseline.json) — навпаки, комітиться як джерело правди.
+# visual_gate_report_<колір>.json — той самий звіт, окремий файл на варіант
+# кольору (feature/ui-color), той самий принцип "артефакт, не джерело".
+scripts/visual_gate_report.json
+scripts/visual_gate_report_*.json
+
+# резервна копія конфіга, яку робить сама програма — особисте
+config.toml.bak
+
+# внутрішні робочі документи проєктування (не для публічного репозиторію)
+_meeting-design/
+
+# внутрішній журнал збірок (назви гілок, опис робочих сесій) — не для публічного репозиторію
+docs/CHANGELOG.md
+
+# Тимчасові теки тестів — якщо колись знову лишиться у корені репозиторію
+balachky-settings-tmp_*
+cfg-tmp_*
+.tmp/

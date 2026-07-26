@@ -1,0 +1,7 @@
+# Кнопка "Sponsor" на GitHub. GitHub Sponsors для України недоступний (виплат немає),
+# тому custom-посилання: банка monobank (гривня) + PrivatBank ($/€).
+# Крипто-адреси (USDT/BTC/ETH) — у розділі "Підтримати" в README.
+custom:
+  - "https://send.monobank.ua/jar/21rfey7KTz"
+  - "https://www.privat24.ua/send/4h4jh"
+  - "https://www.privat24.ua/send/4h5jr"

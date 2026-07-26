@@ -1,0 +1,87 @@
+name: "🐞 Повідомити про баг / Bug report"
+description: "Щось працює не так? Розкажіть нам. / Something not working? Tell us."
+title: "[Баг] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Дякуємо, що допомагаєте зробити «Балачки» кращими! Заповніть, будь ласка, поля нижче.
+        Thanks for helping improve Balachky! Please fill in the fields below.
+
+        **Важливо: НЕ додавайте приватні аудіозаписи нарад, розшифровки чи особисті дані.**
+        **Important: Do NOT attach private meeting audio recordings, transcripts, or personal data.**
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "Що сталося? / What happened?"
+      description: "Опишіть проблему простими словами. / Describe the problem in plain words."
+      placeholder: "Наприклад: натиснув запис, а текст не з'явився. / E.g. I pressed record, but no text appeared."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Що ви робили перед цим? / What did you do before it happened?"
+      description: "По кроках, якщо пам'ятаєте. / Step by step, if you remember."
+      placeholder: |
+        1. Відкрив програму / Opened the app
+        2. Натиснув «Запис» / Clicked "Record"
+        3. ...
+    validations:
+      required: false
+
+  - type: input
+    id: app-version
+    attributes:
+      label: "Версія та номер збірки / App version & build number"
+      description: "Вказано внизу сайдбара або у меню «Про програму». / Visible at the bottom of the sidebar or in the \"About\" menu."
+      placeholder: "1.2.3-beta (EA37AF91)"
+    validations:
+      required: false
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: "Версія Windows / Windows version"
+      description: "Наприклад: Windows 10 або Windows 11. / E.g. Windows 10 or Windows 11."
+      placeholder: "Windows 11"
+    validations:
+      required: false
+
+  - type: input
+    id: gpu-info
+    attributes:
+      label: "Відеокарта NVIDIA / NVIDIA GPU"
+      description: "Чи є відеокарта NVIDIA (модель чи Немає/CPU). / NVIDIA GPU presence & model (e.g. RTX 3060 or None/CPU)."
+      placeholder: "NVIDIA RTX 3060 12GB / Немає (CPU)"
+    validations:
+      required: false
+
+  - type: input
+    id: recognition-model
+    attributes:
+      label: "Модель розпізнавання / Speech recognition model"
+      description: "Яка модель обрана в Налаштуваннях (Швидка/Turbo, Точна, Small тощо). / Selected model in Settings (e.g. Quick/Turbo, Precise, Small)."
+      placeholder: "Швидка (Turbo) / Small"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Журнал (лог) / Log file"
+      description: |
+        У програмі відкрийте меню **«Відкрити папку з журналом»**, знайдіть найновіший файл і перетягніть його сюди.
+        ⚠️ **Спершу відкрийте журнал і перегляньте його.** Файл потрапить у публічний доступ, а в ньому можуть бути
+        шляхи з Вашим іменем користувача (`C:\Users\...`), назви робочих файлів і уривки розпізнаного тексту.
+        Приберіть із файлу все зайве перед тим, як прикріпити, — або просто вставте кілька рядків із помилкою.
+        In the app, open the **"Open log folder"** menu, find the newest file, and drag it here.
+        ⚠️ **Open and review the log first.** It becomes public, and it may contain paths with your Windows
+        username (`C:\Users\...`), file names, and fragments of recognized text. Remove anything sensitive
+        before attaching — or just paste the few lines around the error.
+      placeholder: "Перетягніть файл журналу сюди / Drag the log file here"
+    validations:
+      required: false

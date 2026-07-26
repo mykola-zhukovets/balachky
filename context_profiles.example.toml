@@ -1,0 +1,52 @@
+# Балачки — контекстні профілі застосунків. # feature/context-profiles
+# Скопіюй у context_profiles.toml (лежить поруч із config.toml) або керуй через
+# вікно Налаштувань → «Профілі застосунків». Файл особистий (у .gitignore).
+#
+# Як працює: перед кожним диктуванням Балачки дивляться, яке вікно активне, і
+# беруть ПЕРШИЙ профіль зі збігом за назвою програми (exe). Порядок [[profile]]
+# у файлі = пріоритет: горішній перевіряється першим.
+#
+# Менеджери паролів (KeePass, Bitwarden, 1Password тощо) захищені завжди й цими
+# профілями НЕ керуються — вставку туди заблоковано незалежно від налаштувань.
+
+# Поведінка за замовчуванням — коли жоден профіль не збігся.
+# formatting — детермінований профіль форматування виводу (feature/output-formats):
+#   "plain"    — звичайний (без структурних змін);
+#   "markdown" — кожне речення стає пунктом списку «- …» (переліки);
+#   "code"     — дослівно, зі збереженням відступів, без автопунктуації;
+#   "letter"   — кожен рядок стає окремим абзацом.
+[default]
+auto_enter = false     # натискати Enter після вставки
+dictionary = ""        # "" → активний словник; або назва профілю-словника
+enabled = true         # false → не вставляти, лише показати у стрічці
+formatting = "plain"
+
+# Приклад: у месенджерах — одразу відправляти (Enter після вставки).
+[[profile]]
+name = "Месенджери"
+apps = ["Telegram.exe", "WhatsApp.exe"]
+title_regex = ""       # опційно: додатковий фільтр за заголовком вікна (regex)
+auto_enter = true
+dictionary = ""
+enabled = true
+formatting = "plain"
+
+# Приклад: у робочому редакторі — свій словник термінів.
+[[profile]]
+name = "Робота"
+apps = ["Code.exe"]
+title_regex = ""
+auto_enter = false
+dictionary = "робота"  # назва профілю-словника (whisper_core.profiles)
+enabled = true
+formatting = "plain"
+
+# Приклад: у нотатнику Markdown — переліки як пункти списку.
+[[profile]]
+name = "Нотатки"
+apps = ["obsidian.exe"]
+title_regex = ""
+auto_enter = false
+dictionary = ""
+enabled = true
+formatting = "markdown"

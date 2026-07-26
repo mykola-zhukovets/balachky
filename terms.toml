@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────
+# Personal term dictionary / Персональний словник термінів.
+#
+# Format:  CorrectForm = ["variant 1", "variant 2", ...]
+#   • Key    — how the word MUST appear (Latin / correct spelling).
+#   • List   — how Whisper actually mis-hears it in Cyrillic.
+#
+# One list feeds BOTH layers automatically:
+#   • hotwords + initial_prompt — nudge the model BEFORE transcription;
+#   • replacement — guaranteed fix AFTER transcription.
+#
+# Saw a new mis-spelling? Add it to the list. Re-read on each startup.
+# Run `python learn.py` to get suggestions mined from your own history.
+#
+# ⚠️  Don't add variants that are also ordinary words in your language
+#     (e.g. Opus→"опус", Sonnet→"сонет") — it would corrupt normal speech.
+#
+# The entries below are examples — replace them with your own terms.
+# ─────────────────────────────────────────────────────────────────────
+
+[terms]
+Fable         = ["фейбл", "файбл", "фейбол"]
+Whisper       = ["віспер", "віспэр"]
+Cowork        = ["коворк", "ко ворк"]
+Claude        = ["клод", "клауд", "клоуд"]
+"Claude Code" = ["клод код", "клод-код"]
+Anthropic     = ["антропік", "энтропік"]
+Obsidian      = ["обсидіан", "обсідіан"]
+GitHub        = ["гітхаб", "гіт хаб", "гітхуб"]
+Python        = ["пайтон", "пітон"]
+NotebookLM    = ["ноутбуклм", "ноутбук лм"]
+pyright       = ["пайрайт", "пірайт"]
+
+# Українські слова-команди, які Whisper недочуває. Порожній список = лише БІАСИНГ
+# (hotwords + initial_prompt), БЕЗ автозаміни: слово нуджиться в модель, але нічого
+# ним не підмінюється. «гортати» (гортати слайди) чулось як «гордати»/«гартати»;
+# «гартати» (гартувати метал) — легітимне слово, тож у варіанти його НЕ беремо.
+"гортати"     = []

@@ -1,0 +1,37 @@
+name: "💡 Запропонувати функцію / Feature request"
+description: "Маєте ідею, як зробити “Балачки” кращими? Розкажіть. / Have an idea to make Balachky better? Tell us."
+title: "[Ідея] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Дякуємо за ідею! Не треба технічних подробиць — опишіть простими словами.
+        Thanks for the idea! No technical details needed — just describe it in plain words.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: "Що ви хочете? / What would you like?"
+      description: "Опишіть можливість, якої вам бракує. / Describe the feature you are missing."
+      placeholder: "Наприклад: хочу, щоб програма сама вставляла дату в текст. / E.g. I want the app to insert today's date into the text."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: "Навіщо це вам? / Why do you need it?"
+      description: "Що це полегшить чи пришвидшить у вашій роботі. / What it would make easier or faster for you."
+      placeholder: "Наприклад: щодня диктую звіти й щоразу вручну пишу дату. / E.g. I dictate reports daily and type the date by hand every time."
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: "Як ви обходитеся зараз? / How do you cope now?"
+      description: "Якщо якось вирішуєте це вже зараз — опишіть як. / If you have a workaround today, describe it."
+      placeholder: "Наприклад: дописую дату руками після диктування. / E.g. I add the date manually after dictating."
+    validations:
+      required: false

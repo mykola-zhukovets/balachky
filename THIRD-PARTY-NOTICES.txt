@@ -1,0 +1,409 @@
+БАЛАЧКИ У КОРОСТЕНІ — ПОВІДОМЛЕННЯ ПРО СТОРОННІ КОМПОНЕНТИ
+===========================================================
+
+Цей файл перелічує сторонні компоненти, що постачаються разом із застосунком.
+Сам застосунок поширюється за ліцензією PolyForm Noncommercial License 1.0.0 —
+повний текст у файлі LICENSE, додаткові дозволи — у COMMERCIAL-LICENSE.md. Повні
+тексти сторонніх ліцензій — у теці licenses\.
+
+The application "Balachky u Korosteni" itself is licensed under the PolyForm
+Noncommercial License 1.0.0 (full text: LICENSE file in this directory;
+additional permissions: COMMERCIAL-LICENSE.md). The distribution bundles the
+third-party components listed below. Full license texts are provided in the
+licenses\ directory.
+
+Format of each entry:
+  Component (version) — SPDX license id
+  Upstream: <url>
+  License text: <path>
+
+
+--------------------------------------------------------------------------
+1. FFmpeg (LGPL build inside PyAV) — no GPL codecs
+--------------------------------------------------------------------------
+FFmpeg (LGPL shared-library build linked into the PyAV 18.0.0 wheel, av\)
+  — SPDX: LGPL-2.1-or-later (built with --enable-version3, no --enable-gpl)
+  Upstream: https://ffmpeg.org
+  Build: BtbN FFmpeg-Builds, win64-lgpl-shared (FFmpeg 8.x,
+         N-125716-g1b1f602699-20260722), configured WITHOUT --enable-gpl and
+         with --disable-libx264 --disable-libx265. The PyAV Python bindings
+         (av==18.0.0) are compiled from source against this LGPL build and the
+         seven FFmpeg DLLs are placed next to the av *.pyd files.
+  License texts: LGPL-2.1 — licenses\LGPL-3.0.txt
+
+  This build contains NO GPL-only encoders: libx264 and libx265 are absent
+  (verified — av.codec.Codec("libx264","w") / ("libx265","w") raise
+  UnknownCodecError). The app's screen recording encodes VP9 (libvpx, BSD);
+  audio export uses AAC (native) and MP3 (LAME, LGPL). Notable libraries in av\:
+
+    avcodec-63, avdevice-63, avfilter-12, avformat-63, avutil-61,
+    swresample-7, swscale-10   FFmpeg           LGPL-2.1-or-later
+    libvpx                     libvpx           BSD-3-Clause  (VP8/VP9)
+    libopus                    Opus             BSD-3-Clause
+    libmp3lame                 LAME             LGPL-2.0-or-later
+    libopenh264                OpenH264         BSD-2-Clause
+    (H.264 hardware encoders h264_nvenc/qsv/amf are LGPL, no GPL codec used)
+    libdav1d                   dav1d            BSD-2-Clause
+    zlib                       zlib             Zlib
+
+  LGPL relinking: the FFmpeg DLLs are dynamically linked; a recipient may
+  replace them with a compatible FFmpeg build. Sources for the exact build are
+  at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org/download.html.
+
+(PyMsgBox and MouseInfo — GPL-3.0 — were previously listed here as possible
+transitive dependencies of PyAutoGUI. PyAutoGUI has been removed from
+requirements.txt and all three (pyautogui, pymsgbox, mouseinfo) are excluded in
+balachky.spec; none are imported by the application, so none are bundled.)
+
+PyInstaller bootloader (PyInstaller 6.21.0, embedded in Balachky.exe)
+  — GPL-2.0-or-later WITH Bootloader-exception
+  Upstream: https://pyinstaller.org
+  License text: licenses\PyInstaller-COPYING.txt
+  The Bootloader Exception explicitly permits distributing applications
+  built with PyInstaller under any license; only the bootloader stub itself
+  is covered. PyInstaller as a tool is not part of this distribution.
+
+
+--------------------------------------------------------------------------
+2. LGPL-3.0 COMPONENTS — Qt / PySide6
+--------------------------------------------------------------------------
+
+Qt 6.11.1 libraries (Qt6Core.dll, Qt6Gui.dll, Qt6Widgets.dll, Qt6Network.dll,
+Qt6Svg.dll and other Qt6*.dll files), bundled via the PySide6 packages:
+
+  PySide6            (6.11.1) — LGPL-3.0-only
+  PySide6_Essentials (6.11.1) — LGPL-3.0-only
+  PySide6_Addons     (6.11.1) — LGPL-3.0-only
+  shiboken6          (6.11.1) — LGPL-3.0-only
+
+  Upstream: https://www.qt.io / https://doc.qt.io/qtforpython-6/
+  License text: licenses\LGPL-3.0.txt
+  (Qt and PySide6 are tri-licensed LGPL-3.0-only OR GPL-2.0-only OR
+  GPL-3.0-only; this distribution uses the LGPL-3.0-only option.)
+
+  LGPL-3.0 rights notice (section 4 of the LGPL):
+  - The Qt/PySide6/shiboken6 libraries in this distribution are separate
+    DLL/PYD files (one-directory layout). You may replace them with a
+    modified or newer compatible version of Qt / PySide6 — substitute the
+    corresponding files in the application directory; no relinking step is
+    required.
+  - Complete corresponding source code of Qt is available at
+    https://download.qt.io/official_releases/qt/6.11/ and
+    https://code.qt.io/cgit/qt/
+  - Source code of PySide6/shiboken6:
+    https://code.qt.io/cgit/pyside/pyside-setup.git/
+    https://pypi.org/project/PySide6/ (sdist)
+
+
+--------------------------------------------------------------------------
+3. FONTS (bundled via QtAwesome 1.4.2)
+--------------------------------------------------------------------------
+
+Font Awesome Free 5.15.4 and 6.7.2
+(fontawesome5-*-webfont-5.15.4.ttf, fontawesome6-*-webfont-6.7.2.ttf)
+  — fonts: OFL-1.1; icon designs: CC-BY-4.0; code: MIT
+  Upstream: https://fontawesome.com / https://github.com/FortAwesome/Font-Awesome
+  License texts: licenses\FONT-AWESOME-LICENSE.txt (official combined notice),
+                 licenses\OFL-1.1.txt, licenses\CC-BY-4.0.txt
+  Attribution (required by CC-BY-4.0):
+  "Font Awesome by Fonticons, Inc. — https://fontawesome.com
+   Licensed under CC BY 4.0 (icons) and SIL OFL 1.1 (fonts)."
+
+Other icon fonts shipped inside the QtAwesome package:
+  codicon 0.0.36            — CC-BY-4.0 (icons) / MIT (code)
+                              https://github.com/microsoft/vscode-codicons
+                              (licenses\CC-BY-4.0.txt, PERMISSIVE-LICENSES.txt)
+  Elusive Icons 2.0         — OFL-1.1
+                              http://elusiveicons.com
+                              (licenses\OFL-1.1.txt)
+  Material Design Icons 5.9.55 / 6.9.96
+                            — Apache-2.0
+                              https://github.com/Templarian/MaterialDesign
+                              (licenses\Apache-2.0.txt)
+  Phosphor 1.3.0            — MIT
+                              https://github.com/phosphor-icons/homepage
+                              (licenses\PERMISSIVE-LICENSES.txt)
+  Remix Icon 2.5.0          — Apache-2.0
+                              https://github.com/Remix-Design/RemixIcon
+                              (licenses\Apache-2.0.txt)
+
+The upstream wheels do not ship separate license files for these fonts; the
+texts in licenses\ were taken verbatim from the canonical license sources.
+
+Fixel (MacPaw) — SIL OFL 1.1
+  UI typeface bundled with the redesigned interface (assets\fonts\).
+  License text: assets\fonts\OFL.txt (SIL Open Font License 1.1, shipped
+  alongside the font files).
+
+
+--------------------------------------------------------------------------
+4. OTHER NATIVE BINARIES (bundled via python packages)
+--------------------------------------------------------------------------
+
+PortAudio (libportaudio64bit.dll, bundled via sounddevice 0.5.5) — MIT
+  Copyright (c) 1999-2011 Ross Bencina and Phil Burk
+  Upstream: http://www.portaudio.com
+  License text: licenses\PERMISSIVE-LICENSES.txt (PortAudio section)
+  The ASIO-enabled variant (libportaudio64bit-asio.dll, which embeds the
+  proprietary Steinberg ASIO SDK) is EXCLUDED from this distribution by
+  the build spec.
+  NOTE (feature/meeting-ui): PyAudioWPatch (see section 7) carries its OWN
+  copy of PortAudio v19, statically linked into _portaudiowpatch*.pyd. That
+  second copy is likewise MIT (Ross Bencina and Phil Burk) — the same
+  PortAudio section of PERMISSIVE-LICENSES.txt covers it.
+
+PortAudio v19 (statically linked inside _portaudiowpatch*.pyd, bundled via
+PyAudioWPatch 0.2.12.8) — MIT-style
+  Copyright (c) 1999-2011 Ross Bencina and Phil Burk
+  Upstream: http://www.portaudio.com
+  License text: licenses\PERMISSIVE-LICENSES.txt (PortAudio section)
+  This is a SEPARATE, own copy of PortAudio that PyAudioWPatch carries: the
+  fork links PortAudio (with its WASAPI-loopback patches) statically into
+  its C-extension _portaudiowpatch*.pyd, independent of the sounddevice
+  libportaudio64bit.dll listed above. Used only by the "Нарада" (Meeting)
+  mode for system-audio (WASAPI loopback) capture.
+
+Microsoft Visual C++ Runtime (msvcp140*.dll, vcruntime140*.dll,
+concrt140.dll, vccorlib140.dll — bundled inside the PySide6, shiboken6
+and NumPy wheels and by PyInstaller) — proprietary, redistributable
+  Upstream: https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
+  Redistributed under the Microsoft Visual Studio distributable code terms;
+  no license text is required to be bundled.
+
+Intel OpenMP runtime (libiomp5md.dll) — Intel End User License Agreement
+for Developer Tools (proprietary, redistributable)
+  Upstream: https://www.intel.com / https://pypi.org/project/intel-openmp/
+  License text: licenses\Intel-OpenMP-EULA.txt
+  This runtime is redistributable under the EULA's redistributables
+  provisions; all Intel copyright notices are retained. (Earlier Intel
+  releases shipped the same runtime under the "Intel Simplified Software
+  License".)
+
+NVIDIA cuDNN loader stub (cudnn64_9.dll) — NVIDIA cuDNN Software License
+Agreement (proprietary, redistributable)
+  Upstream: https://developer.nvidia.com/cudnn
+  License text: not bundled; see
+  https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html
+
+ctranslate2.dll additionally statically links Intel oneDNN and other oneAPI
+components — Apache-2.0, https://github.com/uxlfoundation/oneDNN
+(licenses\Apache-2.0.txt).
+
+
+--------------------------------------------------------------------------
+5. PYTHON RUNTIME
+--------------------------------------------------------------------------
+
+Python 3.12.10 (python312.dll + standard library) — PSF-2.0
+  Upstream: https://www.python.org
+  License text: licenses\PSF-2.0.txt
+
+
+--------------------------------------------------------------------------
+6. BUNDLED ML MODEL
+--------------------------------------------------------------------------
+
+Silero VAD v6 (silero_vad_v6.onnx, shipped inside faster-whisper) — MIT
+  Upstream: https://github.com/snakers4/silero-vad
+  License text: licenses\PERMISSIVE-LICENSES.txt (Silero VAD section)
+
+SPEECH-TO-TEXT MODELS — NOT bundled, downloaded on first run
+  The Whisper speech-recognition models are NOT part of this distribution.
+  They are fetched once, from the Hugging Face Hub, during first-run
+  onboarding (a pinned commit revision is requested for supply-chain
+  integrity); normal launches load them from the local cache with no
+  network access. The two models the app offers:
+
+    Whisper large-v3-turbo (CTranslate2 conversion)
+      Repo: mobiuslabsgmbh/faster-whisper-large-v3-turbo
+    Whisper large-v3 (CTranslate2 conversion)
+      Repo: Systran/faster-whisper-large-v3
+
+  Upstream model: OpenAI Whisper — MIT license
+    https://github.com/openai/whisper
+  The CTranslate2/faster-whisper conversions above are redistributions of
+  those weights by Systran and mobiuslabsgmbh on the Hugging Face Hub.
+
+  The model weights carry their OWN license, SEPARATE from this
+  application's code license (PolyForm Noncommercial 1.0.0) and from the
+  faster-whisper library license (MIT). This application neither bundles nor relicenses the model
+  weights; use of the downloaded models is governed by the upstream
+  Whisper (OpenAI, MIT) terms. See each model's Hugging Face page for the
+  authoritative license of that specific conversion.
+
+TEXT POST-PROCESSING COMPONENTS — NOT bundled, downloaded on demand
+  (feature/punctuation-plus) Two OPTIONAL, experimental post-processing
+  steps download their data only when the user turns them on and presses
+  the download button in Settings; nothing here is part of the build.
+
+    Autocorrect frequency dictionary — hermitdave/FrequencyWords, uk_50k
+      (MIT). A plain "word count" list consumed by symspellpy.
+      https://github.com/hermitdave/FrequencyWords
+      NOTE: dict_uk (VESUM, brown-uk) is deliberately NOT used: it is a
+      morphological dictionary (.dic/.aff), not a frequency list, and its
+      tri-license (MPL-1.1/GPL-2.0+/LGPL-2.1+) is heavier than the MIT
+      frequency list. If ever needed it can be kept as a separate
+      user-downloaded data file without changing application code.
+
+    Punctuator/ITN model — punctuators "pcs_47lang" (Apache-2.0), an ONNX
+      model fetched via the punctuators package.
+      https://github.com/1-800-BAD-CODE/punctuators
+      The punctuators package itself is an OPTIONAL dependency (commented
+      out in requirements.txt); when absent the feature degrades
+      gracefully (the checkbox stays disabled) and the build is unaffected.
+
+  These downloaded assets carry their OWN licenses (above), separate from
+  this application's code license (PolyForm Noncommercial 1.0.0).
+
+
+--------------------------------------------------------------------------
+7. PERMISSIVE-LICENSED PYTHON PACKAGES
+--------------------------------------------------------------------------
+
+Verbatim license text of every package below is in
+licenses\PERMISSIVE-LICENSES.txt (one section per package), except where a
+shared text file is referenced (Apache-2.0.txt, MPL-2.0.txt, PSF-2.0.txt).
+
+  Package            Version    SPDX                Upstream
+  -----------------  ---------  ------------------  ----------------------------------------------
+  faster-whisper     1.2.1      MIT                 https://github.com/SYSTRAN/faster-whisper
+  CTranslate2        4.7.2      MIT                 https://github.com/OpenNMT/CTranslate2
+  sounddevice        0.5.5      MIT                 https://github.com/spatialaudio/python-sounddevice
+  PyAudioWPatch      0.2.12.8   Apache-2.0          https://github.com/s0d3s/PyAudioWPatch
+  keyboard           0.13.5     MIT                 https://github.com/boppreh/keyboard
+  pyperclip          1.11.0     BSD-3-Clause        https://github.com/asweigart/pyperclip
+  NumPy              2.4.6      BSD-3-Clause AND    https://numpy.org
+                                0BSD AND MIT AND
+                                Zlib AND CC0-1.0
+  QtAwesome          1.4.2      MIT                 https://github.com/spyder-ide/qtawesome
+  QtPy               2.4.3      MIT                 https://github.com/spyder-ide/qtpy
+  huggingface_hub    1.22.0     Apache-2.0          https://github.com/huggingface/huggingface_hub
+  tokenizers         0.23.1     Apache-2.0          https://github.com/huggingface/tokenizers
+  ONNX Runtime       1.27.0     MIT                 https://github.com/microsoft/onnxruntime
+  PyAV (wrapper)     18.0.0     BSD-3-Clause        https://github.com/PyAV-Org/PyAV
+  mss                10.1.0     MIT                 https://github.com/BoboTiG/python-mss
+  tqdm               4.68.4     MPL-2.0 AND MIT     https://github.com/tqdm/tqdm
+  cffi               2.1.0      MIT-0               https://github.com/python-cffi/cffi
+  pycparser          3.0        BSD-3-Clause        https://github.com/eliben/pycparser
+  Pillow             12.3.0     MIT-CMU             https://github.com/python-pillow/Pillow
+  click              8.4.2      BSD-3-Clause        https://github.com/pallets/click
+  colorama           0.4.6      BSD-3-Clause        https://github.com/tartley/colorama
+  filelock           3.29.7     MIT                 https://github.com/tox-dev/filelock
+  fsspec             2026.6.0   BSD-3-Clause        https://github.com/fsspec/filesystem_spec
+  hf-xet             1.5.1      Apache-2.0          https://github.com/huggingface/xet-core
+  httpx              0.28.1     BSD-3-Clause        https://github.com/encode/httpx
+  httpcore           1.0.9      BSD-3-Clause        https://github.com/encode/httpcore
+  h11                0.16.0     MIT                 https://github.com/python-hyper/h11
+  AnyIO              4.14.1     MIT                 https://github.com/agronholm/anyio
+  certifi            2026.6.17  MPL-2.0             https://github.com/certifi/python-certifi
+  idna               3.18       BSD-3-Clause        https://github.com/kjd/idna
+  packaging          26.2       Apache-2.0 OR       https://github.com/pypa/packaging
+                                BSD-2-Clause
+  PyYAML             6.0.3      MIT                 https://github.com/yaml/pyyaml
+  FlatBuffers        25.12.19   Apache-2.0          https://github.com/google/flatbuffers
+  protobuf           7.35.1     BSD-3-Clause        https://github.com/protocolbuffers/protobuf
+  typing_extensions  4.16.0     PSF-2.0             https://github.com/python/typing_extensions
+  python-docx        1.1.2      MIT                 https://github.com/python-openxml/python-docx
+  lxml               6.1.1      BSD-3-Clause        https://github.com/lxml/lxml
+  cryptography        44–46      Apache-2.0 OR BSD-3-Clause https://github.com/pyca/cryptography
+  symspellpy         6.10.0     MIT                 https://github.com/mammothb/symspellpy
+  psutil             7.2.2      BSD-3-Clause        https://github.com/giampaolo/psutil
+  pymorphy3          2.0.6      MIT                 https://github.com/no-plagiarism/pymorphy3
+  pymorphy3-dicts-uk 2.4.1.1    MIT (code)           https://github.com/no-plagiarism/pymorphy3-dicts
+
+(PyAutoGUI and its GUI-automation dependencies — PyScreeze, PyGetWindow,
+PyRect, pytweening (permissive), and the GPL PyMsgBox / MouseInfo — were dropped
+with PyAutoGUI's removal from requirements.txt and are excluded in balachky.spec;
+none are imported, so none are bundled. LGPL packages — PySide6 family — are
+listed in section 2.)
+
+NOTE on pymorphy3-dicts-uk: the Python code of this package is MIT-licensed,
+but the Ukrainian dictionary data it ships is licensed separately under
+Creative Commons Attribution-Share Alike 3.0
+(http://creativecommons.org/licenses/by-sa/3.0/), per the package's own
+description on PyPI.
+
+NOTE on ONNX Runtime: onnxruntime.dll statically links additional
+third-party components (abseil, Eigen, re2, protobuf, ONNX, flatbuffers
+and others). The complete upstream attribution file is reproduced at
+licenses\ONNXRuntime-ThirdPartyNotices.txt.
+
+NOTE on PyAudioWPatch: this package (Apache-2.0, © S0D3S) is a MODIFIED
+fork of PyAudio (MIT, © Hubert Pham,
+https://people.csail.mit.edu/hubert/pyaudio/) that adds WASAPI-loopback
+capture, used by the "Нарада" (Meeting) mode for recording system audio.
+The fork ships its own PortAudio v19 build (MIT-style, © Ross Bencina and
+Phil Burk) statically linked into the _portaudiowpatch*.pyd C-extension —
+listed in section 4. Apache-2.0 (fork) — licenses\Apache-2.0.txt; MIT
+(PyAudio base and PortAudio) — licenses\PERMISSIVE-LICENSES.txt. Both
+Apache-2.0 and MIT are GPL-3.0 compatible.
+
+NOTE on Meetily device monitor: the runtime device-disconnect/reconnect
+approach in whisper_core\meeting\capture.py was adapted from the local MIT
+reference clone at reference\meetily\frontend\src-tauri\src\audio\device_monitor.rs
+(Meetily). This implementation is a Python adaptation for sounddevice and
+PyAudioWPatch; it does not copy Rust source text. Meetily is MIT licensed.
+
+
+--------------------------------------------------------------------------
+FILES IN licenses\
+--------------------------------------------------------------------------
+
+  PERMISSIVE-LICENSES.txt    consolidated per-package license texts
+  Apache-2.0.txt             Apache License 2.0
+  LGPL-3.0.txt               GNU LGPL v3 (incorporates GPL v3 by reference)
+  GPL-2.0.txt                GNU GPL v2
+  MPL-2.0.txt                Mozilla Public License 2.0
+  PSF-2.0.txt                Python Software Foundation License stack
+  OFL-1.1.txt                SIL Open Font License 1.1
+  CC-BY-4.0.txt              Creative Commons Attribution 4.0
+  FONT-AWESOME-LICENSE.txt   Font Awesome Free official license notice
+  Intel-OpenMP-EULA.txt      Intel EULA for Developer Tools
+  PyInstaller-COPYING.txt    GPL-2.0 WITH PyInstaller Bootloader-exception
+  ONNXRuntime-ThirdPartyNotices.txt
+                             upstream notices for components statically
+                             linked into onnxruntime.dll
+
+PolyForm Noncommercial License 1.0.0 (the application license): LICENSE file
+in the application root directory; additional permissions in COMMERCIAL-LICENSE.md.
+The bundled FFmpeg build is LGPL (section 1) — no GPL codecs; its LGPL text is in
+licenses\LGPL-3.0.txt.
+
+--------------------------------------------------------------------------
+8. REFERENCE IMPLEMENTATION ACKNOWLEDGEMENT
+--------------------------------------------------------------------------
+
+Meetily (reference repository, consulted for live-transcription architecture)
+  — MIT
+  Upstream: https://github.com/Zackriya-Solutions/meeting-minutes
+  Relevant reference: frontend\src-tauri\src\audio\transcription\worker.rs
+
+Balachky's Python implementation in whisper_core\live.py is an independent
+translation of the architectural ideas: asynchronous transcription workers,
+VAD-delimited audio chunks, partial/final transcript updates, and bounded
+backpressure. No Meetily source code was copied verbatim. Meetily is credited
+because its MIT-licensed implementation informed this feature's design.
+
+sherpa-onnx (1.13.4) — Apache-2.0
+  Upstream: https://github.com/k2-fsa/sherpa-onnx
+  Used for optional offline speaker diarization. License text:
+  licenses\Apache-2.0.txt.
+
+SPEAKER-DIARIZATION MODELS — NOT bundled, downloaded on explicit user request
+  Downloaded from immutable Hugging Face revisions (the resolve URL pins the full
+  commit; exact size and SHA-256 are verified before install).
+  Pyannote segmentation 3.0 ONNX conversion — MIT (Copyright © 2022 CNRS),
+  `model.onnx`, 5,992,913 bytes,
+  sha256 220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079.
+  Source: https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0
+  @ 9403a6902bb58e3d5ae8c7e77c3422de279db2e0 (converted from gated MIT
+  pyannote/segmentation-3.0; the rehost carries only the MIT license — do not
+  imply upstream endorsement).
+  CampPlus speaker embedding — Apache-2.0; 3D-Speaker CampPlus
+  `3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`, 28,281,164 bytes,
+  sha256 aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2.
+  Source: https://huggingface.co/csukuangfj/speaker-embedding-models
+  @ 8be2a75c9ed7a590538b268e46fbb65e1aa9d208; upstream
+  https://github.com/modelscope/3D-Speaker. Apache-2.0 text: licenses\Apache-2.0.txt.
+  These model weights are stored locally in %LOCALAPPDATA%\Balachky\diarization
+  and are not relicensed by this application.
