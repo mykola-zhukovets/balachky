@@ -1,15 +1,15 @@
 # Безпека та звітність про вразливості · Security & Vulnerability Reporting
 
-Цей документ описує політику безпеки проєкту **«Балачки у Коростені» (Balachky)** та порядок приватної звітності про знайдені вразливості.
+Цей документ описує політику безпеки проєкту **"Балачки у Коростені" (Balachky)** та порядок приватної звітності про знайдені вразливості.
 
 This document describes the security policy for **Balachky** and the private disclosure process for security vulnerabilities.
 
 ---
 
-## 🇺🇦 Українською
+## Українською
 
 ### Як повідомити про вразливість
-«Балачки» працюють із приватними аудіозаписами, стенограмами нарад та шифрованим сховищем (AES-256-GCM), тому безпека даних є пріоритетом.
+"Балачки" працюють із приватними аудіозаписами, стенограмами нарад та шифрованим сховищем (AES-256-GCM), тому безпека даних є пріоритетом.
 
 Якщо Ви виявили потенційну вразливість у програмі чи її компонентах, **будь ласка, повідомте про неї приватно**:
 1. Перейдіть на сторінку репозиторію на GitHub.
@@ -20,11 +20,11 @@ This document describes the security policy for **Balachky** and the private dis
 
 ### Чого очікувати (строки та процес)
 - **Первинна відповідь:** проєкт веде одна людина, тож жодних строків не обіцяємо — відповідь надійде, щойно автор зможе.
-- **Оцінка та виправлення:** після підтвердження вразливості автор за можливості оцінить ступінь ризику та опрацює виправлення в майбутніх оновленнях. Це не є гарантійним зобов'язанням: програма надається «як є» (див. `LICENSE`).
+- **Оцінка та виправлення:** після підтвердження вразливості автор за можливості оцінить ступінь ризику та опрацює виправлення в майбутніх оновленнях. Це не є гарантійним зобов'язанням: програма надається "як є" (див. `LICENSE`).
 - **Публічне розкриття:** Після випуску патча деталі оприлюднюються через GitHub Security Advisory за погодженням з автором звіту.
 
 ### Що НЕ вважається вразливістю безпеки
-Оскільки «Балачки» є офлайновим десктопним застосунком, що працює на комп'ютері користувача, до вразливостей **НЕ належать**:
+Оскільки "Балачки" є офлайновим десктопним застосунком, що працює на комп'ютері користувача, до вразливостей **НЕ належать**:
 - Доступ користувача (або процесів із його правами) до власних файлів, даних чи шифрованих сховищ на його власному пристрої (локальна модель загроз передбачає операції в межах прав поточного користувача Windows).
 - Фізичний доступ сторонніх осіб до розблокованого пристрою користувача.
 - Збої у роботі чи помилки інтерфейсу, які не призводять до витоку даних чи виконання довільного коду.
@@ -32,7 +32,7 @@ This document describes the security policy for **Balachky** and the private dis
 
 ---
 
-## 🇬🇧 In English
+## In English
 
 ### Reporting a Vulnerability
 Balachky handles private meeting recordings, dictation transcripts, and encrypted local storage (AES-256-GCM). Data security is a core design choice.
@@ -46,7 +46,7 @@ If you find a security vulnerability, **please report it privately**:
 
 ### Response Timelines & Process
 - **Initial Acknowledgment:** the project is maintained by one person, so no response time is promised — you will hear back as soon as the author can.
-- **Triage & Patching:** once confirmed, the author will assess severity and work on a fix in future updates where possible. This is not a warranty commitment: the software is provided “as is” (see `LICENSE`).
+- **Triage & Patching:** once confirmed, the author will assess severity and work on a fix in future updates where possible. This is not a warranty commitment: the software is provided "as is" (see `LICENSE`).
 - **Disclosure:** After a release containing the fix is published, advisory details are disclosed in coordination with the reporter.
 
 ### Out of Scope (What is NOT a Vulnerability)

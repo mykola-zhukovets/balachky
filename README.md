@@ -1,228 +1,229 @@
-<!-- Мова: Українська · [English](README.en.md) -->
+<a id="використання"></a>
+<p align="center"><strong>English</strong> · <a href="README.uk.md">Українська</a></p>
 
-<!-- LOGO: жук-мікрофон (маскот), ~160px, по центру. Файл: assets/mascot-512.png -->
+<!-- LOGO: beetle-with-microphone mascot, ~160px, centered. File: assets/mascot-512.png -->
 <p align="center">
-  <img src="assets/mascot-512.png" alt="Балачки у Коростені — жук із мікрофоном" width="160">
+  <img src="assets/mascot-512.png" alt="Balachky — a beetle with a microphone" width="160">
 </p>
 
-<h1 align="center">Балачки у Коростені</h1>
+<h1 align="center">Balachky — Chats in Korosten</h1>
 
-<p align="center">Диктування голосом і наради українською. Повністю офлайн. Для Windows.</p>
+<p align="center">Offline dictation and meetings, Ukrainian-first. Fully private. For Windows.</p>
 
-<p align="center"><em>Що сказано в Коростені — лишається в Коростені.</em></p>
+<p align="center"><em>What is said in Korosten stays in Korosten.</em></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/реліз-v1.2.3--beta-1f6feb" alt="Реліз v1.2.3-beta">
-  <img src="https://img.shields.io/badge/платформа-Windows%2010%2F11-6e7681" alt="Windows 10/11">
-  <img src="https://img.shields.io/badge/офлайн-0%20телеметрії-2ea043" alt="Офлайн, без телеметрії">
-  <img src="https://img.shields.io/badge/тести-2602-2ea043" alt="2602 автотести">
-  <img src="https://img.shields.io/badge/ліцензія-PolyForm%20Noncommercial-8957e5" alt="Ліцензія PolyForm Noncommercial">
+  <img src="https://img.shields.io/badge/release-v1.2.3--beta-1f6feb" alt="Release v1.2.3-beta">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10/11">
+  <img src="https://img.shields.io/badge/offline-zero%20telemetry-2ea043" alt="Offline, zero telemetry">
+  <img src="https://img.shields.io/badge/tests-2602-2ea043" alt="2602 automated tests">
+  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-8957e5" alt="PolyForm Noncommercial license">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.3-beta/BalachkySetup-1.2.3-beta-F19111EF.exe"><img src="https://img.shields.io/badge/⬇_Завантажити_бета--реліз-2ea043?style=for-the-badge" alt="Завантажити бета-реліз v1.2.3 для Windows" height="44"></a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.3-beta/BalachkySetup-1.2.3-beta-F19111EF.exe"><img src="https://img.shields.io/badge/Download_the_beta-2ea043?style=for-the-badge" alt="Download the v1.2.3 beta for Windows" height="44"></a>
   <br>
-  <sub>Windows 10/11 (x64) · інсталятор 158,9 МБ · безкоштовно, без реєстрації</sub>
+  <sub>Windows 10/11 (x64) · 158.9 MB installer · free, no account</sub>
 </p>
 
-<!-- ГОЛОВНЕ ЗОБРАЖЕННЯ: зараз живий скрін диктування (docs/screenshots/01-dictation.png); GIF-демо (~10–15 с, 15 fps). Кадр: користувач затискає комбінацію,
-     говорить українською, під курсором у будь-якому полі з'являється готовий текст.
-     Знімати у світлій темі за замовчуванням. Файл: assets/hero.gif -->
+<!-- MAIN IMAGE: currently a live dictation screenshot (docs/screenshots/01-dictation.png); a GIF demo (~10-15 s, 15 fps). Shot: user holds the hotkey, speaks
+     Ukrainian, finished text appears under the cursor in any field. Light theme. File: assets/hero.gif -->
 <p align="center">
-  <img src="docs/screenshots/01-dictation.png" alt="Диктування: голос перетворюється на текст там, де стоїть курсор" width="800">
+  <img src="docs/screenshots/01-dictation.png" alt="Dictation: speech becomes text right where the cursor is" width="800">
 </p>
 
 ---
 
-“Балачки у Коростені” — це програма для Windows, яка перетворює Ваше мовлення на текст у будь-якому полі будь-якої програми і збирає нараду в готовий протокол. Усе розпізнавання відбувається на Вашому комп'ютері: голос і тексти нікуди не надсилаються. Мережа використовується лише за Вашою дією для завантаження моделей, додаткових компонентів і оновлень, а також для перевірки наявності оновлення, якщо Ви її ввімкнули. Українська тут не “одна зі ста мов” у розкривному списку, а головна: інтерфейс, розпізнавання, словники й протоколи.
+Balachky is a Windows app that turns your speech into text in any field of any program and turns meeting recordings into ready-to-use minutes. Recognition happens on your computer: voice and transcripts are not uploaded. The app goes online only for user-requested model, optional component, and update downloads, plus update checks if you enable them. Ukrainian is not "one of a hundred languages" in a dropdown here — it is the main one: interface, recognition, dictionaries, and minutes.
 
-> Це бета-версія: нею вже можна працювати щодня, але окремі дрібниці ще змінюватимуться. Про кожну зміну чесно пишемо в журналі змін (CHANGELOG за SemVer).
+> This is a beta: ready for daily work, but small things will still change. Every change is honestly listed in the changelog (SemVer).
 
-## Чому Балачки?
+"Balachky" (Балачки) is Ukrainian for "chit-chat". Korosten is the town in Ukraine where the app is made — hence the motto.
+
+## Why Balachky?
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🇺🇦 Українська — не другий сорт</h3>
-      <p>Інтерфейс, розпізнавання, словники й протоколи — усе українською, з першого екрана. Це не переклад чужої програми, а інструмент, створений в Україні для українців.</p>
+      <h3>Ukrainian-first, not second-class</h3>
+      <p>Interface, recognition, dictionaries, and minutes — all Ukrainian, from the first screen. Not a translation of someone else's app, but a tool built in Ukraine, for Ukrainians.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🔒 Приватність — це архітектура, а не перемикач</h3>
-      <p>Розпізнавання, протоколи й сховище працюють на Вашому комп'ютері: нуль телеметрії, нуль акаунтів. А журнал мережевої активності дозволяє не вірити нам на слово, а перевірити.</p>
+      <h3>Privacy is architecture, not a toggle</h3>
+      <p>Recognition, minutes, and storage all run on your computer: zero telemetry, zero accounts. And the network activity journal lets you verify instead of taking our word for it.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>🤖 Чесність про межі ШІ</h3>
-      <p>Якщо компонент не встановлений, програма каже “встановіть компонент”, а не показує порожню заглушку. Кнопка “Прослухати” чесно чекає на свій рушій. Бета — значить бета: про все неготове ми кажемо прямо.</p>
+      <h3>Honesty about AI limits</h3>
+      <p>If a component isn't installed, the app says "install the component" instead of showing an empty stub. The "Listen" button clearly states that its engine must be installed first. Beta means beta: everything unfinished is marked as such.</p>
     </td>
     <td width="50%" valign="top">
-      <h3>🆓 Безкоштовно, без підписок</h3>
-      <p>Диктування безкоштовне назавжди — навіть для компаній. “Нарада” безкоштовна на час бети. Жодних акаунтів, карток і “пробних періодів”.</p>
+      <h3>Free, no subscriptions</h3>
+      <p>Dictation is free forever — even for companies. Meetings are free during the beta. No accounts, no cards, no "trial periods".</p>
     </td>
   </tr>
 </table>
 
-## 🎯 Для кого
+## Who it's for
 
-Для всіх, хто багато диктує або записує наради українською. А насамперед — для тих, чиї розмови не можна віддавати в хмару:
+Anyone who dictates a lot or records meetings in Ukrainian. But first of all — those whose conversations cannot go to a cloud:
 
-- **Військові.** Службові наради й рапорти лишаються на пристрої. Є захист від захоплення екрана (вмикається в Налаштуваннях) і кнопка паніки.
-- **Лікарі.** Нотатки прийому й консиліуми не виходять за межі кабінету.
-- **Юристи й адвокати.** Конфіденційні розмови можна тримати зашифрованими; якщо нарада лишилася відкритою, програма чесно покаже банер.
-- **Журналісти.** Запис інтерв'ю не потрапляє на чужі сервери — джерело захищене технічно, а не обіцянкою.
-- **Ті, хто цілий день говорить із ШІ.** Більшість із нас говорить у кілька разів швидше, ніж друкує. Диктуйте запити просто у вікно будь-якого чату — а оскільки “Балачки” працюють офлайн, Ваші чернетки не проходять через ще одну хмару дорогою до моделі.
+- **Military.** Duty meetings and reports stay on the device. Screen-capture protection (enabled in Settings) and a panic button help keep sensitive material private.
+- **Doctors.** Visit notes and consultations never leave the office.
+- **Lawyers.** Confidential conversations can be kept encrypted; if a meeting is left unencrypted, the app honestly shows a banner.
+- **Journalists.** Interview recordings never reach someone else's servers — the source is protected technically, not by a promise.
+- **People who talk to AI all day.** Most of us speak several times faster than we type. Dictate prompts straight into any chat window — and because Balachky is offline, your drafts don't pass through yet another cloud before they reach the model.
 
-Якщо Ви просто не хочете віддавати свій голос у хмару — програма теж для Вас.
+If you simply don't want to hand your voice to a cloud — the app is for you too.
 
-## ✨ Можливості
+## Features
 
-Усе, описане нижче, працює без інтернету — щойно потрібні моделі завантажені.
+Everything below works without the internet, once the models you need are downloaded.
 
-### 🎙️ Диктування
+### Dictation
 
-- **Текст там, де курсор.** Затисніть комбінацію клавіш і говоріть — текст з'являється в будь-якому полі: пошта, месенджер, Word, чат із ШІ. Куди саме вставляти — Ваш вибір: “У вибрану програму” або “Лишати в Балачках”.
-- **Три рівні обробки — одним повзунком.** “Дослівно”, “Без слів-паразитів” або “З пунктуацією”. Дослівний текст завжди цілий в Історії — можна повернутися й звірити.
-- **Переслухати й виправити себе.** Кожне диктування в Історії можна прослухати власним голосом і виправити текст. Оригінал запису лишається недоторканим. Такої функції ми в інших програмах диктування не бачили.
-- **Словник “виправив раз — назавжди”.** Виправили слово один раз — помилка не повторюється. Словники ізольовані між собою: робочий і домашній не засмічують один одного, будь-яке запам'ятовування можна скасувати. А щоденник помилок покаже, які правки повторюються найчастіше, — одна кнопка, і слово в словнику.
-- **Мова на Ваш вибір.** Українська — за замовчуванням. Можна обрати будь-яку з майже сотні мов, які знає модель, або довірити програмі визначити мову самостійно.
-- **Голосом по документах.** Голосове редагування тексту й навігація полями Word і клітинками Excel: “наступне поле”, “наступна клітинка”.
-- **Профіль під вікно.** Програма сама перемикає словник і режим залежно від активного вікна. А щоб текст не потрапив не туди, ціль вставки можна закріпити — і вона захищена від випадковостей.
-- **Гарячі клавіші без сюрпризів.** Натискання обробляються нативно, без клавіатурних гаків. Якщо якась комбінація зайнята системою, програма чесно покаже конфлікт, а не мовчки не спрацює.
+- **Text where the cursor is.** Hold the hotkey and speak — text appears in any field: email, messenger, Word, an AI chat. You choose where it goes: "Into the selected app" or "Keep in Balachky".
+- **Three cleanup levels, one slider.** "Verbatim", "No filler words", or "With punctuation". The verbatim version is always kept intact in History — you can go back and compare.
+- **Re-listen and fix yourself.** Every dictation in History can be replayed in your own voice and corrected. The original recording is never touched. We haven't seen this in any other dictation app.
+- **A dictionary that learns once.** Fix a word once — the mistake never repeats. Dictionaries are isolated: work and home don't pollute each other, and any remembered fix can be undone. An error diary shows which corrections repeat most — one click adds them to the dictionary.
+- **Your choice of language.** Ukrainian by default. Pick any of the ~99 languages the model knows, or let the app detect the language itself.
+- **Navigate documents by voice.** Edit text and move across Word fields and Excel cells with commands such as "next field" and "next cell".
+- **A profile per window.** The app switches dictionary and mode based on the active window. To prevent text from landing in the wrong place, you can pin the insert target.
+- **Hotkeys without surprises.** Native key handling, no keyboard hooks. If a combination is taken by the system, the app honestly shows the conflict instead of silently failing.
 
-### 🤝 Нарада
+### Meetings
 
-“Нарада” — це запис зустрічі, її розшифровка й протокол в одному місці.
+A "Meeting" is a recording, its transcript, and the minutes in one place.
 
-- **Доріжки замість каші.** Ваш голос і голоси співрозмовників пишуться окремими доріжками. У плеєрі кожну доріжку можна вимкнути, зробити тихішою або лишити соло — і слухати все синхронно.
-- **“Хто що сказав”.** Жодне слово не губиться: програма сама розкладає розмову за співрозмовниками — “Спікер 1”, “Спікер 2”, — а Ви підписуєте імена. Кількість спікерів можна задати наперед. Якщо модель діаризації не встановлена, нарада працює у звичайному режимі.
-- **ШІ-протокол — локально.** Підсумок, рішення, завдання з таймкодами й розділи генеруються на Вашому комп'ютері (модель Gemma 4, два розміри на вибір). Експорт у Word, зокрема за статутною формою рапорту.
-  <!-- СКРІН: сторінка "Нарада" — картка наради з розшифровкою за спікерами й кнопкою протоколу. 2x retina, ~1600px -->
-- **Запитання до наради.** “Що ми вирішили про терміни?” — відповідь одразу з клікабельними цитатами-таймкодами: клік — і плеєр на тому місці. Якщо моделі немає, програма чесно скаже “встановіть компонент”, а не покаже порожню заглушку.
-- **Редагування без руйнації.** Грифові фрагменти можна заглушити — лише у вибраній доріжці; інші голоси не чіпаються. Вилучення (redaction) залишає оригінал недоторканим — змінюється лише експортована версія.
-- **Двомовна пам'ять.** Нарада може пам'ятати контекст українською й англійською паралельно.
-- **Відео й екран.** Запис екрана вбудований, а переглядати відео можна просто в програмі: перемотка й швидкість від 0,5× до 2× зі збереженням тону голосу.
-- **Дрібні турботи.** За Вашою згодою назва наради підставляється з локального календаря; нотатки експортуються в Obsidian.
+- **Tracks instead of mush.** Your voice and the other voices are recorded as separate tracks. In the player each track can be muted, turned down, or soloed — all in sync.
+- **"Who said what".** Not a word is lost: the app splits the conversation by speaker — "Speaker 1", "Speaker 2" — and you rename them. The speaker count can be set in advance. If the diarization model isn't installed, the meeting works as usual.
+- **AI minutes — locally.** Summary, decisions, tasks with timecodes, and sections, generated on your machine (Gemma 4, two sizes to choose from). Export to Word — including the statutory report form.
+  <!-- SCREENSHOT: Meeting page — meeting card with per-speaker transcript and the minutes button. 2x retina, ~1600px -->
+- **Ask the meeting.** "What did we decide about deadlines?" — the answer comes with clickable timecode quotes: click, and the player jumps there. If the model is missing, the app honestly says "install the component" instead of showing an empty stub.
+- **Editing without destruction.** Classified fragments can be muted — only in the chosen track; other voices stay untouched. Redaction leaves the original intact — only the exported version is changed.
+- **Bilingual memory.** A meeting can keep context in Ukrainian and English in parallel.
+- **Video and screen.** Built-in screen recording, and a built-in video player: seek and 0.5x-2x speed with voice pitch preserved.
+- **Thoughtful details.** With your consent, the meeting name comes from your local calendar; notes export to Obsidian.
 
-### 🛡️ Приватність і доказовість
+### Privacy and provability
 
-- **Шифрування нарад: AES-256-GCM.** Захист вмикається користувачем. Після завершення запису кожен артефакт наради шифрується окремим ключем; спосіб захисту на Ваш вибір: обліковий запис Windows, пароль, файл-ключ або пароль разом із файлом-ключем. Під час самого запису робочі файли можуть тимчасово лежати на диску відкритими — програма показує стан захисту. Разом із паролем чи файлом-ключем автоматично видається код відновлення.
-  <!-- СКРІН: діалог захисту наради — чотири способи ключа -->
-- **Доказовий пакет для комісії.** Одне натискання — і Ви маєте пакет із окремим скриптом перевірки (verify.py), який не потребує встановлених “Балачок” — лише Python 3 і бібліотеку cryptography. Є підтвердження перегляду другим офіцером (“чотири очі”) й позначка, хто зафіксував матеріал.
-- **Журнал цілісності з підписом.** Записи скріплені ланцюжком контрольних сум, а журнал підписаний ключем Ed25519. Змінений хоча б один рядок — перевірка чесно скаже BROKEN.
-- **Доказова офлайновість.** Вбудований журнал мережевої активності показує завантаження моделей, додаткових компонентів, оновлень і дозволені перевірки оновлень. До нього — довідка, як перевірити трафік незалежно, сторонніми засобами.
-- **Захист у полі.** Вікно програми не потрапляє на скріншоти й у програми захоплення екрана, якщо увімкнути цей захист у Налаштуваннях (за умовчанням вимкнений) — його забезпечує системний прапорець `WDA_EXCLUDEFROMCAPTURE`. Завжди, без перемикачів: програма чистить за собою буфер обміну й виключена зі стандартних звітів Windows про помилки. Кнопка паніки (комбінацію Ви призначаєте самі в Налаштуваннях) знищує розшифровані копії наради, скидає кеш паролів сховища, чистить буфер обміну й згортає вікно програми.
-- **Пам'ять голосів — лише за згодою.** Програма вміє впізнавати постійних співрозмовників, але запам'ятовує голос тільки після Вашого явного дозволу.
+- **Meeting encryption: AES-256-GCM.** Encryption is optional and user-controlled. After recording ends, each meeting artifact is encrypted with a separate key. You can protect each meeting with your Windows account, a password, a key file, or both a password and a key file. Working files may temporarily remain unencrypted on disk while a meeting is being recorded, and the app shows the current protection state. A recovery code is issued with password- or key-file-based protection.
+  <!-- SCREENSHOT: meeting protection dialog — the four key options -->
+- **Evidence package for a commission.** One click builds a package with a standalone verifier (verify.py) that runs on a clean machine, without installing Balachky — all it needs is Python 3 and the cryptography library. It includes confirmation that a second officer viewed the material ("four eyes") and a record of who captured it.
+- **Signed integrity journal.** Entries are chained by hashes; the journal is Ed25519-signed. Change a single line — and verification honestly says BROKEN.
+- **Provable offline.** A built-in network activity journal shows model, optional component, and update downloads, plus update checks you allow. It comes with a guide on how to verify traffic independently with third-party tools.
+- **Field protection.** The app window never lands in screenshots or capture tools if you enable this protection in Settings (off by default) — enforced by the Windows `WDA_EXCLUDEFROMCAPTURE` flag. Always on, no toggle needed: the clipboard is cleaned up, and the app is excluded from Windows error reports. A panic button (you assign the combination yourself in Settings) destroys decrypted meeting copies, resets the vault password cache, clears the clipboard, and minimizes the app window.
+- **Voice memory — only with consent.** The app can recognize regular interlocutors, but remembers a voice only after your explicit permission.
 
-### 🔊 Озвучення (“Прослухати”)
+### Read-aloud ("Listen")
 
-- Кнопка “Прослухати” уже є в інтерфейсі — нею текст диктування чи наради можна буде озвучити голосом.
-- У білді 1.2.3 рушія озвучення ще немає: він потребує окремої збірки й надійде одним із наступних оновлень — так само офлайн. Ми радше чесно покажемо кнопку, що “ще їде”, ніж вдамо, ніби все готово.
+- The "Listen" button is already in the interface — it will read dictation or meeting text aloud.
+- Build 1.2.3 doesn't include the speech engine yet: it needs a separate build and will arrive in a later update — offline like everything else. We'd rather honestly show a button that's "on its way" than pretend it's done.
 
-### ⚙️ Для тих, хто автоматизує
+### For those who automate
 
-- **Командний рядок.** Розпізнавання, словник, історія й експорт доступні з CLI зі структурованим виводом (--json) — для скриптів і власних інтеграцій.
-- **MCP-сервер.** “Балачки” вміють бути інструментом для ШІ-агентів: transcribe, search, dictionary, export, protocol. Агент працює лише в межах даних програми. Працює лише для тих, хто запускає програму з джерел, — у готовому інсталяторі ще не увімкнено. Деталі — [docs/MCP-SERVER.md](docs/MCP-SERVER.md).
+- **Command line.** Transcription, dictionary, history, and export via CLI with structured output (--json) — for scripts and your own integrations.
+- **MCP server.** Balachky can act as a toolset for AI agents. It provides AI agents with transcription, search, dictionary management, exports, and meeting-minutes tools. The agent is confined to the app's data. This works only if you run the app from source — it is not yet enabled in the packaged installer. Details: [docs/MCP-SERVER.md](docs/MCP-SERVER.md).
 
-### 🪄 Дрібниці, до яких звикаєш
+### Little things you get used to
 
-- **Центр керування моделями** у Налаштуваннях: усі моделі програми в одному місці — розпізнавання мовлення, голоси співрозмовників, ШІ-протокол, пунктуація й майбутнє озвучення. Видно розмір кожної моделі, чи вона вже завантажена і яка зараз активна, а також скільки місця вони займають разом.
-- **Тло робочої зони — на Ваш вибір:** фірмовий жук-маскот, однотонний колір або власна картинка (PNG, JPG чи WEBP до 20 МБ).
-- **Модель сама звільняє пам'ять.** Якщо Ви не диктуєте певний час (наприклад, 10 хвилин), програма вивантажує модель із відеопам'яті — і відеокарта вільна для інших завдань. Наступний запис підвантажить модель назад, нічого натискати не треба.
-- Скляні панелі, тло-візерунок із жуком і мікрофонами, анімований жук на заставці.
-- Автооновлення з перевіркою контрольної суми: кнопка “Оновити зараз” й огляд “Що нового”.
-- Хаб “Про програму” відкривається кліком на шапці сайдбара: версія й номер збірки, довідка, ліцензії третіх сторін, звіт про проблему.
-- Перенесення профілю на інший комп'ютер — одним файлом.
+- **A model control center** in Settings: every model in one place — speech recognition, speaker voices, AI minutes, punctuation, and the upcoming read-aloud. You see each model's size, whether it is already downloaded, which one is active, and how much disk space they take together.
+- **Workspace background — your choice:** the beetle mascot, a solid color, or your own image (PNG, JPG, or WEBP up to 20 MB).
+- **The model frees memory by itself.** If you don't dictate for a while (10 minutes, say), the app unloads the model from video memory — the graphics card is free for other work. Your next recording loads it back, with nothing to press.
+- Glass panels, a beetle-and-microphones background pattern, an animated beetle on the splash screen.
+- Self-update with checksum verification: an "Update now" button and a "What's new" list.
+- An "About" hub via the sidebar header: version and build number, help, third-party licenses, problem reporting.
+- Move your profile to another machine as a single file.
 
-## 🚀 Швидкий старт
+<a id="usage"></a>
 
-**Системні вимоги:** Windows 10/11 (x64), 8 ГБ RAM (16 ГБ рекомендовано для нарад) і вільне місце під те, чим користуєтесь: інсталятор — 158,9 МБ, модель розпізнавання “Швидка” — близько 1,6 ГБ, модель ШІ-протоколу Gemma — близько 5 ГБ (потрібна лише для протоколів наради). Тобто для самого диктування вистачить приблизно 2 ГБ.
+## Quick start
 
-1. Завантажте `BalachkySetup-1.2.3-beta-F19111EF.exe` зі сторінки [v1.2.3-beta](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta). Префікс контрольної суми — одразу в назві файла, щоб збірку було легко впізнати.
-2. За бажанням звірте SHA-256 із сумою, опублікованою біля випуску:
+**System requirements:** Windows 10/11 (x64), 8 GB RAM (16 GB recommended for meetings), and free space for whatever you use: the installer is 158.9 MB, the "Fast" speech model about 1.6 GB, and the Gemma AI-minutes model about 5 GB (needed only for meeting minutes). So dictation alone fits in roughly 2 GB.
+
+1. Download `BalachkySetup-1.2.3-beta-F19111EF.exe` from the [v1.2.3-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta). The checksum prefix is right in the file name, so the build is easy to recognize.
+2. Optionally verify the SHA-256 against the sum published with the release:
    `F19111EFC61FBA327148E1AC29AFB339E838556663FF73300290DCC6B5D7082F`
-   (у PowerShell: `Get-FileHash`).
-3. Запустіть інсталятор.
-4. Майстер першого запуску завантажить обрану мовну модель. **Це від 1,6 ГБ і потрібен інтернет** — саме тут, один раз. Далі програма працює офлайн. Модель ШІ-протоколу нарад (близько 5 ГБ) якщо треба, качається окремо й пізніше.
-5. Затисніть **Ctrl + Shift + Пробіл** і говоріть — текст з'явиться там, де стоїть курсор. Комбінацію можна змінити в Налаштуваннях.
-6. Щоб записати нараду, відкрийте вкладку “Нарада” і натисніть “Почати запис”. Після зупинки отримаєте розшифровку, а далі — протокол однією кнопкою.
+   (in PowerShell: `Get-FileHash`).
+3. Run the installer.
+4. The first-run wizard downloads the chosen speech model. **This one-time download is 1.6 GB or more and requires an internet connection.** After that the app works offline. The meeting-minutes model (about 5 GB) is a separate, later download if you want it.
+5. Hold **Ctrl + Shift + Space** and speak — text appears where the cursor is. You can change the shortcut in Settings.
+6. To record a meeting, open the "Meeting" tab and press "Start recording". Stop it — get the transcript, then build the minutes with one button.
 
-> **Якщо Windows покаже “Невідомий видавець”.** Інсталятор бети поки без цифрового підпису — сертифікат коштує сотні доларів на рік, а програма безкоштовна. Для нової програми це нормально. Натисніть “Детальніше” → “Виконати попри це”. Покрокова інструкція — [docs/INSTALL-SMARTSCREEN.md](docs/INSTALL-SMARTSCREEN.md). Підпис з'явиться пізніше.
+> **If Windows shows "Unknown publisher".** The beta installer is not digitally signed yet — a certificate costs hundreds of dollars a year, and the app is free. For a new app this is normal. Click "More info" → "Run anyway". Step-by-step guide: [docs/INSTALL-SMARTSCREEN.md](docs/INSTALL-SMARTSCREEN.md). Signing will come later.
 
-Перевірка VirusTotal для цього точного файла: [0/65 виявлень](https://www.virustotal.com/gui/file/f19111efc61fba327148e1ac29afb339e838556663ff73300290dcc6b5d7082f/detection). Результат сканування є додатковою перевіркою, а не заміною звіряння SHA-256.
+VirusTotal result for this exact file: [0/65 detections](https://www.virustotal.com/gui/file/f19111efc61fba327148e1ac29afb339e838556663ff73300290dcc6b5d7082f/detection). This scan is an additional signal, not a substitute for verifying the SHA-256.
 
-## ❓ Питання і відповіді
+## FAQ
 
-**Програма справді працює без інтернету?**
-Так. Розпізнавання, протоколи, словники й сховище працюють локально. Мережа потрібна для завантаження вибраних Вами моделей, додаткових компонентів і оновлень, а також для дозволеної Вами перевірки оновлень. У Налаштуваннях є журнал мережевої активності й довідка, як перевірити трафік незалежно.
+**Does the app really work offline?**
+Yes. Recognition, minutes, dictionaries, and storage work locally. The network is used for models, optional components, and updates you choose to download, plus update checks if you enable them. Settings contain a network activity journal and a guide for independent traffic verification.
 
-**Чому Windows або антивірус попереджає під час встановлення?**
-Інсталятор бети поки не має цифрового підпису: сертифікат видавця коштує сотні доларів щороку, а програма безкоштовна. Тому SmartScreen показує “Невідомий видавець”, а деякі антивіруси обережно реагують на нові непідписані програми. Це очікувано і не означає шкідливого коду. Щоб упевнитися, звірте SHA-256 інсталятора з сумою біля релізу, а далі — “Детальніше” → “Виконати попри це”. Покроково: [docs/INSTALL-SMARTSCREEN.md](docs/INSTALL-SMARTSCREEN.md). Підпис з'явиться згодом.
+**Why does Windows or my antivirus warn during install?**
+The beta installer has no digital signature yet: a publisher certificate costs hundreds of dollars a year, and the app is free. So SmartScreen shows "Unknown publisher", and some antiviruses react cautiously to new unsigned programs. This is expected and not a sign of malicious code. To be sure, check the installer's SHA-256 against the sum published with the release, then click "More info" → "Run anyway". Step by step: [docs/INSTALL-SMARTSCREEN.md](docs/INSTALL-SMARTSCREEN.md). Signing will come later.
 
-**Чи потрібна відеокарта?**
-Ні. Розпізнавання мови працює на звичайному процесорі. Відеокарта NVIDIA лише пришвидшить ШІ-протоколи нарад — рекомендована, але не обов'язкова.
+**Do I need a graphics card?**
+No. Speech recognition runs on an ordinary CPU. An NVIDIA card only speeds up AI meeting minutes — recommended, not required.
 
-**Скільки це коштує?**
-Нічого — це безкоштовна бета. Далі так: диктування лишиться безкоштовним назавжди, навіть для комерційного використання. “Нарада” безкоштовна на час бети; про умови після бети оголосимо завчасно.
+**How much does it cost?**
+Nothing — this is a free beta. Going forward: dictation stays free forever, including commercial use. Meetings are free during the beta; terms after the beta will be announced in advance.
 
-**Які мови підтримуються?**
-Інтерфейс — українською та англійською. Розпізнавання — українська за замовчуванням; за бажанням — будь-яка з майже сотні мов, які знає модель, або автоматичне визначення.
+**Which languages are supported?**
+The interface — Ukrainian and English. Recognition — Ukrainian by default; optionally any of the ~99 languages the model knows, or automatic detection.
 
-**Кнопка “Прослухати” не озвучує текст. Це помилка?**
-Ні. Кнопку ми вже додали в інтерфейс, а рушій озвучення ще не постачається з інсталятором — він потребує окремої збірки й надійде одним із наступних оновлень. Ми вважаємо: краще видно, що функція “ще їде”, ніж приховати її.
+**The "Listen" button doesn't read anything aloud. Is it a bug?**
+No. The button is already in the interface, but the speech engine doesn't ship with the installer yet — it needs a separate build and will arrive in a later update. We think it's better to show that a feature is "on its way" than to hide it.
 
-**Що таке доказовий пакет і як його використовувати?**
-Для кожної наради ведеться ланцюг цілісності: записи скріплені контрольними сумами й підписані ключем Ed25519. Одне натискання кнопки — і Ви отримуєте zip-архів із розшифровкою, метаданими й окремою програмою перевірки verify.py. Вона запускається на чистому комп'ютері, без встановлення “Балачок”, — тож перевірити матеріал може й людина, яка програмою не користується. Якщо змінено хоча б один рядок, перевірка чесно скаже BROKEN.
+**What is an evidence package and how do I use it?**
+Every meeting keeps an integrity chain: entries are hash-linked and Ed25519-signed. One click gives you a zip archive with the transcript, metadata, and a standalone verifier, verify.py. It runs on a clean machine without installing Balachky — so even someone who doesn't use the app can check the material. If a single line is changed, verification honestly says BROKEN.
 
-**Як повідомити про помилку або запропонувати ідею?**
-У програмі: натисніть шапку сайдбара → “Про програму” → “Повідомити про проблему”. На GitHub — вкладка Issues. Номер збірки видно внизу сайдбара — додайте його до звіту, це дуже допомагає.
+**How do I report a bug or suggest an idea?**
+In the app: click the sidebar header → "About" → "Report a problem". On GitHub — the Issues tab. The build number is shown at the bottom of the sidebar — include it in your report, it helps a lot.
 
-## 🔒 Приватність
+## Privacy
 
-Приватність тут не перемикач у налаштуваннях, а спосіб, яким програма влаштована. Нижче — конкретно, що це означає.
+Privacy here is not a toggle in settings — it's how the app is built. Below is what that means, concretely.
 
-**Що куди надсилається.** Голос, розшифровки, ШІ-протоколи, словники й історія нікуди не надсилаються: усе це обробляється локально. У програмі немає телеметрії, аналітики чи реклами, і для роботи не потрібен акаунт. Мережеві дії нижче можна перевірити у вбудованому журналі та сторонніми засобами.
+**What is sent where.** Speech, transcripts, AI minutes, dictionaries, and history are not uploaded; they are processed locally. The app has no telemetry, analytics, or ads, and no account is needed. The network actions below can be checked in the built-in journal and with third-party tools.
 
-**Єдині винятки — за Вашою командою:**
+**The only exceptions — on your command:**
 
-| Коли програма виходить у мережу | Навіщо |
+| When the app goes online | Why |
 |---|---|
-| Завантаження мовної моделі | Під час першого запуску і щоразу, коли Ви оберете іншу модель |
-| Завантаження додаткового компонента або голосового пакета | Лише коли Ви натиснете завантажити відповідну можливість |
-| Перевірка наявності оновлення | Якщо Ви дозволили цю перевірку в налаштуваннях |
-| Завантаження нової версії програми | Коли Ви вирішите оновитися; файл перевіряється за контрольною сумою |
+| Downloading a speech model | During first-run setup, and whenever you pick another model |
+| Downloading an optional component or voice package | Only when you request that feature |
+| Checking whether an update exists | If you enable update checks |
+| Downloading an app update | When you decide to update; the file is checksum-verified |
 
-Кожне таке з'єднання видно в журналі мережевої активності.
+Every such connection is visible in the network activity journal.
 
-**Шифрування нарад.** Це додатковий захист, який вмикає користувач. Після завершення запису кожен артефакт наради шифрується окремим ключем (AES-256-GCM, ключі виводяться через HKDF; з пароля — через scrypt із великою вартістю перебору, 2^17). Де лежить головний ключ — Ваш вибір: обліковий запис Windows (системний захист DPAPI), пароль, файл-ключ або пароль разом із файлом-ключем. Під час запису робочі файли можуть тимчасово зберігатися відкритими; стан захисту видно в інтерфейсі. Разом із паролем чи файлом-ключем видається код відновлення. Як повідомити про знайдену вразливість — [SECURITY.md](SECURITY.md).
+**Meeting encryption.** This is optional protection enabled by the user. After recording ends, each meeting artifact is encrypted with its own key (AES-256-GCM, keys derived via HKDF; from a password — via scrypt with a high work factor, 2^17). The master key can be protected by your Windows account (DPAPI), a password, a key file, or a password plus key file. Working files may temporarily remain unencrypted while recording; the current protection state is visible in the interface. Password- and key-file-based protection includes a recovery code. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-**Чесність про стан захисту.** Під час запису програма показує, коли дані ще не зашифровані, а не вдає, що все захищено. Якщо щось іде не так — відновлення чи конфігурація, — вона зупиняється, а не продовжує працювати “як-небудь”. Незашифровані наради позначені помітним банером.
+**Honesty about protection status.** During recording, the app shows when data is not yet encrypted instead of pretending everything is protected. If recovery or configuration fails, the app stops rather than continuing in an uncertain state. Unencrypted meetings are marked with a visible banner.
 
-**Цілісність і докази.** Кожна нарада має журнал цілісності: записи скріплені ланцюжком хешів, журнал підписаний ключем Ed25519, а змінений рядок дає статус BROKEN. Для комісій є доказовий пакет із самостійною програмою перевірки (verify.py) — вона працює без встановлення “Балачок”, тож перевірити матеріал може й той, хто програмою не користується. Передбачені підтвердження перегляду другим офіцером і відмітка, хто зафіксував матеріал.
+**Integrity and evidence.** Every meeting has an integrity journal: entries are hash-chained, the journal is Ed25519-signed, and a changed line yields status BROKEN. For commissions there is an evidence package with a standalone verifier (verify.py) — it runs without installing Balachky, so the material can be checked even by someone who doesn't use the app. Second-officer viewing confirmation and a record of who captured the material are built in.
 
-**Захист у полі.** Вікно програми стає невидимим для скріншотів і захоплення екрана, якщо увімкнути цей захист у Налаштуваннях (за умовчанням вимкнений) — його забезпечує системний прапорець Windows `WDA_EXCLUDEFROMCAPTURE`, а не власні хитрощі. Завжди, без перемикачів: програма чистить за собою буфер обміну; вона виключена зі стандартних звітів Windows про помилки, щоб фрагменти Ваших даних не потрапили в чужий звіт. Кнопка паніки — комбінацію Ви призначаєте самі в Налаштуваннях, наприклад `Ctrl+Alt+Shift+X` — знищує розшифровані копії наради, скидає кеш паролів сховища, чистить буфер обміну й згортає вікно програми.
+**Field protection.** The app window becomes invisible to screenshots and screen capture if you enable this protection in Settings (off by default) — guaranteed by the Windows `WDA_EXCLUDEFROMCAPTURE` flag, not by homegrown tricks. Always on, no toggle needed: the clipboard is cleaned up; the app is excluded from standard Windows error reports so fragments of your data don't end up in someone else's report. A panic button — you assign the combination yourself in Settings, for example `Ctrl+Alt+Shift+X` — destroys decrypted meeting copies, resets the vault password cache, clears the clipboard, and minimizes the app window.
 
-**Згода.** Пам'ять голосів співрозмовників вмикається лише за явним дозволом; назви нарад із календаря — теж за Вашою згодою. Усе, що програма запам'ятовує, лежить на Вашому диску.
+**Consent.** Voice memory of interlocutors is enabled only with explicit permission; meeting names from the calendar — also with your consent. Everything the app remembers lives on your disk.
 
-**Де саме лежать Ваші дані і як їх видалити.** Окрема сторінка простою мовою: які папки створює програма, що в них, що і коли йде в мережу, як прибрати все до останнього файла — [docs/DATA-PRIVACY.md](docs/DATA-PRIVACY.md).
+**Where exactly your data lives and how to delete it.** A separate plain-language page: which folders the app creates, what is inside them, what goes online and when, and how to remove everything down to the last file — [docs/DATA-PRIVACY.md](docs/DATA-PRIVACY.md) (in Ukrainian).
 
-## 📜 Ліцензія
+## License
 
-Вихідний код “Балачок” доступний для перегляду за [PolyForm Noncommercial](LICENSE). Це **source-available ліцензія, а не ліцензія open source за визначенням OSI**: некомерційне використання безкоштовне для всіх — окремих людей, шкіл, лікарень, держустанов і Збройних Сил; платні клони й перепродаж коду заборонені.
+Balachky's source code is available under [PolyForm Noncommercial](LICENSE). This is a **source-available license, not an OSI-approved open-source license**: noncommercial use is free for individuals, schools, hospitals, government bodies, and the Armed Forces; paid clones and code resale are forbidden.
 
-Для комерційного використання діють окремі дозволи (деталі — у файлі [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)):
+Separate commercial permissions apply (details in [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)):
 
-- **Диктування — безкоштовне назавжди**, включно з компаніями.
-- **“Нарада” — безкоштовна на час бети** (і ще 30 днів після виходу стабільної версії). Про умови після бети оголосимо завчасно; диктування це не стосується ніколи. Усі протоколи, розшифровки й записи, створені під час бети, залишаться Вашими — доступними для читання й експорту безкоштовно назавжди, які б умови не діяли потім.
-- **Озвучення голосом — тільки для некомерційних потреб.** Комерційний дозвіл покриває програму й розпізнавання мовлення; майбутній рушій озвучення до нього не входить, бо одна з його складових поширюється за некомерційною ліцензією CC BY-NC 4.0.
+- **Dictation — free forever**, including for companies.
+- **Meetings — free during the beta** (and for 30 more days after the stable release). Post-beta terms will be announced in advance; these terms never apply to dictation. Everything you create during the beta — minutes, transcripts, recordings — stays yours, readable and exportable free of charge forever, whatever the terms become later.
+- **Read-aloud — for noncommercial use only.** The commercial permission covers the app and speech recognition; the upcoming read-aloud engine is not included, because one of its components is licensed under the noncommercial CC BY-NC 4.0.
 
-Звукова частина побудована на FFmpeg за LGPL, без GPL-кодеків (x264/x265), — юридично чисто для розповсюдження. Ліцензії третіх сторін — у програмі (“Про програму”) та у файлі [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+The audio part is built on FFmpeg under LGPL, without GPL codecs (x264/x265) — legally clean to distribute. Third-party licenses are in the app ("About") and in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
-## 💛 Підтримати проєкт
+## Support the project
 
-Найкраща допомога зараз — спробувати програму й розповісти, що не так: “Про програму” → “Повідомити про проблему” або [Issues](https://github.com/mykola-zhukovets/balachky/issues). А якщо все так — розкажіть про “Балачки” тим, кому вони потрібні. У розділі “Про автора” є кнопка “Підтримати”.
+The best help right now is to try the app and tell us what's wrong: "About" → "Report a problem", or [Issues](https://github.com/mykola-zhukovets/balachky/issues). If you like the app, tell someone who could benefit from Balachky. The "About the author" section has a "Support" button.
 
-<p align="center"><sub>Зроблено в Коростені, Україна. 🐞</sub></p>
-
-
-
+<p align="center"><sub>Made in Korosten, Ukraine.</sub></p>

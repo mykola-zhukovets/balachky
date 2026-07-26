@@ -63,8 +63,9 @@ datas = [
                                                # голосом (paths.bundled_templates_dir)
     ("THIRD-PARTY-NOTICES.txt", "."),          # ліцензійні зобовʼязання GPL/LGPL/CC-BY
     ("licenses", "licenses"),                  # повні тексти сторонніх ліцензій
-    ("README.md", "."),                        # довідка укр. (paths.bundled_doc)
-    ("README.en.md", "."),                     # довідка англ. (paths.bundled_doc)
+    ("README.uk.md", "."),                     # довідка укр. (paths.bundled_doc)
+    ("README.md", "."),                        # довідка англ. (paths.bundled_doc)
+    ("README.en.md", "."),                     # сумісність зі старими посиланнями
     ("scripts/verify.py", "scripts"),          # feature/evidence-plus: незалежний
                                                # перевіряч у доказовому пакеті
                                                # (evidence.verifier_source сягає sys._MEIPASS)
