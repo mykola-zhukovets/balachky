@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.3-beta] - 2026-07-25
 
-**Інсталятор / Installer:** `BalachkySetup-1.2.3-beta-999594BC.exe` (165 МБ / 165 MB)  
-**SHA-256:** `999594BCCD62E7F47E131CC8343247802BC33C19A45F9B207BBE571AE21DB548`
+**Інсталятор / Installer:** `BalachkySetup-1.2.3-beta-F19111EF.exe` (158,9 МБ / 158.9 MB; 166 573 976 байтів / bytes)
+**SHA-256:** `F19111EFC61FBA327148E1AC29AFB339E838556663FF73300290DCC6B5D7082F`
 
 ### Added
 
