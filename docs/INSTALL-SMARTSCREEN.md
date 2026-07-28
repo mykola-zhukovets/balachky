@@ -2,13 +2,15 @@
 
 **English** · [Українська](#українська)
 
-## Why Windows shows this warning
+## English
+
+### Why Windows shows this warning
 
 The Balachky v1.2.3-beta installer is not digitally signed. Windows SmartScreen may therefore show “Windows protected your PC” and identify the publisher as unknown.
 
 This warning means that Windows cannot verify a trusted publisher signature for this file. It does not, by itself, prove that the installer is harmful or safe.
 
-## Before you continue
+### Before you continue
 
 Only use the installer from the [official Balachky v1.2.3-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta):
 
@@ -38,7 +40,7 @@ A matching SHA-256 means that the downloaded bytes match the file identified by 
 
 The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/f19111efc61fba327148e1ac29afb339e838556663ff73300290dcc6b5d7082f/detection) for this exact file. This is additional information, not a safety guarantee.
 
-## Run the installer
+### Run the installer
 
 Continue only if you intended to install Balachky and are satisfied that you downloaded the expected file.
 

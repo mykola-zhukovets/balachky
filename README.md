@@ -29,11 +29,7 @@ Balachky keeps recording and speech recognition on your computer. Once you have 
 
 **100 speech-recognition languages in v1.2.3-beta · Automatic language detection · Interface in English and Ukrainian**
 
-<p align="center">
-  <img src="docs/screenshots/03-meeting-en.png" alt="Meetings page in Balachky with local recording controls" width="820">
-  <br>
-  <sub>Record a meeting, transcribe it, and review the result in one place.</sub>
-</p>
+<a id="usage"></a>
 
 ## Meetings
 
