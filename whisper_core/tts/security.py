@@ -204,7 +204,7 @@ def check_onnx_external_data(onnx_path, pack_root) -> None:
                             "tts_voice_custom_invalid",
                             f"ONNX external-data за межами pack: {ext.value}")
     except ImportError:
-        # FAIL-CLOSED (ревізія Sol): без onnx-lib не можемо прочитати внутрішні
+        # FAIL-CLOSED (ревізія): без onnx-lib не можемо прочитати внутрішні
         # external-data посилання. Якщо поруч є докази external-data (.data/.onnx_data/
         # .bin, які не самодостатня модель), відхиляємо — не можемо гарантувати межі.
         parent = Path(onnx_path).parent

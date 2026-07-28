@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FEATURES = ("02-files", "03-meeting", "04-screen", "05-history", "06-vocab", "07-settings")
+FEATURES = ("01-dictation", "02-files")
 
 
 def _image_sources(readme_name: str) -> set[str]:

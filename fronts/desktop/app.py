@@ -522,7 +522,7 @@ def _warn_audit_corrupt(session_dir_or_id=None) -> None:
 def _cleanup_stale_tts_temps() -> int:
     """feature/tts-listen (§8.9): crash-recovery plaintext-аудіо озвучення на старті.
     На старті активної озвучки НЕМАЄ, тож прибираємо ВСІ balachky-tts-plain-* (age=0)
-    — не лишаємо свіжий crash-temp конфіденційного аудіо на годину (ревізія Sol).
+    — не лишаємо свіжий crash-temp конфіденційного аудіо на годину (ревізія).
     ЄДИНЕ джерело логіки — plaintext_temp.cleanup_stale."""
     from whisper_core.tts import plaintext_temp
     return plaintext_temp.cleanup_stale(max_age_seconds=0)

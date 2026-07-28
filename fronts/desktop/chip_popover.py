@@ -1,4 +1,4 @@
-"""Т47/Т48 — компактний чіп + скляний попап (ідіома Effort-чіпа Claude Code).
+"""Т47/Т48 — компактний чіп + скляний попап.
 
 Замість смуги-контрола на всю ширину сторінки — маленький чіп із поточним
 значенням; клік відкриває скляну картку-попап (``Qt.Popup``: сама закривається
@@ -21,7 +21,7 @@ from .glass import GlassButton
 from .i18n import tr
 
 
-# Вигляд слайдера в попапах — «як у Claude» (вибір Миколи 23.07): ледь помітна
+# Вигляд слайдера в попапах: ледь помітна
 # доріжка 2px, дискретні зупинки — крапки, ручка-ПІГУЛКА ~22×14 акцентна;
 # пройдена частина НЕ заливається (sub-page = тон доріжки).
 _HANDLE_W = 22
@@ -59,7 +59,7 @@ def _focus_ring_color(palette: dict | None = None) -> str:
 
 
 class _ChipSlider(QSlider):
-    """Горизонтальний слайдер попапа «як у Claude»: ледь помітна доріжка, ручка-
+    """Горизонтальний слайдер попапа: ледь помітна доріжка, ручка-
     пігулка, дискретні зупинки — намальовані крапки. Перефарбовується на живому
     day↔night свопі через register_restyle (QSS + крапки читають палітру наживо)."""
 
@@ -114,7 +114,7 @@ class _ChipSlider(QSlider):
 
 
 def make_slider(stops: int = 0) -> _ChipSlider:
-    """Слайдер попапа «як у Claude». ``stops`` >= 2 → дискретні зупинки з крапками
+    """Слайдер попапа. ``stops`` >= 2 → дискретні зупинки з крапками
     (обробка); 0 → безперервний (FPS)."""
     return _ChipSlider(stops)
 
@@ -182,7 +182,7 @@ class ValueSliderChip(QWidget):
         self._chip.setAccessibleName(tr(name_key))
         self._chip.clicked.connect(self._open)
 
-        self._slider = make_slider(stops=0)     # безперервний (FPS), стиль «як у Claude»
+        self._slider = make_slider(stops=0)     # безперервний (FPS)
         self._slider.setRange(minimum, maximum)
         self._slider.setValue(self._value)
         self._slider.setSingleStep(1)

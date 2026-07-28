@@ -869,7 +869,7 @@ class DiarizationDownloadWorkerTests(unittest.TestCase):
 
 
 class MeetingScreenRecordToggleTests(unittest.TestCase):
-    """Sol-фікс 1: до цього meeting_screen_enabled НЕ вмикав ЖОДЕН продакшн-UI
+    """Виправлення 1: до цього meeting_screen_enabled НЕ вмикав ЖОДЕН продакшн-UI
     (лише тест-фейки), тож відео наради лишалось недосяжним для нового профілю.
     Тепер чекбокс «Записувати екран під час наради» у налаштуваннях наради
     вмикає його через контролер set_meeting_screen_enabled."""
@@ -1072,7 +1072,7 @@ class ModelCardDestructiveTests(unittest.TestCase):
         self.assertEqual(opened, [])
 
     def test_redownload_staged_replaces_without_deleting_on_yes(self):
-        """Sol-фікс 2: «Так» НЕ стирає старий файл наперед — запускає staged-докачку
+        """Виправлення 2: «Так» НЕ стирає старий файл наперед — запускає staged-докачку
         (force=True), яка підмінить модель лише ПІСЛЯ успіху. Другого consent нема."""
         from fronts.desktop.pages import meeting as mp
         from whisper_core.protocol import model_manager as mm

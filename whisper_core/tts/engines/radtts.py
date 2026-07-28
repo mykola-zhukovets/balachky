@@ -204,7 +204,7 @@ def _proportional_phoneme_to_word(text: str, n_tokens: int) -> list:
     """Best-effort token→індекс-слова (§8.2): tts_uk не дає прямого мапінгу, тож
     розкладаємо n_tokens по словах пропорційно довжині слова (кадри йдуть по фонемах,
     фонем ≈ довжині слова). КАНАРКА: точність доводить golden на build stage з реальним
-    рушієм; без мапінгу караоке RAD-TTS взагалі не працювало б (ревізія Sol §8.1)."""
+    рушієм; без мапінгу караоке RAD-TTS взагалі не працювало б (ревізія §8.1)."""
     import re
     words = re.findall(r"\S+", text or "")
     if not words or n_tokens <= 0:

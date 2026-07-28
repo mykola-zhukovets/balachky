@@ -109,7 +109,7 @@ class TestDownloadInstall(unittest.TestCase):
 
 
 class TestForcedRedownload(unittest.TestCase):
-    """Sol-фікс 2: «Завантажити заново» = staged-заміна. force=True докачує
+    """Виправлення 2: «Завантажити заново» = staged-заміна. force=True докачує
     свіжий файл у stage й атомарно підміняє — старий ЖИВИЙ, доки нова версія не
     завантажилась повністю; скасування/збій = старий файл лишається на місці."""
 

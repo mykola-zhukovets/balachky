@@ -123,7 +123,7 @@ def apply_first_chunk_cap_spans(chunks: list,
 def apply_first_chunk_cap(sentences: list, max_words: int = FIRST_CHUNK_MAX_WORDS) -> list:
     """Якщо перше «речення» довге (суцільний абзац без крапки), ріжемо ПЕРШИЙ чанк
     по м'якій межі (кома/двокрапка/N слів), щоб перший звук лишався < 0.5 c навіть
-    на довгому вступі (§3.2, Sol-умова cap 8-12 слів)."""
+    на довгому вступі (§3.2, умова cap 8-12 слів)."""
     if not sentences:
         return sentences
     first = sentences[0]
@@ -189,7 +189,7 @@ def synthesize_stream(engine, msg: dict, emit, is_cancelled) -> None:
     wav_dir = msg.get("wav_dir") or ""
     want_timings = bool(msg.get("want_timings"))
     # source_start_cp (editor-anchor) НЕ застосовуємо у воркері — вертаємо fragment-
-    # relative; anchor додає БАТЬКО (§3.2, ревізія Sol). Поле лишається в IPC для parent.
+    # relative; anchor додає БАТЬКО (§3.2, ревізія). Поле лишається в IPC для parent.
     speed = 1.0                                   # синтез ЗАВЖДИ 1.0; темп — у плеєрі (§8.4)
     text = msg.get("text", "")
 
@@ -234,7 +234,7 @@ def synthesize_stream(engine, msg: dict, emit, is_cancelled) -> None:
         if want_timings and res.token_durations and res.phoneme_to_word:
             from . import timings as _t
             word_raw_spans = _t.normalized_word_raw_spans(norm_res)
-            # FRAGMENT-relative (§3.2, ревізія Sol): додаємо лише offset речення в
+            # FRAGMENT-relative (§3.2, ревізія): додаємо лише offset речення в
             # ФРАГМЕНТІ, НЕ editor-anchor. Karaoke Хвилі 2 працює в КОПІЇ ListenPanel
             # (anchor=0). Editor-anchor (source_start_cp) додає БАТЬКО, якщо колись
             # підсвічуватиме повний документ — так synthesis і editor coordinate
@@ -256,7 +256,7 @@ def make_engine(engine_kind: str, manifest_path: str):
     """Створити й завантажити рушій. FakeTtsEngine — ЛИШЕ за тестовою env-змінною
     ENV_FAKE_BACKEND; у ПРОДІ (без неї) збій завантаження рушія (немає torch/моделі)
     підіймає EngineLoadError, яку воркер повертає як IPC `error` — НІКОЛИ тиха
-    заглушка за успіх (ревізія Sol CRITICAL: відсутня модель ≠ тиша)."""
+    заглушка за успіх (критична ревізія: відсутня модель ≠ тиша)."""
     from .engines import create_engine
     if os.environ.get(ENV_FAKE_BACKEND):
         eng = create_engine("fake")
@@ -473,7 +473,7 @@ def main() -> int:
 def selftest() -> int:
     """Self-check для frozen-gate (§12.1): РЕАЛЬНИЙ synth через FakeBackend (не
     import-probe) + import-probe нативних TTS-DLL. Друкує рядок SELFTEST і повертає
-    0 (ок) / 1 (збій). Sol-умова: у повному frozen-gate додатково прогнати обома
+    0 (ок) / 1 (збій). Умова: у повному frozen-gate додатково прогнати обома
     рушіями (torch), тут — базовий рівень, що не потребує моделі."""
     import os
     import tempfile

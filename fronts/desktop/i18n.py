@@ -1179,7 +1179,7 @@ STRINGS = {
         "meeting_preset_multimic": "Кілька мікрофонів",
         "meeting_preset_label": "Що записуємо",
         "meeting_sources_in_settings": "Джерела запису обираються в “Налаштуваннях” → “Нарада”.",
-        # Sol-фікс 1: чекбокс запису екрана під час наради повернено (пише screen.mp4
+        # Виправлення 1: чекбокс запису екрана під час наради повернено (пише screen.mp4
         # поряд з аудіо, вмикає meeting_screen_enabled). Окремий пункт nav_screen
         # лишається для НЕЗАЛЕЖНИХ записів екрана — це інша, самостійна функція.
         "meeting_screen_record_label": "Відео екрана",
@@ -3348,7 +3348,7 @@ STRINGS = {
         "meeting_preset_multimic": "Multiple microphones",
         "meeting_preset_label": "What to record",
         "meeting_sources_in_settings": "Choose recording sources in “Settings” → “Meeting”.",
-        # Sol-fix 1: the screen-recording checkbox is back (writes screen.mp4 next to
+        # Fix 1: the screen-recording checkbox is back (writes screen.mp4 next to
         # the audio, sets meeting_screen_enabled). The separate nav_screen page stays
         # for STANDALONE screen recordings — a different, independent feature.
         "meeting_screen_record_label": "Screen video",

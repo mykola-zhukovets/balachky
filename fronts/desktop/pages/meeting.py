@@ -433,7 +433,7 @@ class MeetingPage(QWidget):
         grid = QGridLayout(panel); grid.setContentsMargins(16, 12, 16, 12)
         grid.setHorizontalSpacing(12); grid.setVerticalSpacing(12); grid.setColumnStretch(1, 1)
         sources_note = QLabel(tr("meeting_sources_in_settings")); sources_note.setProperty("muted", True); sources_note.setWordWrap(True); grid.addWidget(sources_note, 0, 0, 1, 2)
-        # рядок 1 — запис екрана під час наради (Sol-фікс 1: без цього чекбокса
+        # рядок 1 — запис екрана під час наради (виправлення 1: без цього чекбокса
         # meeting_screen_enabled не вмикав ЖОДЕН продакшн-UI, тож кнопка «Дивитися
         # відео» на картці наради ніколи не з'являлась для нового профілю). Лейбл на
         # осі (кол.0), чекбокс у колонці контролів (кол.1), пояснення — під ним.
@@ -449,7 +449,7 @@ class MeetingPage(QWidget):
         self._diar_enabled = QCheckBox(tr("set_diarization_enable")); self._diar_enabled.setChecked(bool(getattr(self.controller.cfg, "diarization_enabled", False))); self._diar_enabled.toggled.connect(self._on_diarization_toggle)
         grid.addWidget(self._diar_enabled, 3, 1)
         # рядок 4 — кількість співрозмовників (лейбл ТЕЖ у колонці 0, на осі).
-        # Показуємо лише коли розрізнення готове й увімкнене (Sol §6: «count only
+        # Показуємо лише коли розрізнення готове й увімкнене (§6: «count only
         # if checked») — інакше рядок марно займає висоту у станах недоступно/качати.
         self._diar_count_label = QLabel(tr("set_diarization_count")); self._diar_count_label.setProperty("formlabel", True); grid.addWidget(self._diar_count_label, 4, 0)
         self._diar_count = QComboBox()
@@ -719,7 +719,7 @@ class MeetingPage(QWidget):
         self._refresh_model_list()
 
     def _redownload_model(self, resolved, custom, label=""):
-        """Sol-фікс 2: ручне оновлення вже завантаженої моделі — коли автор
+        """Виправлення 2: ручне оновлення вже завантаженої моделі — коли автор
         перезалив ваги (напр. Gemma 4 GGUF із оновленим chat template). Без API
         версій. STAGED-заміна: качаємо свіжий файл у stage й атомарно підмінюємо
         лише ПІСЛЯ успішної звірки — стара модель (5–7 ГБ) ЖИВА увесь час докачки;
@@ -884,7 +884,7 @@ class MeetingPage(QWidget):
         from whisper_core.meeting.diarize import models_present_fast
         return models_present_fast(getattr(self.controller.cfg, "diarization_model_dir", None))
     def _refresh_diarization_controls(self):
-        # Slice 3: три чесні стани контролів (дизайн Sol §6).
+        # Slice 3: три чесні стани контролів (дизайн §6).
         #  • пакет sherpa відсутній → фіча недоступна в цій збірці;
         #  • пакет є, моделей нема → пропозиція завантажити ~34,3 МБ;
         #  • моделі перевірені → чекбокс активний, поле кількості лише якщо ввімкнено.
@@ -924,7 +924,7 @@ class MeetingPage(QWidget):
             self._diar_count.blockSignals(False)
         self._diar_status.setText(tr("set_diarization_ready"))
     def _on_screen_record_toggle(self, on):
-        # Sol-фікс 1: вмикає запис екрана під час наради (screen.mp4 поряд із
+        # Виправлення 1: вмикає запис екрана під час наради (screen.mp4 поряд із
         # аудіо). Контролер зберігає прапорець; meeting_start його читає.
         self.controller.set_meeting_screen_enabled(bool(on))
     def _on_diarization_toggle(self, on):
@@ -1171,7 +1171,7 @@ class MeetingPage(QWidget):
         # у processing тумблер вимкнено (не можна стартувати новий, поки йде обробка)
         self._rec_btn.setEnabled(not (processing or postprocessing))
         self._rec_caption.setEnabled(not (processing or postprocessing))
-        # Sol-ревізія №2: чекбокс запису екрана діє лише з НАСТУПНОЇ наради, тож
+        # Ревізія №2: чекбокс запису екрана діє лише з НАСТУПНОЇ наради, тож
         # поки сесія активна (запис/обробка) — вимикаємо його з поясненням, а
         # після завершення вертаємо (доступний + звичайна підказка).
         busy = recording or processing or postprocessing

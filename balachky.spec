@@ -53,9 +53,9 @@ except Exception:
 
 datas = [
     ("assets", "assets"),                      # іконка (paths.assets_dir())
-                                               # + feature/tts-listen: демо-WAV
+                                               # TTS sample audio used by the "Hear an example" action
                                                # «Почути приклад» у assets/tts-samples
-                                               # (§7.6; генеруються на білді)
+                                               # (generated during build)
     ("config.example.toml", "."),              # довідка з коментарями
     ("terms.toml", "."),                       # приклад словника — сід
                                                # першого профілю (paths.bundled_terms_example)
@@ -66,7 +66,7 @@ datas = [
     ("README.uk.md", "."),                     # довідка укр. (paths.bundled_doc)
     ("README.md", "."),                        # довідка англ. (paths.bundled_doc)
     ("README.en.md", "."),                     # сумісність зі старими посиланнями
-    ("scripts/verify.py", "scripts"),          # feature/evidence-plus: незалежний
+    ("scripts/verify.py", "scripts"),          # evidence package verifier: незалежний
                                                # перевіряч у доказовому пакеті
                                                # (evidence.verifier_source сягає sys._MEIPASS)
 ]
@@ -74,10 +74,10 @@ binaries = []
 hiddenimports = [
     "_portaudiowpatch", "mss", "mss.windows",
     "cryptography.hazmat.primitives.ciphers.aead",
-    # feature/tts-listen (§6.4): словник вимови — відмінкові форми української через
+    # Pronunciation dictionary: словник вимови — відмінкові форми української через
     # pymorphy3 (лінивий import у lexicon.generate_forms; модульний граф не бачить).
     "pymorphy3", "pymorphy3_dicts_uk", "dawg2_python",
-    # feature/ed25519-journal: підпис журналу доказовості (лінивий import у signing.py)
+    # Ed25519 audit journal signing: підпис журналу доказовості (лінивий import у signing.py)
     "cryptography.hazmat.primitives.asymmetric.ed25519",
     "cryptography.hazmat.primitives.serialization",
     # Обсяг оперативної памʼяті машини (heavy_models._default_total_ram). Import
@@ -85,7 +85,7 @@ hiddenimports = [
     # збірку psutil не потрапляв: перевірено по Analysis-00.toc і dist. Наслідок
     # був невидимий на dev-машині й дорогий у релізі — без psutil захист працює
     # fail-closed, тобто програма на будь-якому залізі вважає памʼять малою і не
-    # тримає розпізнавання й озвучення резидентно разом. Знайдено 25.07.
+    # тримає розпізнавання й озвучення резидентно разом.
     "psutil",
 ]
 # українські дані pymorphy3 (dawg-словники) — data-файли пакета
@@ -115,7 +115,7 @@ datas += collect_data_files("av")
 # faster_whisper: assets (silero VAD onnx тощо)
 datas += collect_data_files("faster_whisper")
 
-# sherpa-onnx: ОПЦІЙНА offline-діаризація мовців (Slice 3). Обгортаємо find_spec,
+# sherpa-onnx: Optional offline speaker diarization. Обгортаємо find_spec,
 # щоб збірка з venv БЕЗ sherpa не була помилкою (capability-safe: така збірка
 # стартує й ховає фічу). Коли пакет є — збираємо розширення + нативні DLL (імпорти
 # ліниві), реєструємо рантайм-хук порядку DLL і перевіряємо, що ключові файли й
@@ -162,13 +162,13 @@ if _sherpa_ilu.find_spec("sherpa_onnx") is not None:
 # qtawesome: шрифти іконок (fa6s…)
 datas += collect_data_files("qtawesome")
 
-# feature/screen-studio: незалежний режим Запис екрана. Модулі імпортуються
+# Screen-recording modules: незалежний режим Запис екрана. Модулі імпортуються
 # ЛІНИВО (from whisper_core.screen.recorder import … всередині методу UI),
 # тож модульний граф їх не бачить — кладемо явно, інакше режим падає на інсталяції.
 hiddenimports += ["whisper_core.screen", "whisper_core.screen.recorder",
                   "whisper_core.screen.win32"]
 
-# feature/player-recordings: QMediaPlayer вантажить бекенд ліниво, тому одного
+# QMediaPlayer audio backend: QMediaPlayer вантажить бекенд ліниво, тому одного
 # import PySide6.QtMultimedia у модульному графі недостатньо. Кладемо DLL
 # multimedia-плагінів саме в шлях, який Qt шукає у frozen onedir-збірці.
 hiddenimports += ["PySide6.QtMultimedia"]
@@ -215,7 +215,7 @@ a = Analysis(
         # попередній збірці вони лежали в дистрибутиві — 16 МБ даних, яких ніхто
         # не читає. Перевірено живим прогоном: український розбір працює без них.
         "pymorphy3_dicts_ru",
-        # feature/tts-listen (§12.1): torch/transformers і TTS-специфіка живуть ЛИШЕ
+        # TTS worker: torch/transformers і TTS-специфіка живуть ЛИШЕ
         # у balachky-tts-worker.exe. З GUI-Analysis їх виключаємо (легкий exe, без
         # ризику AV, швидший старт). ctranslate2 НЕ виключати — чинний STT імпортує
         # його напряму (whisper_core/engine.py), виключення зламало б розпізнавання.
@@ -236,7 +236,7 @@ a.binaries = [b for b in a.binaries if "portaudio64bit-asio" not in b[0].lower()
 
 # Російські словники pymorphy3 викидаємо ПІСЛЯ Analysis, а не через excludes:
 # excludes блокує лише імпорт модуля, а сам pymorphy3 приносить дані обох мов
-# через свій hook — після першої спроби 25.07 у dist усе одно лежали 16 МБ
+# через свій hook — in previous builds у dist усе одно лежали 16 МБ
 # pymorphy3_dicts_ru. Програма їх не читає (розбір лише lang="uk"), тому фільтруємо
 # і дані, і чистий Python. Перевірку робить tests/test_build_excludes_ru_dicts.py.
 _RU_DICTS = "pymorphy3_dicts_ru"
@@ -290,7 +290,7 @@ exe = EXE(
     version=_version_res,         # метадані версії/продукту у властивостях файлу
 )
 
-# feature/tts-listen (§12.1): окремий balachky-tts-worker.exe з ВЛАСНИМ Analysis
+# TTS worker: окремий balachky-tts-worker.exe з ВЛАСНИМ Analysis
 # (torch/torchaudio/vocos + StyleTTS2-гілка transformers/ipa_uk/ukrainian_word_stress
 # та RAD-TTS-гілка tts_uk). Guarded find_spec("torch"): збірка з venv БЕЗ torch НЕ
 # помилка (як sherpa) — тоді воркер-EXE не пакується, і TTS у такому білді просто
@@ -373,17 +373,17 @@ if not _skip_tts and _torch_ilu.find_spec("torch") is not None:
         debug=False, bootloader_ignore_signals=False, strip=False,
         upx=False,
         # console=True: IPC воркера — на stdin/stdout. windowed (console=False) дав би
-        # sys.stdin/stdout=None → IPC не піднявся б (ревізія Sol §12.1). Приховане
+        # sys.stdin/stdout=None → IPC не піднявся б (requires CREATE_NO_WINDOW console=True). Приховане
         # вікно консолі забезпечує CREATE_NO_WINDOW у parent при спавні (sidecar).
         console=True,
     )
     _worker_targets = [exe, exe_worker, a.binaries, a.datas,
                        a_worker.binaries, a_worker.datas]
 
-# AI-протокол наради (feature/protocol-activation): окремий balachky-protocol-worker.exe
+# AI meeting minutes: окремий balachky-protocol-worker.exe
 # з ВЛАСНИМ Analysis (llama-cpp-python + нативні llama.dll/ggml*.dll, ізольовані від
-# GUI-exe). console=True — IPC воркера по stdin/stdout (windowed дав би stdin/stdout=None,
-# §12.1). Guarded find_spec("llama_cpp"): збірка з venv БЕЗ llama НЕ помилка (як sherpa/
+# GUI-exe). console=True — IPC воркера по stdin/stdout (windowed дав би stdin/stdout=None).
+# Guarded find_spec("llama_cpp"): збірка з venv БЕЗ llama НЕ помилка (як sherpa/
 # torch) — тоді воркер-EXE не пакується, і AI-протокол у такому білді просто недоступний
 # (чесна деградація; sidecar піднімає error, кнопки неактивні з підказкою). VC++ рантайм
 # (msvcp140/vcruntime140) уже кладеться в _internal для ctranslate2 — llama.dll (MSVC-
@@ -424,7 +424,7 @@ if _llama_ilu.find_spec("llama_cpp") is not None:
         exclude_binaries=True, name="balachky-protocol-worker",
         debug=False, bootloader_ignore_signals=False, strip=False,
         upx=False,
-        console=True,                                  # IPC на stdin/stdout (§12.1)
+        console=True,                                  # IPC на stdin/stdout
     )
     _worker_targets += [exe_pworker, a_pworker.binaries, a_pworker.datas]
 
