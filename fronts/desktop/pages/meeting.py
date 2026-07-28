@@ -433,7 +433,7 @@ class MeetingPage(QWidget):
         grid = QGridLayout(panel); grid.setContentsMargins(16, 12, 16, 12)
         grid.setHorizontalSpacing(12); grid.setVerticalSpacing(12); grid.setColumnStretch(1, 1)
         sources_note = QLabel(tr("meeting_sources_in_settings")); sources_note.setProperty("muted", True); sources_note.setWordWrap(True); grid.addWidget(sources_note, 0, 0, 1, 2)
-        # рядок 1 — запис екрана під час наради (Sol-фікс 1: без цього чекбокса
+        # рядок 1 — запис екрана під час наради (виправлення 1: без цього чекбокса
         # meeting_screen_enabled не вмикав ЖОДЕН продакшн-UI, тож кнопка «Дивитися
         # відео» на картці наради ніколи не з'являлась для нового профілю). Лейбл на
         # осі (кол.0), чекбокс у колонці контролів (кол.1), пояснення — під ним.
@@ -719,7 +719,7 @@ class MeetingPage(QWidget):
         self._refresh_model_list()
 
     def _redownload_model(self, resolved, custom, label=""):
-        """Sol-фікс 2: ручне оновлення вже завантаженої моделі — коли автор
+        """Виправлення 2: ручне оновлення вже завантаженої моделі — коли автор
         перезалив ваги (напр. Gemma 4 GGUF із оновленим chat template). Без API
         версій. STAGED-заміна: качаємо свіжий файл у stage й атомарно підмінюємо
         лише ПІСЛЯ успішної звірки — стара модель (5–7 ГБ) ЖИВА увесь час докачки;
@@ -924,7 +924,7 @@ class MeetingPage(QWidget):
             self._diar_count.blockSignals(False)
         self._diar_status.setText(tr("set_diarization_ready"))
     def _on_screen_record_toggle(self, on):
-        # Sol-фікс 1: вмикає запис екрана під час наради (screen.mp4 поряд із
+        # Виправлення 1: вмикає запис екрана під час наради (screen.mp4 поряд із
         # аудіо). Контролер зберігає прапорець; meeting_start його читає.
         self.controller.set_meeting_screen_enabled(bool(on))
     def _on_diarization_toggle(self, on):

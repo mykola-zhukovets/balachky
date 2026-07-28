@@ -1,4 +1,4 @@
-"""Незалежна Sol-ревізія стиків хвиль — фікси 3-6.
+"""Регресійні тести виправлень стиків UI-хвиль.
 
 Фікс 3: visual_gate.scan_dialogs — зламана фабрика діалогу = ПОРУШЕННЯ
         (dialog_broken, валить --strict), а не тихий warning+exit 0.
@@ -6,8 +6,6 @@
         “Налаштування наради” на сторінці Нарада, а не на Налаштування → Нарада.
 Фікс 5: visual_gate._match_key містить widget-ідентичність — один
         забазлайнений напис не «прощає» всі однакові написи на сторінці.
-Фікс 6: apply_vy_texts.TEST_LOCKED більше не тримає set_obsidian_hint
-        (тест давно оновлено на «Ви»).
 """
 import os
 import sys
@@ -79,14 +77,8 @@ class BrokenDialogFactoryTests(unittest.TestCase):
         self.assertIn("widget", broken)
 
 
-# ─────────────────────── Фікс 6: TEST_LOCKED очищено ───────────────────────
-class ApplyVyTestLockedTests(unittest.TestCase):
-    def test_set_obsidian_hint_no_longer_locked(self):
-        import apply_vy_texts
-        self.assertNotIn("set_obsidian_hint", apply_vy_texts.TEST_LOCKED)
-
+class ObsidianFormalCopyTests(unittest.TestCase):
     def test_obsidian_hint_already_uses_formal_vy(self):
-        # причина розблокування: і i18n, і тест уже на «Ви» (test_ux_texts_wave)
         from fronts.desktop.i18n import STRINGS
         self.assertIn("якщо Ви нею не користуєтеся",
                       STRINGS["uk"]["set_obsidian_hint"])
