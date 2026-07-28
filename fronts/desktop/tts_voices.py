@@ -110,7 +110,7 @@ class VoiceManagerDialog(QDialog):
         eyebrow.setProperty("eyebrow", True)
         outer.addWidget(eyebrow)
 
-        # §9-10 (ревізія Sol): тумблер увімкнення пакета — БЕЗ нього звичайний
+        # §9-10 (ревізія): тумблер увімкнення пакета — БЕЗ нього звичайний
         # користувач не міг штатно активувати озвучення (tts_enabled=False дефолт).
         self._enable = QCheckBox(tr("set_tts_enable"))
         self._enable.setChecked(bool(tts_enabled))

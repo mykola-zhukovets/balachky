@@ -328,7 +328,7 @@ def _republish_from_ledgers(
             records_by_track[track] = read_word_ledger(ledger_paths[track])
     # Крах між леджерами й транскриптом міг статися ПІСЛЯ діаризації: якщо
     # speaker-assignments.jsonl уже є, доопублікування зберігає мітки мовців
-    # без повторного sherpa (Sol §5.7 — читаємо готові derived-артефакти).
+    # без повторного sherpa (§5.7 — читаємо готові derived-артефакти).
     speaker_of = _load_speaker_assignments(session_dir)
     _publish(session_dir, records_by_track, me_label=me_label,
              others_label=others_label, speaker_names=speaker_names,

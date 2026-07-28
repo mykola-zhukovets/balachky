@@ -3348,7 +3348,7 @@ STRINGS = {
         "meeting_preset_multimic": "Multiple microphones",
         "meeting_preset_label": "What to record",
         "meeting_sources_in_settings": "Choose recording sources in “Settings” → “Meeting”.",
-        # Sol-fix 1: the screen-recording checkbox is back (writes screen.mp4 next to
+        # Fix 1: the screen-recording checkbox is back (writes screen.mp4 next to
         # the audio, sets meeting_screen_enabled). The separate nav_screen page stays
         # for STANDALONE screen recordings — a different, independent feature.
         "meeting_screen_record_label": "Screen video",

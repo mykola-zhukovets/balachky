@@ -1,4 +1,4 @@
-"""Хвиля 1: координатні хелпери таймінгів — document anchor + UTF-16 (Sol-умова)."""
+"""Хвиля 1: координатні хелпери таймінгів — document anchor + UTF-16."""
 import sys
 import unittest
 from pathlib import Path
@@ -161,7 +161,7 @@ class TestGoldenViaWorker(unittest.TestCase):
             self.assertEqual(w["raw_end"], 5)
 
     def test_worker_returns_fragment_relative(self):
-        # §3.2 (ревізія Sol): worker НЕ бейкає editor-anchor (source_start_cp) — вертає
+        # §3.2 (ревізія): worker НЕ бейкає editor-anchor (source_start_cp) — вертає
         # FRAGMENT-relative координати; editor-anchor додає БАТЬКО. Тож попри
         # source_start_cp=100 перше слово фрагмента має raw_start=0.
         chunks = self._synth("привіт", source_start_cp=100)

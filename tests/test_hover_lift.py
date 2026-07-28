@@ -81,7 +81,7 @@ class HoverLiftTests(unittest.TestCase):
         self.assertIsNone(getattr(b, "_hover_lift", None))
 
     def test_button_inside_lift_card_drops_own_lift(self):
-        # Sol-ревізія №2: картка-плитка вже має lift; її дочірня GlassButton
+        # Ревізія №2: картка-плитка вже має lift; її дочірня GlassButton
         # НЕ повинна мати власного HoverLift, інакше наведення на кнопку в
         # наведеній картці дає ПОДВІЙНИЙ підйом (6px сумарного руху).
         card = self._track(QFrame())

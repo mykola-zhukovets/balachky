@@ -121,7 +121,7 @@ class AudioMasterResyncTests(unittest.TestCase):
     десинхронізація, її треба вирівнювати, а не приймати за «природний зсув»."""
 
     def test_initial_gap_aligns_not_seeded(self):
-        # Sol-ревізія №2: раніше повертало (400.0, None) — розбіг 400 мс приймався
+        # Ревізія №2: раніше повертало (400.0, None) — розбіг 400 мс приймався
         # за офсет для будь-якого майстра. Для аудіо це реальна десинхронізація.
         new_offset, seek_to = plan_resync(2000, 1600, None, audio_master=True)
         self.assertEqual(seek_to, 2000)             # вимагає вирівнювання на майстра
@@ -166,7 +166,7 @@ class AudioMasterResyncTests(unittest.TestCase):
 
 
 class BroadcastRateResetsOffsetTests(unittest.TestCase):
-    """Sol-ревізія №2: зміна швидкості мусить скинути вивчені офсети відомих —
+    """Ревізія №2: зміна швидкості мусить скинути вивчені офсети відомих —
     інакше базлайн, вивчений на 1x, стає хибним на 2x і дає вічні пере-сіки."""
 
     def test_rate_change_resets_all_offsets(self):

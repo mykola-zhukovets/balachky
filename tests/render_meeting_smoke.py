@@ -427,7 +427,7 @@ class MeetingRenderTests(unittest.TestCase):
         self._save(page, "02-recording.png")
 
     def test_screen_record_checkbox_locked_during_active_session(self):
-        # Sol-ревізія №2: чекбокс «Записувати екран» діє лише з наступної наради,
+        # Ревізія №2: чекбокс «Записувати екран» діє лише з наступної наради,
         # тож поки сесія активна — він disabled із поясненням, а після
         # завершення знову доступний зі звичайною підказкою.
         from fronts.desktop.i18n import tr
