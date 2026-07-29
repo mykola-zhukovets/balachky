@@ -111,7 +111,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.2] - 2026-07-20
+## 1.2.2 - 2026-07-20
+
+Внутрішня бета-збірка; публічного релізу цієї версії не було. / Internal beta build; this version was never publicly released.
 
 ### Added
 
@@ -155,9 +157,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - 2026-07-12
+## 1.0.0 - 2026-07-12
 
-Перший офіційний публічний випуск. / First official public release.
+Внутрішня бета-збірка; публічного релізу цієї версії не було. Перелічені нижче можливості вперше стали публічно доступні у складі [1.2.3-beta]. / Internal beta build; this version was never publicly released. The features listed below first became publicly available as part of [1.2.3-beta].
 
 ### Added
 
@@ -235,5 +237,3 @@ Free for people, source open for inspection — PolyForm Noncommercial 1.0.0 lic
 
 [Unreleased]: https://github.com/mykola-zhukovets/balachky/compare/v1.2.3-beta...HEAD
 [1.2.3-beta]: https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta
-[1.2.2]: https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.2
-[1.0.0]: https://github.com/mykola-zhukovets/balachky/releases/tag/v1.0.0
