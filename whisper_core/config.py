@@ -314,6 +314,8 @@ class Config:
     test_mode_include_text: bool = False  # включати тексти розшифровок у тест-журнал
                                         # (вимкнено за замовч.; приватність — журнал
                                         # тоді міститиме продиктований текст)
+    test_mode_text_notice_shown: bool = False  # одноразове re-consent-нагадування
+                                        # для старих профілів з include_text=True
 
     @classmethod
     def load(cls, config_path=None):
@@ -378,7 +380,7 @@ class Config:
                 data["paste_confirm_sound"] = False
                 # погасити legacy-прапорець: generic-цикл нижче виставить
                 # c.sounds=True, наступний save() запише sounds=true — і
-                # міграція справді відбудеться ОДИН раз (суд-2: інакше вона
+                # міграція справді відбудеться ОДИН раз (рецензія-2: інакше вона
                 # щозапуску мовчки ламала б явний UI-вибір користувача)
                 data["sounds"] = True
             for key, val in data.items():
@@ -502,7 +504,8 @@ class Config:
                 "player_resume_backstep_s",    # авто-відкат плеєра після паузи
                 "live_transcription",  # feature/live-transcription
                 "screen_protection",   # feature/mil-hardening
-                "test_mode", "test_mode_include_text"]  # Режим тестування
+                "test_mode", "test_mode_include_text",
+                "test_mode_text_notice_shown"]  # Режим тестування
         if self.model_dir:
             keys.append("model_dir")
         if self.input_device:            # пишемо лише коли вибрано конкретний мікрофон

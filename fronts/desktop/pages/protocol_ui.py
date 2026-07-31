@@ -9,20 +9,58 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton,
-    QTextEdit, QLineEdit, QFileDialog, QApplication, QComboBox, QPlainTextEdit)
+    QTextEdit, QLineEdit, QFileDialog, QApplication, QComboBox, QPlainTextEdit,
+    QMessageBox, QCheckBox)
 
-from ..i18n import tr, human_size
+from ..i18n import tr, human_size, format_decimal, format_duration
 from ..onboarding import _reap_worker
+from .. import download_manager as dlmgr
 
 _MB = 1024 * 1024
+
+# Не перемальовувати напис поступу частіше, ніж раз на цей інтервал: на 4.6 ГБ
+# файлі блок читання 256 КБ дає ~18 000 сигналів поступу; без дроселя кожен з
+# них форсує setText()+relayout у GUI-потоці (аудит 30.07.2026).
+_PROGRESS_UI_INTERVAL_S = 0.2
 
 
 _human_size = human_size
 
+
+def _progress_text(done: int, total: int, speed_bps) -> str:
+    """Компонує рядок поступу з відомих частин. Ніколи не вигадує те, чого не
+    можемо порахувати: без total — без відсотка; без виміряної швидкості —
+    без часу, що лишився (аудит 30.07.2026, §5). Спільна для
+    ProtocolModelDownloadDialog (сайдбар/модальне вікно) і
+    ModelDownloadWaitDialog (§5 спеки — «Створити протокол» під час качання)."""
+    if total:
+        size_part = tr("protocol_model_downloading_of",
+                       done=done // _MB, total=total // _MB)
+        percent = min(100.0, done * 100 / total)
+        size_part += " " + tr("protocol_model_downloading_percent",
+                              percent=format_decimal(percent, 1))
+    else:
+        size_part = tr("protocol_model_downloading_done_only", done=done // _MB)
+
+    parts = [tr("protocol_model_downloading_prefix") + " " + size_part]
+
+    if speed_bps:
+        speed_mb_s = speed_bps / _MB
+        parts.append(tr("protocol_model_downloading_speed",
+                        speed=format_decimal(speed_mb_s, 1)))
+        if total and speed_bps > 0:
+            eta_s = (total - done) / speed_bps
+            parts.append(tr("protocol_model_downloading_eta",
+                            eta=format_duration(eta_s)))
+    else:
+        parts.append(tr("protocol_model_downloading_speed_calc"))
+
+    return " • ".join(parts)
 
 
 # --- завантаження моделі --------------------------------------------------
@@ -68,88 +106,305 @@ class ProtocolModelDownloadWorker(QThread):
 
 
 class ProtocolModelDownloadDialog(QDialog):
-    """Модальна докачка моделі протоколу (пресет або власна інтернет-модель) з
-    прогресом і скасуванням. exec() == Accepted → модель готова."""
+    """Поступ докачки моделі протоколу (пресет або власна інтернет-модель).
+
+    НЕмодальна (E-бекграунд-докачка, аудит 31.07.2026): закриття вікна («✕»,
+    Esc чи кнопка «У фон») НЕ скасовує завантаження — воно триває через
+    спільний DownloadManager, і людина продовжує диктувати чи гортати наради.
+    Лишень явна кнопка «Скасувати» перериває докачку й прибирає частковий файл.
+
+    Сам процес якісно якнайшвидше делегується DownloadManager.instance():
+    якщо ця сама модель уже качається (ALREADY_THIS) — діалог просто
+    приєднується до наявного прогресу; якщо качається ІНША модель (BUSY_OTHER)
+    — питаємо користувача, чи скасувати те завантаження (одне одночасно, §3.2
+    спеки, захист каналу мережі й диска)."""
 
     def __init__(self, target_dir, *, preset_id=None, custom=None, force=False,
-                 parent=None):
+                 label="", parent=None):
         super().__init__(parent)
         self._target = target_dir
+        self._key = dlmgr.key_for(target_dir)
         self._preset_id = preset_id
         self._custom = custom
         self._force = force
-        self._worker = None
+        self._label = label
+        self._manager = dlmgr.DownloadManager.instance()
+        # Дросель перемальовування (throttling, §5.3 аудиту): останній момент
+        # оновлення тексту/бару і опорна точка (час+байти) для виміру швидкості.
+        self._last_ui_update = 0.0
+        self._speed_ref_time = None
+        self._speed_ref_bytes = 0
+        self._speed_bps = None
         self.setWindowTitle(tr("protocol_model_consent_title"))
-        self.setModal(True)
+        self.setModal(False)
         self.setMinimumWidth(440)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(26, 22, 26, 20)
         lay.setSpacing(14)
-        self._status = QLabel(tr("protocol_model_downloading", done=0))
+        self._status = QLabel(self._format_status(0, 0))
         self._status.setProperty("strong", True)
         self._status.setWordWrap(True)
         lay.addWidget(self._status)
         self._bar = QProgressBar()
         self._bar.setTextVisible(False)
         lay.addWidget(self._bar)
+        hint = QLabel(tr("protocol_model_download_bg_hint"))
+        hint.setProperty("muted", True)
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
         btns = QHBoxLayout()
         btns.addStretch()
+        self._background_btn = QPushButton(tr("protocol_model_download_background"))
+        self._background_btn.setAccessibleName(tr("protocol_model_download_background"))
+        # «У фон» = просто ховає вікно — воркер лишається під DownloadManager,
+        # докачка триває (індикатор у сайдбарі показує стан далі).
+        self._background_btn.clicked.connect(self.hide)
+        btns.addWidget(self._background_btn)
         self._cancel = QPushButton(tr("common_cancel"))
-        self._cancel.clicked.connect(self.reject)
+        self._cancel.clicked.connect(self._on_cancel_clicked)
         btns.addWidget(self._cancel)
         lay.addLayout(btns)
-        self._start()
 
-    def _start(self):
+        self._manager.progress.connect(self._on_manager_progress)
+        self._manager.finished_ok.connect(self._on_manager_finished_ok)
+        self._manager.failed.connect(self._on_manager_failed)
+        self._manager.cancelled.connect(self._on_manager_cancelled)
+        self._begin()
+
+    # ------------------------------------------------------- запуск / приєднання
+    def _begin(self):
         self._bar.setRange(0, 0)
-        self._worker = ProtocolModelDownloadWorker(
+        result = self._manager.start_download(
             self._target, preset_id=self._preset_id, custom=self._custom,
-            force=self._force)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.finished_ok.connect(self.accept)
-        self._worker.failed.connect(self._on_failed)
-        self._worker.cancelled.connect(self.reject)
-        self._worker.start()
+            force=self._force, label=self._label)
+        if result == dlmgr.BUSY_OTHER:
+            other = self._manager.active_label() or tr("protocol_model_other_label")
+            if QMessageBox.question(
+                    self, tr("protocol_model_consent_title"),
+                    tr("protocol_model_download_busy_other", other=other)
+            ) == QMessageBox.Yes:
+                # Скасовуємо ЧУЖЕ завантаження явно (частковий файл того
+                # пресета прибирається) — своє користувач запустить повторним
+                # натиском «Завантажити», коли попереднє звільнить менеджер.
+                self._manager.cancel_download()
+            self._finalize_close()
+            return
+        if result == dlmgr.ALREADY_THIS:
+            progress = self._manager.progress_for(self._target)
+            if progress is not None:
+                self._on_progress(*progress)
+            return
+        # STARTED — свіжий прогрес; текст «0 з ?» лишається, доки не прийде сигнал.
+
+    def _on_cancel_clicked(self):
+        self._manager.cancel_download(self._target)
+        self._finalize_close()
+
+    # ------------------------------------------------------- сигнали менеджера
+    def _on_manager_progress(self, key, done, total):
+        if key == self._key:
+            self._on_progress(done, total)
+
+    def _on_manager_finished_ok(self, key):
+        if key == self._key:
+            self.accept()
+
+    def _on_manager_failed(self, key, msg):
+        if key == self._key:
+            self._on_failed(msg)
+
+    def _on_manager_cancelled(self, key):
+        if key == self._key:
+            self._finalize_close()
 
     def _on_progress(self, done, total):
+        now = time.monotonic()
+        is_final = bool(total) and done >= total
+        # Дросель: пропускаємо перемальовування, якщо не минуло достатньо часу
+        # з попереднього — крім останнього сигналу (100%), який мусить дійти.
+        if not is_final and (now - self._last_ui_update) < _PROGRESS_UI_INTERVAL_S:
+            return
+        self._last_ui_update = now
+
+        if self._speed_ref_time is None:
+            self._speed_ref_time = now
+            self._speed_ref_bytes = done
+        else:
+            elapsed = now - self._speed_ref_time
+            if elapsed >= _PROGRESS_UI_INTERVAL_S:
+                self._speed_bps = (done - self._speed_ref_bytes) / elapsed
+                self._speed_ref_time = now
+                self._speed_ref_bytes = done
+
         if total:
             self._bar.setRange(0, 1000)
             self._bar.setValue(min(1000, int(done * 1000 / total)))
-        self._status.setText(tr("protocol_model_downloading", done=done // _MB))
+        self._status.setText(self._format_status(done, total))
+
+    def _format_status(self, done: int, total: int) -> str:
+        """Компонує рядок поступу з відомих частин. Ніколи не вигадує те, чого
+        не можемо порахувати: без total — без відсотка; без виміряної
+        швидкості — без часу, що лишився (аудит 30.07.2026, §5)."""
+        return _progress_text(done, total, self._speed_bps)
 
     def _on_failed(self, msg: str):
         logging.warning("Докачка моделі протоколу не вдалась: %s", msg)
         self._status.setText(tr("protocol_model_failed", error=msg))
         self._cancel.setText(tr("common_close"))
+        self._background_btn.hide()
 
-    def _detach(self):
-        w = self._worker
-        self._worker = None
-        if w is None:
-            return
-        try:
-            w.progress.disconnect(); w.finished_ok.disconnect()
-            w.failed.disconnect(); w.cancelled.disconnect()
-        except (RuntimeError, TypeError):
-            pass
-        w.cancel()
-        _reap_worker(w)
+    def _disconnect_manager(self):
+        for sig, slot in (
+                (self._manager.progress, self._on_manager_progress),
+                (self._manager.finished_ok, self._on_manager_finished_ok),
+                (self._manager.failed, self._on_manager_failed),
+                (self._manager.cancelled, self._on_manager_cancelled)):
+            try:
+                sig.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
 
-    def reject(self):
-        self._detach()
+    def _finalize_close(self):
+        """Завантаження цього ключа справді завершилось (готово/збій/скасовано
+        деінде) — вікно більше нема сенсу тримати живим, на відміну від
+        Escape/«✕», які лише ховають його (докачка триває у фоні)."""
+        self._disconnect_manager()
         super().reject()
 
+    def reject(self):
+        # Escape / «✕» / «У фон»: НЕ скасовує докачку (E-бекграунд-докачка,
+        # аудит 31.07.2026) — лише ховає вікно, докачка триває через
+        # DownloadManager і видно в індикаторі сайдбара.
+        self.hide()
+
     def accept(self):
-        self._detach()
+        self._disconnect_manager()
         super().accept()
+
+
+class ModelDownloadWaitDialog(QDialog):
+    """§5 спеки: «Створити протокол» / «Спитати про нараду» натиснуто, поки
+    активна модель ще якраз якісно завантажується у фоні. Замість мовчазної
+    відмови чи технічної помилки — чесний прогрес і вибір: скасувати качання,
+    зачекати у фоні, чи автоматично почати дію одразу після завершення."""
+
+    def __init__(self, target_dir, *, on_ready=None, parent=None):
+        super().__init__(parent)
+        self._key = dlmgr.key_for(target_dir)
+        self._target = target_dir
+        self._on_ready = on_ready
+        self._manager = dlmgr.DownloadManager.instance()
+        self._speed_bps = None
+        self._speed_ref_time = None
+        self._speed_ref_bytes = 0
+        self.setWindowTitle(tr("protocol_model_wait_title"))
+        self.setModal(False)
+        self.setMinimumWidth(420)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 18)
+        lay.setSpacing(12)
+        intro = QLabel(tr("protocol_model_wait_intro"))
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+        self._status = QLabel()
+        self._status.setProperty("strong", True)
+        self._status.setWordWrap(True)
+        lay.addWidget(self._status)
+        self._bar = QProgressBar()
+        self._bar.setTextVisible(False)
+        lay.addWidget(self._bar)
+        self._autostart = QCheckBox(tr("protocol_model_wait_autostart"))
+        self._autostart.setChecked(self._on_ready is not None)
+        self._autostart.setEnabled(self._on_ready is not None)
+        lay.addWidget(self._autostart)
+
+        btns = QHBoxLayout()
+        self._cancel_dl = QPushButton(tr("protocol_model_wait_cancel_download"))
+        self._cancel_dl.clicked.connect(self._on_cancel_download)
+        btns.addWidget(self._cancel_dl)
+        btns.addStretch()
+        self._close = QPushButton(tr("protocol_model_wait_background"))
+        self._close.clicked.connect(self._finalize_close)
+        btns.addWidget(self._close)
+        lay.addLayout(btns)
+
+        self._manager.progress.connect(self._on_manager_progress)
+        self._manager.finished_ok.connect(self._on_manager_finished_ok)
+        self._manager.failed.connect(self._on_manager_failed)
+        self._manager.cancelled.connect(self._on_manager_cancelled)
+        progress = self._manager.progress_for(self._target)
+        self._on_progress(*(progress or (0, 0)))
+
+    def _on_cancel_download(self):
+        self._manager.cancel_download(self._target)
+        self._finalize_close()
+
+    def _on_manager_progress(self, key, done, total):
+        if key == self._key:
+            self._on_progress(done, total)
+
+    def _on_progress(self, done, total):
+        now = time.monotonic()
+        if self._speed_ref_time is None:
+            self._speed_ref_time = now
+            self._speed_ref_bytes = done
+        else:
+            elapsed = now - self._speed_ref_time
+            if elapsed >= _PROGRESS_UI_INTERVAL_S:
+                self._speed_bps = (done - self._speed_ref_bytes) / elapsed
+                self._speed_ref_time = now
+                self._speed_ref_bytes = done
+        if total:
+            self._bar.setRange(0, 1000)
+            self._bar.setValue(min(1000, int(done * 1000 / total)))
+        else:
+            self._bar.setRange(0, 0)
+        self._status.setText(_progress_text(done, total, self._speed_bps))
+
+    def _on_manager_finished_ok(self, key):
+        if key != self._key:
+            return
+        autostart = self._autostart.isChecked() and self._on_ready is not None
+        self._disconnect_manager()
+        super().accept()
+        if autostart:
+            self._on_ready()
+
+    def _on_manager_failed(self, key, _msg):
+        if key == self._key:
+            self._finalize_close()
+
+    def _on_manager_cancelled(self, key):
+        if key == self._key:
+            self._finalize_close()
+
+    def _disconnect_manager(self):
+        for sig, slot in (
+                (self._manager.progress, self._on_manager_progress),
+                (self._manager.finished_ok, self._on_manager_finished_ok),
+                (self._manager.failed, self._on_manager_failed),
+                (self._manager.cancelled, self._on_manager_cancelled)):
+            try:
+                sig.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+
+    def _finalize_close(self):
+        self._disconnect_manager()
+        super().reject()
+
+    def reject(self):
+        # «✕»/Escape — «Зачекати у фоні»: докачка триває, вікно просто ховаємо.
+        self.hide()
 
 
 # --- додавання власної моделі з інтернету ----------------------------------
 class HFModelDialog(QDialog):
     """Додати власну модель з інтернету за ідентифікатором репозиторію
-    (власник/назва) та ім'ям GGUF-файлу. Після Accepted — .result_data =
-    (repo_id, filename). Чесно попереджає, що якість чужих моделей не гарантована."""
+    (власник/назва), ім'ям GGUF-файлу, commit і SHA-256. Після Accepted —
+    .result_data = (repo_id, filename, revision, sha256)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,6 +437,25 @@ class HFModelDialog(QDialog):
         self._file.setAccessibleName(tr("protocol_model_hf_file"))
         lay.addWidget(self._file)
 
+        revision_cap = QLabel(tr("protocol_model_hf_revision"))
+        revision_cap.setWordWrap(True)
+        lay.addWidget(revision_cap)
+        self._revision = QLineEdit()
+        self._revision.setPlaceholderText(
+            tr("protocol_model_hf_revision_ph"))
+        self._revision.setAccessibleName(
+            tr("protocol_model_hf_revision"))
+        lay.addWidget(self._revision)
+
+        sha_cap = QLabel(tr("protocol_model_hf_sha256"))
+        sha_cap.setWordWrap(True)
+        lay.addWidget(sha_cap)
+        self._sha256 = QLineEdit()
+        self._sha256.setPlaceholderText(
+            tr("protocol_model_hf_sha256_ph"))
+        self._sha256.setAccessibleName(tr("protocol_model_hf_sha256"))
+        lay.addWidget(self._sha256)
+
         self._err = QLabel()
         self._err.setProperty("badge", "error")
         self._err.setWordWrap(True)
@@ -204,11 +478,15 @@ class HFModelDialog(QDialog):
         from whisper_core.protocol import model_manager as mm
         repo = self._repo.text().strip()
         fname = self._file.text().strip()
-        if not mm.is_repo_id(repo) or not mm.is_gguf_name(fname):
+        revision = self._revision.text().strip().lower()
+        sha256 = self._sha256.text().strip().lower()
+        if (not mm.is_repo_id(repo) or not mm.is_gguf_name(fname)
+                or not mm.is_commit_revision(revision)
+                or not mm.is_sha256(sha256)):
             self._err.setText(tr("protocol_model_hf_invalid"))
             self._err.show()
             return
-        self.result_data = (repo, fname)
+        self.result_data = (repo, fname, revision, sha256)
         self.accept()
 
 
@@ -332,7 +610,14 @@ class ProtocolDialog(QDialog):
             self._saved.setText(tr("protocol_saved", path=str(dest)))
             self._saved.show()
         except OSError:
-            pass
+            # Аудит чесності (31.07, знахідка 2): тихий except ковтав збій
+            # запису — людина бачила текст на екрані й вважала, що файл
+            # збережено. Тепер помилка видима (з шляхом і дією) і в журналі.
+            logging.exception("Не вдалося автозберегти protocol.md")
+            expected_path = self._session_dir / service.PROTOCOL_FILENAME
+            self._saved.setText(
+                tr("protocol_autosave_failed", path=str(expected_path)))
+            self._saved.show()
         self._status.hide()
         self._view.setPlainText(self._text)
         self._view.show()

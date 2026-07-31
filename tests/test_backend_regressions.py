@@ -71,7 +71,10 @@ class CachePathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hub = Path(tmp) / "hf" / "hub"
             snap = _make_snapshot(hub)
-            with patch("whisper_core.engine.WhisperModel") as model:
+            with patch(
+                    "whisper_core.models.model_snapshot_integrity",
+                    return_value=True), \
+                    patch("whisper_core.engine.WhisperModel") as model:
                 Engine(_cfg(snap))
             self.assertEqual(model.call_args.kwargs["download_root"],
                              os.path.normpath(str(hub)))
@@ -102,8 +105,11 @@ class EngineErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hub = Path(tmp) / "hub"
             _make_snapshot(hub)
-            with patch("whisper_core.engine.WhisperModel",
-                       side_effect=RuntimeError("CUDA out of memory")):
+            with patch(
+                    "whisper_core.models.model_snapshot_integrity",
+                    return_value=True), \
+                    patch("whisper_core.engine.WhisperModel",
+                          side_effect=RuntimeError("CUDA out of memory")):
                 with self.assertRaisesRegex(RuntimeError, "CUDA out of memory"):
                     Engine(_cfg(hub))
 
@@ -111,10 +117,25 @@ class EngineErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hub = Path(tmp) / "hub"
             _make_snapshot(hub)
-            with patch("whisper_core.engine.WhisperModel",
-                       side_effect=OSError("CUDA driver DLL is missing")):
+            with patch(
+                    "whisper_core.models.model_snapshot_integrity",
+                    return_value=True), \
+                    patch("whisper_core.engine.WhisperModel",
+                          side_effect=OSError("CUDA driver DLL is missing")):
                 with self.assertRaisesRegex(OSError, "driver DLL"):
                     Engine(_cfg(hub))
+
+    def test_corrupt_managed_snapshot_is_rejected_before_model_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = Path(tmp) / "hub"
+            _make_snapshot(hub)
+            with patch(
+                    "whisper_core.models.model_snapshot_integrity",
+                    return_value=False), \
+                    patch("whisper_core.engine.WhisperModel") as model:
+                with self.assertRaises(ModelRevisionUnavailable):
+                    Engine(_cfg(hub))
+            model.assert_not_called()
 
     def test_unpinned_model_runtime_error_is_not_masked_when_snapshot_is_usable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -622,11 +643,11 @@ class ClipboardRestoreWorkTests(unittest.TestCase):
         controller = self._controller(restore_clipboard=True)
         profile = SimpleNamespace(history_path="hp", memory_enabled=False)
         with patch.object(desktop_app, "paste_text", return_value="pyautogui"), \
-                patch.object(desktop_app, "snapshot_clipboard", return_value="old"), \
+                patch.object(desktop_app, "begin_clipboard_restore", return_value="old"), \
                 patch.object(desktop_app, "restore_clipboard") as restore, \
                 patch.object(desktop_app, "log_history", return_value=None):
             desktop_app.DesktopApp._work(controller, ["chunk"], profile, object())
-        restore.assert_called_once_with("old")
+        restore.assert_called_once_with("old", expected="final")
 
     def test_failed_paste_does_not_restore(self):
         from fronts.desktop import app as desktop_app
@@ -634,12 +655,14 @@ class ClipboardRestoreWorkTests(unittest.TestCase):
         controller = self._controller(restore_clipboard=True)
         profile = SimpleNamespace(history_path="hp", memory_enabled=False)
         with patch.object(desktop_app, "paste_text", return_value=None), \
-                patch.object(desktop_app, "snapshot_clipboard", return_value="old"), \
+                patch.object(desktop_app, "begin_clipboard_restore", return_value="old"), \
+                patch.object(desktop_app, "end_clipboard_restore") as end, \
                 patch.object(desktop_app, "restore_clipboard") as restore, \
                 patch.object(desktop_app, "log_history", return_value=None), \
                 self.assertLogs(level="WARNING"):
             desktop_app.DesktopApp._work(controller, ["chunk"], profile, object())
         restore.assert_not_called()
+        end.assert_called_once_with()
 
     def test_disabled_config_skips_snapshot_and_restore(self):
         from fronts.desktop import app as desktop_app
@@ -647,11 +670,13 @@ class ClipboardRestoreWorkTests(unittest.TestCase):
         controller = self._controller(restore_clipboard=False)
         profile = SimpleNamespace(history_path="hp", memory_enabled=False)
         with patch.object(desktop_app, "paste_text", return_value="pyautogui"), \
-                patch.object(desktop_app, "snapshot_clipboard") as snap, \
+                patch.object(desktop_app, "begin_clipboard_restore") as begin, \
+                patch.object(desktop_app, "cancel_clipboard_restore") as cancel, \
                 patch.object(desktop_app, "restore_clipboard") as restore, \
                 patch.object(desktop_app, "log_history", return_value=None):
             desktop_app.DesktopApp._work(controller, ["chunk"], profile, object())
-        snap.assert_not_called()
+        begin.assert_not_called()
+        cancel.assert_called_once_with()
         restore.assert_not_called()
 
     def test_show_mode_never_touches_clipboard(self):
@@ -660,12 +685,12 @@ class ClipboardRestoreWorkTests(unittest.TestCase):
         controller = self._controller(output_mode="show", restore_clipboard=True)
         profile = SimpleNamespace(history_path="hp", memory_enabled=False)
         with patch.object(desktop_app, "paste_text") as paste_fn, \
-                patch.object(desktop_app, "snapshot_clipboard") as snap, \
+                patch.object(desktop_app, "begin_clipboard_restore") as begin, \
                 patch.object(desktop_app, "restore_clipboard") as restore, \
                 patch.object(desktop_app, "log_history", return_value=None):
             desktop_app.DesktopApp._work(controller, ["chunk"], profile, object())
         paste_fn.assert_not_called()
-        snap.assert_not_called()
+        begin.assert_not_called()
         restore.assert_not_called()
 
     def test_config_defaults_to_enabled(self):
@@ -807,6 +832,33 @@ class DeleteModelTests(unittest.TestCase):
             self.assertEqual(model_snapshot_size(hub, REPO_ID), 4196)
             self.assertEqual(                        # немапованого repo нема → 0
                 model_snapshot_size(hub, "Systran/faster-whisper-small"), 0)
+
+    def test_dereferenced_snapshot_not_double_counted(self):
+        """Регрес 31.07 (живий тест власника): майстер обіцяв ~1,6 ГБ, а Центр
+        моделей після завершення показував «Завантажено (5,8 ГБ)» — рівно
+        удвічі більше. Причина: dereference_snapshot() (WinError 448 self-heal)
+        підмінює symlink у snapshots/<rev>/ РЕАЛЬНОЮ копією байтів blob-а, і
+        стара _dir_size рахувала обидві копії (blobs/ + дереференсований
+        snapshots/) як окремі дані. Модель має важити стільки ж, скільки і
+        обіцяно ДО завантаження, а не вдвічі більше після нього."""
+        from whisper_core.models import model_snapshot_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = Path(tmp) / "hub"
+            hub.mkdir()
+            repo = self._make_repo(hub, blobs=(("model.bin", 4096),
+                                                ("config.json", 100)))
+            # symlink-стан кешу: розмір рахує тільки blobs/ (як і мав раніше)
+            self.assertEqual(model_snapshot_size(hub, REPO_ID), 4196)
+
+            # dereference_snapshot(): symlink підмінюється РЕАЛЬНОЮ копією
+            # тих самих байтів (точно те, що робить self-heal у onboarding.py)
+            snap = repo / "snapshots" / REVISION
+            (snap / "model.bin").write_bytes((repo / "blobs" / "model.bin").read_bytes())
+            (snap / "config.json").write_bytes((repo / "blobs" / "config.json").read_bytes())
+
+            # та сама модель, ті самі байти — обіцяний розмір не має подвоїтись
+            self.assertEqual(model_snapshot_size(hub, REPO_ID), 4196)
 
 
 # feature/bulk-import

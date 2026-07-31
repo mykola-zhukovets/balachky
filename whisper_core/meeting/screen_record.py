@@ -14,6 +14,8 @@ flush і закриття WebM.
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -169,6 +171,9 @@ class ScreenRecorder:
     def _run(self) -> None:
         container = None
         stream = None
+        staged_path = None
+        published = False
+        container_closed = False
         try:
             if self._av is None:
                 raise RuntimeError("PyAV не завантажився")
@@ -180,8 +185,15 @@ class ScreenRecorder:
                 height -= height % 2
                 if width <= 0 or height <= 0:
                     raise RuntimeError("монітор має неприпустимі межі")
-                # Контейнер визначається розширенням out_path (screen.webm → WebM).
-                container = self._av.open(str(self.out_path), mode="w")
+                fd, staged_name = tempfile.mkstemp(
+                    prefix=f".{self.out_path.stem}.",
+                    suffix=self.out_path.suffix,
+                    dir=str(self.out_path.parent),
+                )
+                staged_path = Path(staged_name)
+                os.close(fd)
+                # PyAV визначає контейнер за розширенням stage (screen.*.webm → WebM).
+                container = self._av.open(str(staged_path), mode="w")
                 # VP9 (libvpx, BSD) замість H.264/libx264 (GPL): дистрибутив без GPL.
                 stream = container.add_stream("libvpx-vp9", rate=self._fps)
                 stream.width, stream.height = width, height
@@ -225,6 +237,20 @@ class ScreenRecorder:
                     self._report_error(exc)
                 try:
                     container.close()
+                    container_closed = True
+                except Exception as exc:
+                    self._report_error(exc)
+            if container_closed and staged_path is not None:
+                try:
+                    with staged_path.open("r+b") as staged:
+                        os.fsync(staged.fileno())
+                    os.replace(staged_path, self.out_path)
+                    published = True
+                except Exception as exc:
+                    self._report_error(exc)
+            if staged_path is not None and not published:
+                try:
+                    staged_path.unlink(missing_ok=True)
                 except Exception as exc:
                     self._report_error(exc)
             self._started.set()

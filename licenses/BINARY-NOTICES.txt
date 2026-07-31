@@ -1,0 +1,279 @@
+BALACHKY PACKAGED BINARY TRACE MANIFEST
+Paths are relative to the Balachky onedir root.
+Binary count: 269
+Version source: PE FileVersion; when absent, owning-package METADATA or companion-runtime PE provenance.
+Hash command: Get-FileHash -Algorithm SHA256 -LiteralPath <file>
+
+BINARY TRACE BEGIN
+file	version	upstream	license	sha256
+_internal/_asyncio.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	c77de90cad749087a0c5dc5e19d78d24f6ef44e7e5ac19b8420cfc0cea62395d
+_internal/_bz2.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	65f610646d10d5babea080e060d244b546ec52c54012e5e937dc72dcc2e2e7bc
+_internal/_cffi_backend.cp312-win_amd64.pyd	cffi 2.1.0 (METADATA)	https://github.com/python-cffi/cffi	MIT-0	058cb0de6db01e45d7f8e1f5947adfa32b5ffbb03836e13578321759f69dbc95
+_internal/_ctypes.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	0e56107a891100535f2da79d85a5ae65ff1227b4765bd108f8593ac1a1110d81
+_internal/_decimal.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	aeacfead2befcc0768063a037bb64bd32109ae09cb144e5f571b04dd7965db9d
+_internal/_elementtree.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	5009a9a53c03ef8387443b5cf6ce08e5c3a79727466a0b931c5bbca915bf89ca
+_internal/_hashlib.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	03d233dbace599168eaffec823de6ed7beec8c2a4ebfe9b8a3d8e042a59af3ba
+_internal/_lzma.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	e3deecc1f59a3b811c608861decd84de1e8df8bafd5e2b39188861318c5a38cf
+_internal/_multiprocessing.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	2c636df7059cb0dd7e978dd735c7c5c8ddb09cf94754cf9e232296b96c5c545a
+_internal/_overlapped.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	662126ff80c3a1b4cedf74074029c12ae4743e6d3b37376e39ac70aacb7d4d3c
+_internal/_portaudiowpatch.cp312-win_amd64.pyd	PyAudioWPatch 0.2.12.8 (METADATA)	https://github.com/s0d3s/PyAudioWPatch	Apache-2.0 + MIT (statically linked PortAudio)	b4c83f7b3535914f49e0692c99533d4a0851c64ee018d424fd015606ece909ee
+_internal/_queue.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	48e76e0ad63f6932b4a77b5819f41c1e7595636ca8d9e824f0943a14b8bb5035
+_internal/_socket.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	3efa4636cf9e350856f6927d67a4c2564bf9bd2758a00bbf17d3aece5b60016d
+_internal/_sounddevice_data/portaudio-binaries/libportaudio64bit.dll	sounddevice 0.5.5 (METADATA)	https://github.com/PortAudio/portaudio	MIT	ec080194f01e4095c7fb43dbd7ed05af922c5b34295056a9ff56782741d65481
+_internal/_sqlite3.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	64b51df2805c58b023a875e8ae3be7ac7f61ef664f32ca6c90f6315da47ef0bc
+_internal/_ssl.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	0bc527d2dbc50009f43b2ed5d5982c4f63f4b647647ffa9eda612dcda80f6040
+_internal/_uuid.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	acce4f281d7ffb2dec0997527faf25b1df62ad7bd3032c568ddcf65c90edc867
+_internal/_wmi.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	a980f1e7a29842bd946863fc2693fbeb555a9dc0f9e1630dfed9a2fcdef3ece2
+_internal/_zoneinfo.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	76f1439cda82ab6976df6ba505c4079444703f6d44d8b0259ce59c0ff4279fb4
+_internal/ada92cb5d92a588d1b93__mypyc.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	df5ea1b515f4e6677196f3d8c2f40a00b008d8e09152d08425f794e1b55f890d
+_internal/aiohttp/_http_parser.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	2851a840224d139cc3c73534597b1c29b1ee6094661e27def04b3cd66d4199c8
+_internal/aiohttp/_http_writer.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	4831aaf297de92c195335564e4b13d3df50e3e88f25b22532c5b576ecb3a3a1e
+_internal/aiohttp/_websocket/mask.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	f3fad377929bfcb8afd9c4ceb31a81da2a8562e4d16bf97820c4983adfc984d4
+_internal/aiohttp/_websocket/reader_c.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	f6635ddd3d2b1d1606df0744a71433a84930d619b82ff10630761913f972a540
+_internal/api-ms-win-core-console-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	88ace577a9c51061cb7d1a36babbbefa48212fadc838ffde98fdfff60de18386
+_internal/api-ms-win-core-datetime-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	1bd81dfd19204b44662510d9054852fb77c9f25c1088d647881c9b976cc16818
+_internal/api-ms-win-core-debug-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	591358eb4d1531e9563ee0813e4301c552ce364c912ce684d16576eabf195dc3
+_internal/api-ms-win-core-errorhandling-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	d56ce7b1cd76108ad6c137326ec694a14c99d48c3d7b0ace8c3ff4d9bcee3ce8
+_internal/api-ms-win-core-fibers-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	91d249d7bc0e38ef6bcb17158b1fdc6dd8888dc086615c9b8b750b87e52a5fb3
+_internal/api-ms-win-core-fibers-l1-1-1.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	fc9d86cec621383eab636ebc87ddd3f5c19a3cb2a33d97be112c051d0b275429
+_internal/api-ms-win-core-file-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	1ca895aba4e7435563a6b43e85eba67a0f8c74aa6a6a94d0fc48fa35535e2585
+_internal/api-ms-win-core-file-l1-2-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	4cadbc0c39da7c6722206fdcebd670abe5b8d261e7b041dd94f9397a89d1990d
+_internal/api-ms-win-core-file-l2-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	93c624b366ba16c643fc8933070a26f03b073ad0cf7f80173266d67536c61989
+_internal/api-ms-win-core-handle-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	39095f59c41d76ec81bb2723d646fde4c148e7cc3402f4980d2ade95cb9c84f9
+_internal/api-ms-win-core-heap-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	8f105771b236dbcb859de271f0a6822ce1cb79c36988dd42c9e3f6f55c5f7eb9
+_internal/api-ms-win-core-interlocked-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	53b25e753ca785bf8b695d89dde5818a318890211dc992a89146f16658f0b606
+_internal/api-ms-win-core-kernel32-legacy-l1-1-1.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	a9b13a1cd1b8c19b0c6b4afcd5bb0dd29c0e2288231ac9e6db8510094ce68ba6
+_internal/api-ms-win-core-libraryloader-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	7f39ba298b41e4963047341288cab36b6a241835ee11ba4ad70f44dacd40906c
+_internal/api-ms-win-core-localization-l1-2-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	6ee44dd0d8510dc024c9f7c79b1b9fa88c987b26b6beb6653ddd11751c34e5dc
+_internal/api-ms-win-core-memory-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	0512a35316ec9180437f86696a84c5c06a7e4e82e050055a656e5bf9fca206f9
+_internal/api-ms-win-core-namedpipe-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	c05f1fffe3b5a2738ea54ce9485cca026fb9635f982626fba1e1dcc531897273
+_internal/api-ms-win-core-processenvironment-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	c4eca98c3c67b6395d5b005b00ac1eb0318b86b23aa71035a44c2b1602befba9
+_internal/api-ms-win-core-processthreads-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	5ccb89e93d67bc3288d4e84649c5346e66e15e3d7cd65d989daf3f4cb584be9a
+_internal/api-ms-win-core-processthreads-l1-1-1.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	4ad565a8ba3ef0ea8ab87221ad11f83ee0bc844ce236607958406663b407333e
+_internal/api-ms-win-core-profile-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	7809160932f44e59b021699f5bc68799eb7293ee1fa926d6fcca3c3445302e61
+_internal/api-ms-win-core-rtlsupport-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	9dc1e91e71c7c054854bd1487cb4e6946d82c9f463430f1c4e8d1471005172b1
+_internal/api-ms-win-core-string-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	60fc31d2a0c634412f529dba76af3b9bf991352877c6dae528186d3935704cfd
+_internal/api-ms-win-core-synch-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	3a72b4f29f39a265d32ad12f0ce15dbf60129c840e10d84d427829ede45e78ad
+_internal/api-ms-win-core-synch-l1-2-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	efc1e4460984a73cf47a3def033af1c8f3b1dbc1a56cd27781d3aacf3e3330cb
+_internal/api-ms-win-core-sysinfo-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	b203d862ddef1dd62bf623fc866c7f7a9c317c1c2ae30d1f52cb41f955b5698e
+_internal/api-ms-win-core-sysinfo-l1-2-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	2703635d835396afd0f138d7c73751afe7e33a24f4225d08c1690b0a371932c0
+_internal/api-ms-win-core-timezone-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	33f4fddc181066fce06b2227bded813f95e94ed1f3d785e982c6b6b56c510c57
+_internal/api-ms-win-core-util-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	6eda016742a6171205a387a14b3c0b331841567740376f56768f8c151724207d
+_internal/api-ms-win-crt-conio-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	b762061b688aae679afe788904d2c9970f74a7dac98f3b42463d08f25e483d3f
+_internal/api-ms-win-crt-convert-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	ebb2ae5535a64f65daeab8235585114fc9dd2cf1a49f5852d446250b998b6ae4
+_internal/api-ms-win-crt-environment-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	17d63275d00bdd8670422b95bd264c532998e0a1b041079e54fce4b6b7a55819
+_internal/api-ms-win-crt-filesystem-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	9a9e2a65a281644e368d0f272b95ba5f6b445d1c35910d06056c5ebeb77402db
+_internal/api-ms-win-crt-heap-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	bab9ac3ec83e380ae51e4295ef3bf2c738627812d3a49d1e713661abbc8dc57a
+_internal/api-ms-win-crt-locale-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	bd14c67ea28e21d6257ad780a37122c9b5773f69e693f5db6bffaee4d839526e
+_internal/api-ms-win-crt-math-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	606d66d82db562ea7979179d06486a0f94d079941d26b80a1e2c49d29959df6f
+_internal/api-ms-win-crt-multibyte-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	95f49efbe8107786733fa7c474025cf3fee0ac632f240367b296c736d06572aa
+_internal/api-ms-win-crt-private-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	1bc82bed6143d2bf1b6b08a7809f4a5e29317d6fddd338a7da3c0223522e4bbf
+_internal/api-ms-win-crt-process-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	f6156b1020380ec4f0e48577ebedaaef5fb1ab1f337d8b4e72e6a33a7567a9cc
+_internal/api-ms-win-crt-runtime-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	c5902934d026d7e15fbe9917d474f3322846a41a25e66f4b2b1f758801879f4b
+_internal/api-ms-win-crt-stdio-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	a9c5a153d8c0286f9b41a2b1c65854ad9e6471b8755b7de87bae4470e60bcab6
+_internal/api-ms-win-crt-string-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	25b8f83a7767211b11132775a0e27a45aa4ec8ab4e6572599f9c172ae3606b40
+_internal/api-ms-win-crt-time-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	7c7f6393f06de11750adb09cc5698ae55cd9fb27b2e51e207286feb1b5b2b156
+_internal/api-ms-win-crt-utility-l1-1-0.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/windows/win32/apiindex/windows-apisets	Microsoft Windows redistributable	d8ba5f17b9ffcbf3aeaf3fa1da226832d2fa90f81acce0cd669464e76ce434ac
+_internal/av/_core.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	e3dbdcdb34ddde435d42bb7eb6973b16d284c690b586c15f5ed844d43b15e91f
+_internal/av/audio/codeccontext.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	c0506d6d57786247dcf50c9ad0eed26a811976c4aa109dcdbaab66474f32ec53
+_internal/av/audio/fifo.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9698309ee4a0dcbb535b224b16ed110c4bb72f3cc5c1ed5cae4bbb739eabcfc1
+_internal/av/audio/format.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9aaf76c07a9a63060cd52ac65f29e04a94f23845cf95d79cdfd4690f4cc60a36
+_internal/av/audio/frame.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	d24f37fa45598eb2715ea01b52de3ee3e4d388c7fce682ecec603f68f525672b
+_internal/av/audio/layout.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	34c7e0e185394fd1f710a85c1fe1cc0eb2feab7fb4ccca5ac99ace3cc699d543
+_internal/av/audio/plane.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	1b8fa88a3de0184f006bb0561626884dcca1c68932ef7502825ea300656cbc2b
+_internal/av/audio/resampler.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	eb972fc4cbdd6af4613d1b73573c4c03441f35c1746348051812581d1bd33676
+_internal/av/audio/stream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	dfb41fda12e1b4c4e1f9aa33011c18dbf1edbd338d0904fde556cb412cf7fe8e
+_internal/av/avcodec-63.dll	63.6.101 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	c915f673c7e6fc6d9920534f5e68a747b2818cf586caee10b64f126c92380a8c
+_internal/av/avdevice-63.dll	63.2.100 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	642d000d2f37b4d2c4bd0f9f93695e8e432717f2c75ce51b1ffa642098df3227
+_internal/av/avfilter-12.dll	12.3.101 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	64e490bf7012bb63a79008d182abdb6aa9181f4d2613874b7e766c5b5b91846d
+_internal/av/avformat-63.dll	63.5.101 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	525667995af9ecc037f8f764b8437b86c545097616bb8f7192ea5e169cf8dc1d
+_internal/av/avutil-61.dll	61.5.100 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	2d18103a64de144dd040b28fa4db5affbf6174812d4f155b92f2d1bcc12b753e
+_internal/av/bitstream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	6ec14dfa001642570d7289125a7d5e1755a8f2d1dd30371bcaddb65aa844bfd0
+_internal/av/buffer.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	e22891de8d9d5246fd155ef3ec71d99cf7fe3241dcdfffc353bf3169d51ba680
+_internal/av/codec/codec.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	3462e8cccdc68d33596cf50bb6b24839b659b9faccf19cffd1faf7345f00dae9
+_internal/av/codec/context.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9d21a37b4249c3a1b33e108a020c376109a1c0093f2b4261e2b31e23dd8ef8c7
+_internal/av/codec/hwaccel.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	516e823e4570374c949d287bc3f8b846f810895045f3e93c187d3fbf28750ebb
+_internal/av/container/core.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	58ef0edc74492a5f09f260be6ec7ee66cadde23af3cf6be0b701b0872b5ece48
+_internal/av/container/input.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	0f5991c5eb8ceab34af40bf7bbb5484df273d376dd8eb3193170ff22d219c0cf
+_internal/av/container/output.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	edf874bcf25fec6fd067ce1112f4a4ffcd646bb87883b260630d7da4bc63867c
+_internal/av/container/pyio.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	8cb4509842a70b629d07ae9b274ffe5bc56614c7fec6340a16eebb246f0ce6fe
+_internal/av/container/streams.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	dad9610ea4aede197ddf775f357c1e4d7d8bb251da0ad543e587b059d3efbbfc
+_internal/av/device.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	793b510243dcb141f226dfaf239f4103124ffd3ffae4255f1d8671697d6fe506
+_internal/av/dictionary.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	24d416e227eeecda22b97026664e32ce6c4a67b1e9489473973d2b478653b6c8
+_internal/av/error.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	cc111a72cdd960a6c4a7125293ec806abe3b7208c7d632800f3ed89e9c2df985
+_internal/av/filter/context.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	a3e00a79b1d98fea54a51ef412802290858573deabe42dda6fbccaa55ffa7fe2
+_internal/av/filter/filter.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	e17ee6d12ee4b0255462e847b5c6445b35a72460b23f2e12b150046327ce4ef0
+_internal/av/filter/graph.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	312d78ed475f20fbc9c69d56b6dadfe1f6f364e2f08c9d1cea08b664af01ad67
+_internal/av/filter/link.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9ab5145f3729f70c1913b68cd22795bc9b57af007d01b60632f0eec66a6c1012
+_internal/av/filter/loudnorm.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	94911480e2e59f30dc84af1b14c52f7f8b56ec55aad441602d84458900f704bb
+_internal/av/format.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	75dfc78440fe4a573c639a2967998bf743c9aa0273bc2ab23399dd197d2f633e
+_internal/av/frame.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	aa81d592774f24cd221913c80245df32af72833bc9b1ad1029a92b2a85c9fd6b
+_internal/av/index.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	a139954791e6431fb863d0a5b18e25b81944bfb65e3fa3c3edb146c7c4546a60
+_internal/av/logging.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	e61e3476ba2915cb88e242fc14a2f5f7e832934ad8defa4ab63b28cb48cd815e
+_internal/av/opaque.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	8766f6f60a3e850b2ea8af37af96c49594a1b57dcc4f90a64c30be050462a264
+_internal/av/packet.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	0ace6d7ca9a85b16b3ca60470646c0ab7fd58aeeef341723b87b9ac2f6d51c38
+_internal/av/plane.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	0c054a3418d34b42368e798b736629689297fe0e9af6e8934e713488bc34c2ef
+_internal/av/sidedata/encparams.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	60dfd51844d6bd3e1bcf48c66b58fc94603bb82ab3210961e8732ffcd3dae3c3
+_internal/av/sidedata/motionvectors.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	73922c00e6161a5b4b7e758cbb69afa92ab5216b5c04da13972c826f4f631775
+_internal/av/sidedata/sidedata.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	8c3892326212f10070f89ae61154e1905cadfba645e4e080f5f4de51b88e989d
+_internal/av/stream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	03e4b550442dee110ebdf035ca2798b583f8f6c67f0ec9ef2db8641f06190999
+_internal/av/subtitles/codeccontext.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	d0245ec3ae9a0377e24fa97e7bbe99a685d510f8b7d7ec4e08a6e15aefeae190
+_internal/av/subtitles/stream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	f4b6f0be5d7e33d36aff86aa1e9385ec57423a8037b46a306436725534a1a704
+_internal/av/subtitles/subtitle.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	12a9ab0d14eb5f2c869067900f4210ddc1b38b00e98900e1351a5023deadb60e
+_internal/av/swresample-7.dll	7.2.100 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	7e143c2407dd6ca1a4982b2f0da4f67d44bb0e79760647fea50b7b16c9d47af5
+_internal/av/swscale-10.dll	10.2.100 (PE FileVersion)	https://ffmpeg.org	LGPL-3.0-or-later	cd2a6b3d721bbce4e6113b9de7c9f333bec314add9ed8ac3c7c7704b4beafd89
+_internal/av/utils.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	c829d65a337430108cba35dedad82e585fc03ffbfc6f6956e1ebe7c514319463
+_internal/av/video/codeccontext.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	a2f0d526bcbccb5bb7e0d03374a671b1bb8e7a035f025bfb921f7f3f3b3b759f
+_internal/av/video/format.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	20d09217072f58557449f70485ed5e6f87c0e0a9bbe801c08fbb5e804dc623e2
+_internal/av/video/frame.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	d8fa009d8c0f9bb3677ef91689298b79d8b6631a88c2572daeee107323c892c0
+_internal/av/video/plane.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	395f1d6d77e86f607dd62f0bf00946925e2bd6ddd0a338c39b871a37d5fd1b36
+_internal/av/video/reformatter.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	2698ef6ca4971334e28bda4ecf7d16c2f3aa313bf7faaf7ba7a03aceb4f37ea4
+_internal/av/video/stream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9074a698191ead62756c994184eb46e4816e049af88ab684963c9dcb6d8f0c30
+_internal/charset_normalizer/cd.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	be1d8801c9785a52e5bc1b0c77ceca2c88041a5d9b9bac7162d767f712ea10e3
+_internal/charset_normalizer/md.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	a3d9c05de6a69b7adc024de7b3ffe823e8c72f080e4a89d1aac4b24173945815
+_internal/cryptography/hazmat/bindings/_rust.pyd	cryptography 48.0.1 (METADATA)	https://github.com/pyca/cryptography	Apache-2.0 OR BSD-3-Clause	cbae8065586611b18e9ffba1885af0b3ba9c52b9e79c85ca4a33264c626e159d
+_internal/ctranslate2/_ext.cp312-win_amd64.pyd	ctranslate2 4.7.2 (METADATA)	https://github.com/OpenNMT/CTranslate2	MIT	cebdbabd69bbe3a24b933584b5fa9fe13534918014abe5a7aa6c92c81feccdb0
+_internal/ctranslate2/ctranslate2.dll	ctranslate2 4.7.2 (METADATA)	https://github.com/OpenNMT/CTranslate2	MIT	dabe01067299cc323c6c19bddeeeafa143c911a65f289cfd5f56747790243a52
+_internal/ctranslate2/cudnn64_9.dll	9.10.2.21 (PE FileVersion)	https://developer.nvidia.com/cudnn	NVIDIA cuDNN Software License Agreement	9edbcdff73b0af070eb160b2ce66e59feca04aa017351d8eedcc5e8e149967d2
+_internal/ctranslate2/libiomp5md.dll	20250910 (PE FileVersion)	https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html	Intel End User License Agreement for Developer Tools	982233366b0afcda1e0f55a0b134097e35b779613f54ddb69e685e6cd06b755f
+_internal/frozenlist/_frozenlist.cp312-win_amd64.pyd	frozenlist 1.8.0 (METADATA)	https://github.com/aio-libs/frozenlist	Apache-2.0	ac03ce4d67b103af56efa5a436954c6c5e4da0eafec878a31298f2b8ce9c6f96
+_internal/hf_xet/hf_xet.pyd	hf-xet 1.5.2 (METADATA)	https://github.com/huggingface/xet-core	Apache-2.0	1d7086190c8f67568f670d4e1e1493097ce31058a634d9ce5c7f2922875e13e6
+_internal/libcrypto-3-x64.dll	3.5.6 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	ef8dc7e412a064e8bdc9243f8b71dcece44d837794047a69f80b491df8ed25e6
+_internal/libcrypto-3.dll	3.0.16 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	ccfffddcd3defb8d899026298af9af43bc186130f8483d77e97c93233d5f27d7
+_internal/libffi-8.dll	CPython 3.12.10 runtime (python312.dll PE FileVersion; component has no version resource)	https://github.com/libffi/libffi	MIT	eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a
+_internal/libssl-3-x64.dll	3.5.6 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	3f73db31036a78cc7f0749c199c8ca594c947ab991b9daed646d73729d1f5c4a
+_internal/libssl-3.dll	3.0.16 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	007142039f04d04e0ed607bda53de095e5bc6a8a10d26ecedde94ea7d2d7eefe
+_internal/llama_cpp/lib/ggml-base.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	ff7c22159b5f261f787d8b7c3f4b6bfad7e576ad78c7f549b45a3ad9a9d8a790
+_internal/llama_cpp/lib/ggml-cpu.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	e54cfb14e37e68a9144685c5cea158d83cd7aad1833f3e305e00861ba213641f
+_internal/llama_cpp/lib/ggml.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	fd531597881fc6a070dcc70756648d37e19177f72c338c932ae8b99ad31f3ace
+_internal/llama_cpp/lib/llama.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	4de986137563abb682ef339dadd86768368ded12aa76ee9f41450c195741f209
+_internal/llama_cpp/lib/mtmd.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	de95e62251aaee3e3137dd66aaebc62b65ec6908cad8ce4d8041deaca6459cd9
+_internal/lxml/_elementpath.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	b445db501dba7797e2743e720d47106be9db86dff70aff1ac660da558545ca07
+_internal/lxml/builder.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	cdd6dfe72b472034187f3b49b628ec5b8b92c9f305a984c55d2d257afdadd0a2
+_internal/lxml/etree.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	b5cef7d22ab972de3fee18e3787730ba74ecd12d5896eaa3660ebde418219669
+_internal/lxml/html/_difflib.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	d06cd3f667b868c9882b172f056ea7eb0157ce22845db893cca2634d25a848fc
+_internal/lxml/html/diff.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	6f2046cb59234ba30ce56a5424a054d33fa5395f31e886fff516a1654575a9b1
+_internal/lxml/objectify.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	ad4d1aabe85561cc06f503fb5758a45c3850a12f8719f1d66af06bd74553cf83
+_internal/lxml/sax.cp312-win_amd64.pyd	lxml 6.1.1 (METADATA)	https://github.com/lxml/lxml	BSD-3-Clause	57c38c31989fd3da9cedb47f762e42eae4bcaeb0e0698aaac9e7c3980d58d25b
+_internal/markupsafe/_speedups.cp312-win_amd64.pyd	MarkupSafe 3.0.3 (METADATA)	https://github.com/pallets/markupsafe	BSD-3-Clause	6107cd12e027357194947a9e4881aecf468790d2cb6ef4dd6ec77f5736232098
+_internal/msvcp140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	708dd7bbc7bd23bce9e93f7837a70c2dd7ad55cff43801e92c0f7fcd7dda47cd
+_internal/multidict/_multidict.cp312-win_amd64.pyd	multidict 6.7.1 (METADATA)	https://github.com/aio-libs/multidict	Apache-2.0	a7411fadf931b119427b537fcc6467f63179a7a7c29c603b89b1bc8be0733f8f
+_internal/numpy.libs/libscipy_openblas64_-63c857e738469261263c764a36be9436.dll	numpy 2.4.6 (METADATA)	https://github.com/OpenMathLib/OpenBLAS	BSD-3-Clause	63c857e738469261263c764a36be9436ebdeaa272e340a828f42047a97131080
+_internal/numpy.libs/msvcp140-a4c2229bdc2a2a630acdc095b4d86008.dll	14.40.33810.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	a4c2229bdc2a2a630acdc095b4d86008e5c3e3bc7773174354f3da4f5beb9cde
+_internal/numpy/_core/_multiarray_tests.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	4429c703c34706550d2ff582e6b61f1639618ead82bdd79f795372b5d8d99274
+_internal/numpy/_core/_multiarray_umath.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	80e7dc34f51cf6cef24da060e1e8620936b2cf188bae0ea367dc8619b2316204
+_internal/numpy/fft/_pocketfft_umath.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	9bdebd71ec1d4b301d0874a0d906d9d4b1cc1ea8331a6d98cd02b9ca2b99e9d4
+_internal/numpy/linalg/_umath_linalg.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	b465dda08f9238ae83b05a0acbfbddec969d0b5fc5de366bbbe312a4600d6e31
+_internal/numpy/random/_bounded_integers.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	32b8584df91938ed48412b8033337623aedda14754b5f16da7ecd6240cd37651
+_internal/numpy/random/_common.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	7bad497891be587c15d9c5f1c10d7dafaa29c3811b6da656c0d279ec550a64de
+_internal/numpy/random/_generator.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	0037c60072091c1f79f4f72426da3ce75ae59152549ebd601a5750fc38ab552c
+_internal/numpy/random/_mt19937.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	5bca9225bb4688c0c010c53e60acf15e7fe9de0732e200ccdac509b48628e86a
+_internal/numpy/random/_pcg64.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	aaf391493c2a70781e2c6f757cd8e18839718d79a145a6250b36d267088bb5bc
+_internal/numpy/random/_philox.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	86329e7846f674b53fcd09f4cff3abac76f825a764e21b587f14df1e258c114a
+_internal/numpy/random/_sfc64.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	c582965a7338b791b98d6397ebd58755002bbc06239d44535377fa53639d29ef
+_internal/numpy/random/bit_generator.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	472d4d7369bdc1c9444f7504f6d574090b3deda72536ac286139780659438b02
+_internal/numpy/random/mtrand.cp312-win_amd64.pyd	numpy 2.4.6 (METADATA)	https://github.com/numpy/numpy	BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0	be0ae4e7991e5e72ad6e07edcf034f93a31ab163da499b716354acd9da177367
+_internal/onnxruntime/capi/onnxruntime_providers_shared.dll	1.27.20260615.2.8f0278c (PE FileVersion)	https://github.com/microsoft/onnxruntime	MIT	844479db095b130f877d5b3da4b397b9752610b224f84c186487b7d0fbd90512
+_internal/onnxruntime/capi/onnxruntime_pybind11_state.pyd	onnxruntime 1.27.0 (METADATA)	https://github.com/microsoft/onnxruntime	MIT	d1207006fd0a0c70902f8dad6b099c26db02890383d8b30d6fa5a6ffea6c8141
+_internal/onnxruntime/capi/onnxruntime.dll	1.27.20260615.2.8f0278c (PE FileVersion)	https://github.com/microsoft/onnxruntime	MIT	bbb4ff18db820c24ad6d9196ecdc7a62d6099268eaadf264813a23591d4d15cc
+_internal/PIL/_avif.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	6731dce52baab0b96b0eeb3c664844b5b42c2168ea8668af2430e2fbdd2dfbd8
+_internal/PIL/_imaging.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	c8c519ec72bf75b2945b4fc4afa854af2fca8b970a403134f9ddda3e164d85e9
+_internal/PIL/_imagingcms.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	c89c633ae1bf3f26a327d14ff688db66628e19c9866ab925479f27dcb60a2d6f
+_internal/PIL/_imagingft.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	77c6d37de41733df40fb36d9af47644989ac17da036515e759303969edb22c48
+_internal/PIL/_imagingmath.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	82ac45c41a008854d05f67deda298b65a7bed850d0d79a3af861ed583f6e7d62
+_internal/PIL/_imagingtk.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	690cc1cae4a2dc8594a342b9241e691dcc89d81dad4cddcefdf285275365a2b1
+_internal/PIL/_webp.cp312-win_amd64.pyd	Pillow 12.3.0 (METADATA)	https://github.com/python-pillow/Pillow	MIT-CMU	9823cebb84f425af3ac1e7437259bc176e7ad7e25d7fa829b0e1a3e55c11be70
+_internal/propcache/_helpers_c.cp312-win_amd64.pyd	propcache 0.5.2 (METADATA)	https://github.com/aio-libs/propcache	Apache-2.0	c31395d9bc4730221b97e81708658827b7fdf3432152025d32b6a5520959ca1c
+_internal/psutil/_psutil_windows.pyd	psutil 7.2.2 (METADATA)	https://github.com/giampaolo/psutil	BSD-3-Clause	0035450801bd7d938e9e146c5ec28e619cb5a5f4a18cdc53ac7e9734c7f94f78
+_internal/pydantic_core/_pydantic_core.cp312-win_amd64.pyd	pydantic-core 2.46.4 (METADATA)	https://github.com/pydantic/pydantic-core	MIT	775bcb0ce04b93cb18410bb28e589e1dd6a441f1f93007d2dc80a305d70c74c9
+_internal/pyexpat.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	d615e193d1affcdbfe504e90d3621cbdcff94bf72b79d899126534507fd6d27a
+_internal/PySide6/avcodec-61.dll	61.19.101 (PE FileVersion)	https://ffmpeg.org	LGPL-2.1-or-later	a3127f36742b58827411a561489505e38a8ccbcc6a3bc2f1ee58abfe700ced15
+_internal/PySide6/avformat-61.dll	61.7.100 (PE FileVersion)	https://ffmpeg.org	LGPL-2.1-or-later	bbacff3524c192eaf129dd6f838c0eee65abe56fe5109b9bede839a0823f8fa3
+_internal/PySide6/avutil-59.dll	59.39.100 (PE FileVersion)	https://ffmpeg.org	LGPL-2.1-or-later	615df5bb9903887b6f56a47f17fc169cd42753b9b9db7f162c74731c45612df6
+_internal/PySide6/MSVCP140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	b2113956aa3fcb9decfe65be1ee7829f8e3ae0899633ae89fe04888ada201594
+_internal/PySide6/MSVCP140_2.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	1b806b427ffb573deff8478cf6fe336465fe2c67e0919bb95f452b6f31d25736
+_internal/PySide6/MSVCP140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	708dd7bbc7bd23bce9e93f7837a70c2dd7ad55cff43801e92c0f7fcd7dda47cd
+_internal/PySide6/opengl32sw.dll	PySide6 6.11.1 wheel (METADATA; component has no version resource)	https://gitlab.freedesktop.org/mesa/mesa	MIT	4a7d90f91fdecb5df7b426bc2d05974b8d7ffa450af2d1f93f3eca05800718da
+_internal/PySide6/plugins/generic/qtuiotouchplugin.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	1ee2810eef83dbb2740d4f796f8149dc5752ffd3dd60e39796a9a4d6a6a0ae38
+_internal/PySide6/plugins/iconengines/qsvgicon.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	dd60826f1959faa7ea137e00959717450da9f2e0c151054daeff1e9d1226fab2
+_internal/PySide6/plugins/imageformats/qgif.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	8b8dea2abaed333f1fbbdf3c8867ceb6040722c88a1fb81ea451f8b8bc9e8ee0
+_internal/PySide6/plugins/imageformats/qicns.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	6a5aed435989d54234c16581e66f6a59137bfccd180565a217a8676bcda6dc8d
+_internal/PySide6/plugins/imageformats/qico.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	f81378dd51392ff0d3ae094d5e59dfc4fa664a0ef4d756d6ed40584f90af2758
+_internal/PySide6/plugins/imageformats/qjpeg.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	97af9ceaf3ebefefeb7aede27ae07b73ae1d2ed479427beebf61c58654361d43
+_internal/PySide6/plugins/imageformats/qpdf.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	273a1b6daaf3c0def92902044cf35d0ec65e56f904acb7fbf428d80dae2bb9d5
+_internal/PySide6/plugins/imageformats/qsvg.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	d4100055c3a4d6c1bca5e303e3d2049bde54d4e916442ee0a3e9b4dfa7d416fc
+_internal/PySide6/plugins/imageformats/qtga.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	50f0e6ff9b7fca9386ccad52eb5e83466774e6282c9532b03b11e5a64951dffb
+_internal/PySide6/plugins/imageformats/qtiff.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	087a3425962e838c35c9073bdf8de13712466e9b9590717666af7839db068dba
+_internal/PySide6/plugins/imageformats/qwbmp.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	28a6447d44169acbf2eab38c475dc0aa9e32abb3f29f72257726497353b9bf63
+_internal/PySide6/plugins/imageformats/qwebp.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	3e2bf546a3885cbe3e2b64058b1c58377d3c8822f51b37ba967f61e8054d7719
+_internal/PySide6/plugins/multimedia/ffmpegmediaplugin.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	049c84e9f2c253f0aaa43f035002ac76b3fe59fc8d42c3d3015e2416bf6b4f5f
+_internal/PySide6/plugins/multimedia/windowsmediaplugin.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	47b127205e89618a78962bd94596e568cc9b0f98ed6dee81c21aac35b7b5ea71
+_internal/PySide6/plugins/networkinformation/qnetworklistmanager.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	aeef84e74d3114f62f4650305b403ef9f81e8c05bc67c86683d999c5c1243926
+_internal/PySide6/plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	d116b216a50037cbfa6ee9afd94bea357cdbee263e0f9b8c6ef2e811da29eb70
+_internal/PySide6/plugins/platforms/qdirect2d.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	f099af483b0d71a6a028bc15ad98a407e4c820400e6626cdc8e66b5f5e4cfed2
+_internal/PySide6/plugins/platforms/qminimal.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	97d81b9ee7cbbeb68e46eefce24d4b929b7a24cc646cebe3d4d03e2734f97935
+_internal/PySide6/plugins/platforms/qoffscreen.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	426266e8ba0ea07c416616ad9973702fe126d4559cb2ee11e1c9bdbae85ba755
+_internal/PySide6/plugins/platforms/qwindows.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	54d736de022f707e9f7f555e4c9f9e993253cd5b0ee2364e6a9458c180828c42
+_internal/PySide6/plugins/styles/qmodernwindowsstyle.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	9af96b09ebaf7ff13e22c70bf69b9c3f226f069375d1a9f9efd63e944e43f5fb
+_internal/PySide6/plugins/tls/qcertonlybackend.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	45b9f59593a1567f7d6725ddfa53f667f8f26b7795b1e2d0e1080a4025bafc02
+_internal/PySide6/plugins/tls/qopensslbackend.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	c7222880a7defe7a5c84f5871cdc7e34df22f3de6646026683042fab5c22b561
+_internal/PySide6/plugins/tls/qschannelbackend.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	d09487a64be0e1d4545a8230e7fe05d163375610adf175407a6742944f16deb9
+_internal/PySide6/pyside6.abi3.dll	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	d4072be872b31f3748de5e6c28cb2976dafbf063d3ccfa38e5dabda29babcdaf
+_internal/PySide6/Qt6Core.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	65fe6224b6c47a15b058738031d31dce9928c4d7a58e1b8db6434f6f5cddd702
+_internal/PySide6/Qt6DataVisualization.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	f4bbfc106550c4e205eb7175e76f532c975537f46e6cf8d0843e4d59e2401454
+_internal/PySide6/Qt6Gui.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	cd071161ad325ff2de92b0e33d71334ef20712544796949623ce92dfb3957e90
+_internal/PySide6/Qt6Multimedia.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	dc32f2cbb90e42d4daa3215f24fb42f5396911379d7f10e89df8cf14a765760a
+_internal/PySide6/Qt6MultimediaWidgets.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	8ee4991f792cfcb10b7a125e905393dcb6b2ac9c2eac70c55133ba265395327a
+_internal/PySide6/Qt6Network.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	dfd0dd852274a5fe9b3c7d2dd9fffe7e2117d28c10fc862174d6675d42395177
+_internal/PySide6/Qt6OpenGL.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	b31d20dc5ab28731d43ac5312c46c8fe1c39ea3e9614c46e6419b4debc87c1eb
+_internal/PySide6/Qt6OpenGLWidgets.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	2bf39d881bc9f489652805c5f983262b4ecfbaadccebe2e8a8a5d0ba4ca4decd
+_internal/PySide6/Qt6Pdf.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	cf8ae19cf5f98db4a3ae332fbe6bd00bc4cdf5ca5779f88b2071cf8180610106
+_internal/PySide6/Qt6Qml.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	5dd60d8e2048557bc1b8a57f6bb44986f45d693c3b0930d1341b07089478f09d
+_internal/PySide6/Qt6QmlMeta.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	1ae5a50e8defa2b60518a2261a2472ecf4d3e3ca965780339953d658844d4aa0
+_internal/PySide6/Qt6QmlModels.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	1ec0d115747d65a994798064618ffd9e3e9efa1548297e64e08c49c9a98f0feb
+_internal/PySide6/Qt6QmlWorkerScript.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	3a764b6c2bc8cb21f009485e7410e6d29b9edd5e0addbed8fb89292c0ab64c97
+_internal/PySide6/Qt6Quick.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	33bddb006a99c82ce3bb677fd2535dfb651d4b2fb12aa13eadde6dc442bf7f0d
+_internal/PySide6/Qt6Svg.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	a7352e8062d02e2108e37db4050fb3315d3c03c7d36acdc24b98b9a6c129c1de
+_internal/PySide6/Qt6VirtualKeyboard.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	e8db083111dc264c80c81920c882ed1c2c28043edffa988894e0a82723b2aa4b
+_internal/PySide6/Qt6Widgets.dll	6.11.1.0 (PE FileVersion)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	5a9f37dedd3dc5bcc1a4bb8ea919c49fc62df751a1450accc34379eb6710eab6
+_internal/PySide6/QtCore.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	be52341a5df1f76ecca2fb1e94eb429dfa46f0b659ed6536f25119b565b21ea8
+_internal/PySide6/QtDataVisualization.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	91ad3c4c9f1f8f3ed26f240a1aa01ba4f9cafe86afe06a301a4f015020ee5241
+_internal/PySide6/QtGui.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	f0549716b10a8b4fbd5c6c041f36af215223809f919f4c4722d44cc199d5c593
+_internal/PySide6/QtMultimedia.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	1be5cdd4670b8dfb2ed86ffee7c4bd252677951698e175ac7aa2f61d444f69b4
+_internal/PySide6/QtMultimediaWidgets.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	1411c328a81400ddc45d53b126c778ebd8a2802b54110e3d773af3041395949a
+_internal/PySide6/QtNetwork.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	3953a86c9545ad8fa1cf1dec27085dd357838464cd6e2131c9963caad6234b67
+_internal/PySide6/QtOpenGL.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	0e166f207602e2de6153a05ebe04762d1396428ab0734947d9ebd6f871bbedf5
+_internal/PySide6/QtOpenGLWidgets.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	cd6a86d70ccda279d24656f20cc9ab232a22c732bac1b4751ff2f6dde400ed57
+_internal/PySide6/QtWidgets.pyd	PySide6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	85cb6c2181b4b09887a7d8507dd950844d1b8f74a9c4002c7b71169f75bf6fda
+_internal/PySide6/swresample-5.dll	5.3.100 (PE FileVersion)	https://ffmpeg.org	LGPL-2.1-or-later	878e0fbf647dc8e6becb32dc031701b19dac8c9867192d571f0d72d02842f7ed
+_internal/PySide6/swscale-8.dll	8.3.100 (PE FileVersion)	https://ffmpeg.org	LGPL-2.1-or-later	2f21c52fd2eb73484b448666903c5eee1b4948d28239cb18d93428a989ed3ecc
+_internal/PySide6/VCOMP140.DLL	14.24.28127.4 built by: vcwrkspc (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	180274d56b0f607e04b3963dd795dfdb17551af1e27446fa1cbe0b0551df42f5
+_internal/PySide6/VCRUNTIME140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	b322e382ea249b50009f14a9a71ad16729eb6e4b58a8d3b3be6ac66ea6342a22
+_internal/PySide6/VCRUNTIME140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	c6e841078cd352299a58925991e2552f7251b046253ba895b3ad50cd5cd32ec6
+_internal/python3.dll	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	fb975a606e7fbf74f64260e3f60c3490b4f74a183c0926fd6ed1ac4c52ac7b1c
+_internal/python312.dll	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	9a0e3435aaa680d868150f87ab3e388ad2eebc22f87e036155c7b4eda8cd2120
+_internal/safetensors/_safetensors_rust.pyd	safetensors 0.8.0 (METADATA)	https://github.com/huggingface/safetensors	Apache-2.0	80a2b3f7658854ade855c5fb6192ee38fe2c7fbfd38d1c7c1f4d2c44f67125e4
+_internal/select.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	d4d7181b11db0bd22a6cd5cda6f8583d1f5c77615fd0a6ca33350619d6e0438a
+_internal/sherpa_onnx/lib/_sherpa_onnx.cp312-win_amd64.pyd	sherpa-onnx 1.13.4 (METADATA)	https://github.com/k2-fsa/sherpa-onnx	Apache-2.0	f52edb4c489f9dcbc8d6e5a6fa0e9c38a00b7ea9fc216c5e39a424bc1a1545a1
+_internal/sherpa_onnx/lib/onnxruntime.dll	1.27.0 (PE FileVersion)	https://github.com/microsoft/onnxruntime	MIT	daa77083a45bf525da0dde9e87f85d8eb146f58f9c9aa7124ca84545e1c0f148
+_internal/sherpa_onnx/lib/sherpa-onnx-c-api.dll	sherpa-onnx 1.13.4 (METADATA)	https://github.com/k2-fsa/sherpa-onnx	Apache-2.0	614878147c05121aeb1514ec4fb3e48b89751591532eca9208235b9ab868306a
+_internal/sherpa_onnx/lib/sherpa-onnx-cxx-api.dll	sherpa-onnx 1.13.4 (METADATA)	https://github.com/k2-fsa/sherpa-onnx	Apache-2.0	0da42dfb964b5625c0f2cdd31cd831c0da4712a254e27edfe6eec4184f8c0cf7
+_internal/shiboken6/MSVCP140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	d878d7cb27187247a3ce1adfdf1f9b7b703e4429bc55f3e95284a43e80c10151
+_internal/shiboken6/MSVCP140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	005f2324c7ff79bbe9a44992b0708abb4c871bd24bcc7a34aca5eab4439c1f4a
+_internal/shiboken6/Shiboken.pyd	shiboken6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	0e2c5318c5ac60a016a12230bbb1f6a9d990c45cbf4a7c4af24aefb5ab7dc40a
+_internal/shiboken6/shiboken6.abi3.dll	shiboken6 6.11.1 (METADATA)	https://code.qt.io/cgit/pyside/pyside-setup.git	LGPL-3.0-only	47f4f9b44c95037565dd14f4be04f350f20c53c05483b750e0be867c39a7441e
+_internal/shiboken6/VCRUNTIME140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	e4d7ea5f4f4ff6d0c208e693853617cdef0ad71cfe5dd5c3ae16c8a6b64c18ea
+_internal/shiboken6/VCRUNTIME140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	8d9c679c825c5fff298d66c41af30f35c289fc101868dfc9635547bada0daba6
+_internal/sqlite3.dll	3.49.1.0 (PE FileVersion)	https://www.sqlite.org	blessing (public domain)	8daa45684bf6688fca28d956b2e8942f2fa98f656675ce68e6d61dd869848a7a
+_internal/tokenizers/tokenizers.pyd	tokenizers 0.22.2 (METADATA)	https://github.com/huggingface/tokenizers	Apache-2.0	7acb83f5b89136597e0d14b788d82917bf2870df94575bf77e12731c4e49c4df
+_internal/ucrtbase.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	2e5fb14b7bf8540278f3614a12f0226e56a7cc9e64b81cbd976c6fcf2f71cbfb
+_internal/unicodedata.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	208ee1cd3cbad0828433ca7246b05be2b1ff5569983d27d296c0b38888585488
+_internal/vcruntime140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	b322e382ea249b50009f14a9a71ad16729eb6e4b58a8d3b3be6ac66ea6342a22
+_internal/vcruntime140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	c6e841078cd352299a58925991e2552f7251b046253ba895b3ad50cd5cd32ec6
+_internal/winsound.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	100e8d676777603c7258daf9b2f23ef001f09f1596d8708de359326fff72bddd
+_internal/yaml/_yaml.cp312-win_amd64.pyd	PyYAML 6.0.3 (METADATA)	https://github.com/yaml/pyyaml	MIT	4fd0e84f50261ed0886cffcdd8008b055af3352546e649c3d741b50eae1f9b5f
+_internal/yarl/_quoting_c.cp312-win_amd64.pyd	yarl 1.24.5 (METADATA)	https://github.com/aio-libs/yarl	Apache-2.0	729d917642f071de55ec31924df4d180d26fafa34561b73f035a5fe1bd8eb0c9
+balachky-protocol-worker.exe	PyInstaller 6.21.0 (METADATA)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	4f342e8d4c41f0f9e9db5056ab24ac9be8a0437329b804c3e9b84b2b7bec1b9c
+Balachky.exe	1.2.4-beta (PE FileVersion)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	317912043364b453cdc33026eabac50d097e2191d6312c98629df13e56d28037
+BINARY TRACE END
+

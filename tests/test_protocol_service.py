@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests._isolation import reset_process_caches
 from whisper_core.protocol import ENV_FAKE_BACKEND
 from whisper_core.protocol import model_manager as mm
 from whisper_core.protocol import service
@@ -29,6 +30,7 @@ def _make_ready_model(root: Path):
 
 class TestServiceHelpers(unittest.TestCase):
     def setUp(self):
+        reset_process_caches()
         self.tmp = Path(tempfile.mkdtemp(prefix="svc-"))
         self._orig = mm.PRESETS.copy()
         mm.PRESETS["fast"] = replace(mm.PRESETS["fast"], min_bytes=100, sha256=None)
@@ -57,6 +59,7 @@ class TestServiceHelpers(unittest.TestCase):
 
 class TestGeneratorRun(unittest.TestCase):
     def setUp(self):
+        reset_process_caches()
         self.tmp = Path(tempfile.mkdtemp(prefix="svcrun-"))
         self._orig = mm.PRESETS.copy()
         mm.PRESETS["fast"] = replace(mm.PRESETS["fast"], min_bytes=100, sha256=None)
@@ -125,6 +128,7 @@ class TestErrorHandling(unittest.TestCase):
     """E5: краш сайдкара → ProtocolError (зрозуміле повідомлення), не Cancelled."""
 
     def setUp(self):
+        reset_process_caches()
         self.tmp = Path(tempfile.mkdtemp(prefix="svcerr-"))
         self._orig = mm.PRESETS.copy()
         mm.PRESETS["fast"] = replace(mm.PRESETS["fast"], min_bytes=100, sha256=None)

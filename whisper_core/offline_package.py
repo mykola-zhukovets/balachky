@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 import datetime
 import hashlib
 import json
@@ -41,6 +42,7 @@ import whisper_core.meeting.diarization_models as diar_models
 import whisper_core.models as stt_models
 import whisper_core.paths as paths
 import whisper_core.protocol.model_manager as protocol_mm
+from whisper_core.version import DISPLAY_VERSION
 
 _log = logging.getLogger("balachky.offline_package")
 import whisper_core.punctuator as punc
@@ -107,7 +109,15 @@ def get_filesystem_type(target_dir: str | Path) -> str:
         max_len = ctypes.c_ulong()
         flags = ctypes.c_ulong()
         try:
-            res = ctypes.windll.kernel32.GetVolumeInformationW(
+            kernel32 = ctypes.windll.kernel32
+            kernel32.GetVolumeInformationW.argtypes = (
+                wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
+                ctypes.POINTER(wintypes.DWORD),
+                ctypes.POINTER(wintypes.DWORD),
+                ctypes.POINTER(wintypes.DWORD),
+                wintypes.LPWSTR, wintypes.DWORD)
+            kernel32.GetVolumeInformationW.restype = wintypes.BOOL
+            res = kernel32.GetVolumeInformationW(
                 ctypes.c_wchar_p(drive),
                 volume_name_buf,
                 1024,
@@ -530,7 +540,7 @@ def export_package(
             "package_format": PACKAGE_FORMAT_VERSION,
             "product": PRODUCT_NAME,
             "created_at": created_at_iso,
-            "created_by_app_version": getattr(cfg, "app_version", "1.2.4"),
+            "created_by_app_version": getattr(cfg, "app_version", DISPLAY_VERSION),
             "required_app_version": REQUIRED_APP_VERSION,
             "components": exported_components,
             "package_checksums": {

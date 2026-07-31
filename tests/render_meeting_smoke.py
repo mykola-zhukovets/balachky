@@ -59,7 +59,7 @@ class _RenderController:
             meeting_session_done = Signal(str, object)
             meeting_error = Signal(str, str)
             meeting_audio_ready = Signal(str)
-            meeting_storage_warning = Signal(str, float)
+            meeting_storage_warning = Signal(str, float, str)
             meeting_processing_progress = Signal(str, object)
             meeting_processing_done = Signal(str, object)
 
@@ -77,6 +77,7 @@ class _RenderController:
                 self.meeting_start_calls = []
                 self.meeting_process_calls = []
                 self.meeting_cancel_process_calls = []
+                self.bookmark_calls = []
 
             def protocol_model_ready(self):
                 return False              # feature/ai-protocol: рендер без моделі
@@ -136,6 +137,10 @@ class _RenderController:
             def meeting_cancel(self):
                 pass
 
+            def add_meeting_bookmark(self, title="", source="live_button"):
+                self.bookmark_calls.append((title, source))
+                return True
+
             def start_meeting_processing(self, sid):
                 self.meeting_process_calls.append(sid)
                 return True
@@ -179,6 +184,10 @@ class _RenderController:
             def log_meeting_export(self, sid, kind, output):
                 pass
 
+            def write_meeting_transcript(self, sid, text):
+                self.written_transcripts = getattr(
+                    self, "written_transcripts", []) + [(sid, text)]
+
         self._impl = _Ctl(metas)
 
     def __getattr__(self, name):
@@ -221,6 +230,10 @@ class MeetingRenderTests(unittest.TestCase):
         app.processEvents()
 
     def setUp(self):
+        from fronts.desktop.i18n import current_language, set_language
+        self._language = current_language()
+        self.addCleanup(set_language, self._language)
+        set_language("uk")
         self._live = []            # (page, ctl) — усе створене тестом
 
     def tearDown(self):
@@ -279,19 +292,83 @@ class MeetingRenderTests(unittest.TestCase):
         self.assertFalse(page._live_host.isVisible())
         self._save(page, "01-idle-empty.png")
 
+    def test_empty_state_hidden_once_first_session_exists(self):
+        """Аудит 31.07: порожній стан зникає, щойно з'являється перший запис."""
+        meta = SimpleNamespace(
+            id="2026-07-31_09-00-00", status="done", title=None, preset="both",
+            audio_files={"mic": ["audio/mic/0001.wav"]}, processing={})
+        page, _ = self._page([meta])
+        self.assertEqual(page._stack.currentIndex(), 1,
+                         "перша нарада мала прибрати порожній стан і показати стрічку")
+
+    def test_empty_state_button_starts_recording_same_as_round_button(self):
+        """Кнопка першого кроку в порожньому стані веде на ту саму дію, що
+        кругла кнопка запису — не в нікуди."""
+        page, ctl = self._page([])
+        self.assertTrue(page._empty.button.isEnabled())
+        self.assertEqual(page._empty.button.text(), page._rec_caption.text())
+        page._empty.button.click()
+        self._pump()
+        self.assertEqual(len(ctl.meeting_start_calls), 1,
+                         "клік мав викликати controller.meeting_start(), як і кругла кнопка")
+
+    def test_empty_state_button_disabled_during_processing(self):
+        """Під час обробки тумблер запису вимкнено (не можна стартувати новий) —
+        кнопка порожнього стану мусить лишатись синхронною з круглою кнопкою."""
+        page, _ = self._page([])
+        page._on_state("processing")
+        self._pump()
+        self.assertFalse(page._empty.button.isEnabled())
+        self.assertFalse(page._rec_btn.isEnabled())
+
     def test_record_button_prominent_on_first_screen(self):
         """Аудит Миколи 22.07: головна дія (запис) помітна одразу — кругла кнопка
         з видимим підписом стоїть угорі, а панель налаштувань згорнута за
         замовчуванням (не перекриває кнопку)."""
-        from fronts.desktop.i18n import tr
         page, _ = self._page([])
         self.assertTrue(page._rec_btn.isVisible(), "кнопка запису має бути видима")
         self.assertTrue(page._rec_caption.isVisible(), "підпис під кнопкою видимий")
-        self.assertEqual(page._rec_caption.text(), tr("meeting_start"))
+        self.assertEqual(page._rec_caption.text(), "Почати запис")
         self.assertFalse(page._settings_panel.isVisible(),
                          "налаштування згорнуті за замовчуванням")
         self.assertTrue(page._settings_toggle.isVisible(),
                         "розкривачка налаштувань видима")
+
+    def test_settings_disclosure_is_a_real_button_not_a_thin_row(self):
+        """Канон побудови сторінок 30.07 п.3: живий тест власника — людина, яка
+        бачила застосунок вперше, НЕ знайшла «Налаштування наради», бо
+        розкривач був тонким рядком-написом із дрібною стрілкою (звичайний
+        QToolButton: border:transparent у спокої — межа лише на hover).
+        property("disclosure") вмикає QSS-правило з видимою межею й більшим
+        padding (theme.py) — перевіряємо це ФАКТОМ: розкривач вищий за голий
+        QToolButton із тим самим текстом на тій самій палітрі."""
+        from PySide6.QtWidgets import QToolButton
+        page, _ = self._page([])
+        toggle = page._settings_toggle
+        self.assertTrue(
+            bool(toggle.property("disclosure")),
+            "toggle без property(disclosure) — QSS-межа/padding не застосуються")
+        bare = QToolButton()
+        bare.setText(toggle.text())
+        bare.show()
+        self._pump()
+        try:
+            # Поріг АБСОЛЮТНИМ числом, не лише "більше за голий": сам голий
+            # QToolButton уже трохи вищий за arrow+checkable (~21px проти
+            # ~20px) НЕЗАЛЕЖНО від QSS-правила — відносне порівняння самé
+            # по собі не ловить мутацію, де QSS-блок [disclosure] спорожнили,
+            # а property лишили. 36px — нижче за реальні ~45px розкривача,
+            # але недосяжне без padding 8px+8px із QSS.
+            self.assertGreaterEqual(
+                toggle.sizeHint().height(), 36,
+                "розкривач має бути ПОМІТНО вищим за звичайний тонкий "
+                "рядок-кнопку — QSS-padding [disclosure=true] не діє")
+            self.assertGreater(
+                toggle.sizeHint().height(), bare.sizeHint().height(),
+                "розкривач має бути вищим за звичайний тонкий рядок-кнопку")
+        finally:
+            bare.deleteLater()
+            self._flush_deferred(self._app)
 
     def test_live_transcription_checkbox_absent_on_meeting(self):
         """Аудит Миколи 22.07: чекбокс «Жива розшифровка» — чужий на Нараді
@@ -426,11 +503,55 @@ class MeetingRenderTests(unittest.TestCase):
         self.assertTrue(page._live_host.isVisible())
         self._save(page, "02-recording.png")
 
+    def test_bookmark_button_does_not_block_recording_with_dialog(self):
+        """feature/bookmarks-stage1: клік «Закладка» під час запису фіксує
+        момент миттєво — жодного модального діалогу (спека, розд. 2.2)."""
+        from PySide6.QtWidgets import QInputDialog
+        page, ctl = self._page([])
+        ctl.meeting_state.emit("recording")
+        self._pump()
+        self.assertTrue(page._bookmark_btn.isVisible())
+
+        with patch.object(QInputDialog, "getText") as dlg:
+            page._bookmark_btn.click()
+
+        dlg.assert_not_called()
+        self.assertEqual(ctl._impl.bookmark_calls, [("", "live_button")])
+
+    def test_bookmark_chips_seek_player(self):
+        """feature/bookmarks-stage1: чіпи закладок на картці готової наради
+        клікабельні — клік стрибає вбудований плеєр на таймкод мітки (мок
+        play_from), як і чіпи розділів."""
+        import os
+        import tempfile
+        from fronts.desktop.glass import GlassButton
+
+        sdir = tempfile.mkdtemp()
+        fake_wav = os.path.join(sdir, "mic.wav")
+        open(fake_wav, "wb").close()
+
+        page, ctl = self._page([])
+        ctl._impl.meeting_audio_paths = lambda sid: {"mic": fake_wav}
+        ctl._impl._metas = [SimpleNamespace(
+            id=sdir, status="done", title="Нарада", preset="onlymic",
+            bookmarks=[{"timestamp": 75.0, "title": "Домовились про бюджет"}])]
+        page.refresh()
+        self._pump()
+
+        self.assertTrue(page._players)
+        player = page._players[-1]
+        calls = []
+        player.play_from = lambda t, until=None: calls.append(t)
+
+        chip = next(b for b in page.findChildren(GlassButton)
+                    if "Домовились про бюджет" in b.text())
+        chip.click()
+        self.assertEqual(calls, [75.0])
+
     def test_screen_record_checkbox_locked_during_active_session(self):
-        # Ревізія №2: чекбокс «Записувати екран» діє лише з наступної наради,
+        # Рецензія №2: чекбокс «Записувати екран» діє лише з наступної наради,
         # тож поки сесія активна — він disabled із поясненням, а після
         # завершення знову доступний зі звичайною підказкою.
-        from fronts.desktop.i18n import tr
         page, ctl = self._page([])
         chk = page._screen_record
         self.assertTrue(chk.isEnabled())                     # спокій — доступний
@@ -439,13 +560,17 @@ class MeetingRenderTests(unittest.TestCase):
             ctl.meeting_state.emit(state)
             self._pump()
             self.assertFalse(chk.isEnabled(), f"{state}: чекбокс має бути вимкнено")
-            self.assertEqual(chk.toolTip(), tr("meeting_screen_record_locked"),
+            self.assertEqual(chk.toolTip(), "Діє з наступної наради",
                              f"{state}: підказка про наступну нараду")
 
         ctl.meeting_state.emit("idle")
         self._pump()
         self.assertTrue(chk.isEnabled())                     # знову доступний
-        self.assertEqual(chk.toolTip(), tr("meeting_screen_record_hint"))
+        self.assertEqual(
+            chk.toolTip(),
+            "Поряд із записом наради збережеться відео екрана — зручно "
+            "переглянути слайди чи демонстрацію. Займає помітно більше місця "
+            "на диску, ніж лише звук.")
 
     def test_render_sessions(self):
         metas = [
@@ -535,10 +660,79 @@ class MeetingRenderTests(unittest.TestCase):
             "meeting_security_open_tip")
         self.assertTrue(security[0].toolTip(), "підказка значка непорожня")
 
+    def test_process_button_names_result_and_is_visually_prominent(self):
+        """Канон побудови сторінок 30.07 п.1-2: живий тест власника — головна
+        дія називалась «Обробити нараду» (процес, не результат) і "ховалась"
+        серед сусідніх кнопок. Тут доводимо ОБИДВА факти окремо, не через
+        рядок tr(): (1) новий підпис результат-орієнтований; (2) кнопка —
+        справжній QPushButton (НЕ GlassButton — той власним paintEvent
+        ігнорує QSS [accent=true] і зовні не відрізняється від сусідів),
+        вища й жирнішого шрифту за сусідню другорядну «Видалити нараду»."""
+        from PySide6.QtWidgets import QPushButton
+        from fronts.desktop.glass import GlassButton
+        from fronts.desktop.i18n import tr
+        sid = "2026-07-15_14-30-05"
+        meta = SimpleNamespace(
+            id=sid, status="done", title=None, preset="both",
+            audio_files={"mic": ["audio/mic/0001.wav"]}, processing={})
+        page, ctl = self._page([meta])
+
+        process = page.findChild(QPushButton, f"meetingProcessButton-{sid}")
+        self.assertIsNotNone(process)
+
+        # (1) назва — результат, не процес
+        # Жорсткий укр. літерал (не tr(key)): якщо i18n-ключ meeting_process
+        # зламають/видалять, tr() поверне сирий ключ і УВІ порівнювані боки
+        # тесту стали б однаково "зламані" — тест лишився б зеленим на
+        # непереклад, що бачить користувач.
+        self.assertEqual(process.text(), "Отримати текст наради")
+        self.assertNotIn("Обробити", process.text(),
+                         "стара назва процесу — власник її й не шукав")
+        self.assertIn("текст", process.text().lower(),
+                      "нова назва мусить обіцяти РЕЗУЛЬТАТ (текст наради)")
+
+        # (2) реально акцентна кнопка — не GlassButton, що QSS accent ігнорує
+        self.assertIsInstance(process, QPushButton)
+        self.assertNotIsInstance(
+            process, GlassButton,
+            "GlassButton малює все сам у paintEvent і НЕ читає "
+            "QSS[accent=true] — кнопка знову стане непомітною склянкою")
+        self.assertTrue(bool(process.property("accent")),
+                        "без property(accent) кнопка не заливається золотим")
+        self.assertTrue(
+            bool(process.property("primaryAction")),
+            "без property(primaryAction) кнопка отримує ЗВИЧАЙНИЙ розмір "
+            "акцентної кнопки — той самий, що й другорядні дії моделей ШІ, "
+            "тож не виділяється серед сусідів у рядку картки")
+
+        delete_candidates = [
+            b for b in page.findChildren(QPushButton)
+            if b.text() == tr("meeting_card_delete")]
+        self.assertEqual(len(delete_candidates), 1)
+        delete_btn = delete_candidates[0]
+        self.assertFalse(bool(delete_btn.property("primaryAction")))
+
+        # .height() ПІСЛЯ розкладки не годиться: QHBoxLayout розтягує всі
+        # item'и рядка до найвищого сусіда. sizeHint()/font() — власні,
+        # НЕзалежні від сусідів метрики самого widget'а: саме вони і
+        # визначають, наскільки він "більший", перш ніж рядок їх вирівняє.
+        self.assertGreater(
+            process.sizeHint().height(), delete_btn.sizeHint().height(),
+            "головна дія картки мусить самостійно просити більшу висоту, "
+            "ніж другорядна «Видалити»")
+        self.assertTrue(process.font().bold(),
+                        "головна дія — жирним шрифтом, щоб виділятись")
+        self.assertFalse(delete_btn.font().bold(),
+                         "другорядна дія лишається звичайною вагою")
+        self.assertGreater(
+            process.font().pixelSize(), delete_btn.font().pixelSize(),
+            "шрифт головної дії має бути більшим за другорядну кнопку "
+            "(база QWidget — 15px, theme.py)")
+
     def test_done_card_title_is_editable_and_saves_typed_value(self):
         """Назву готової наради можна ПЕРЕЙМЕНУВАТИ.
 
-        Охоронець блокера суду 25.07: у картці лишилась сама кнопка
+        Охоронець блокера рецензії 25.07: у картці лишилась сама кнопка
         «Зберегти назву», яка зберігала незмінне захоплене значення, — поле
         вводу зникло, і жоден тест цього не побачив (усі перевіряли лише
         наявність кнопки за текстом). Тепер перевіряємо ланцюг цілком:
@@ -574,7 +768,7 @@ class MeetingRenderTests(unittest.TestCase):
     def test_processing_status_label_is_in_layout(self):
         """Рядок статусу обробки видимий у розкладці, а не осиротілий.
 
-        Знахідка суду 25.07: QLabel статусу створювався і ховався, але не
+        Знахідка рецензії 25.07: QLabel статусу створювався і ховався, але не
         додавався в layout — усі подальші setText() (помилка, скасування,
         діаризація) не бачив ніхто. Мутація «прибрати lay.addWidget(status)»
         мусить червонити цей тест."""
@@ -598,6 +792,114 @@ class MeetingRenderTests(unittest.TestCase):
             in_layout,
             "лейбл статусу обробки не доданий у розкладку — його setText() "
             "ніколи не побачить користувач")
+
+    def _transcript_label(self, card):
+        """Знайти TranscriptViewer картки: єдиний QLabel із власним
+        атрибутом `_utterances`, який ставить лише клас TranscriptViewer
+        (інші лейбли картки — прапорці/статуси, звичайні QLabel)."""
+        from PySide6.QtWidgets import QLabel
+        found = [w for w in card.findChildren(QLabel)
+                 if hasattr(w, "_utterances")]
+        self.assertEqual(len(found), 1,
+                         "мала бути рівно одна TranscriptViewer у картці")
+        return found[0]
+
+    def test_empty_transcript_before_processing_hints_to_process_not_silence(self):
+        """Живий тест власника 30.07: бейдж «аудіо готове» + плеєр, що грає
+        запис, ОДНОЧАСНО з «У записі немає звуку» — брехня, бо розшифрування
+        ще ЖОДНОГО разу не запускали (processing status за замовч. "ready").
+        Порожній транскрипт у цьому стані мусить підказувати натиснути кнопку
+        обробки, а НЕ стверджувати підтверджену тишу."""
+        from fronts.desktop.i18n import tr
+        sid = "2026-07-15_14-30-05"
+        meta = SimpleNamespace(
+            id=sid, status="done", title=None, preset="both",
+            audio_files={"mic": ["audio/mic/0001.wav"]}, processing={})
+        ctl_holder = _RenderController([meta])
+        ctl_holder._impl.read_meeting_transcript = lambda _sid: ""
+        from fronts.desktop.pages.meeting import MeetingPage
+        page = MeetingPage(ctl_holder)
+        self._live.append((page, ctl_holder))
+        page.resize(1000, 640)
+        page.show()
+        self._pump()
+
+        card = page._cards[sid][0]
+        label = self._transcript_label(card)
+        # Жорсткий укр. літерал — assertEqual з tr(того самого ключа) не
+        # ловить видалений/зламаний ключ meeting_transcript_pending.
+        self.assertEqual(
+            label.text(),
+            "Текст ще не отримано. Натисніть “Обробити нараду”, "
+            "щоб розшифрувати запис.")
+        self.assertNotEqual(label.text(), tr("meeting_error_silence"))
+
+    def test_empty_transcript_after_processing_shows_honest_silence(self):
+        """Після завершеної обробки (status "complete") без жодного слова —
+        це ЄДИНИЙ стан, де підтверджено справжню тишу запису. Тут повідомлення
+        про відсутність звуку — чесне."""
+        sid = "2026-07-15_14-30-05"
+        meta = SimpleNamespace(
+            id=sid, status="done", title=None, preset="both",
+            audio_files={"mic": ["audio/mic/0001.wav"]},
+            processing={"status": "complete"})
+        ctl_holder = _RenderController([meta])
+        ctl_holder._impl.read_meeting_transcript = lambda _sid: ""
+        from fronts.desktop.pages.meeting import MeetingPage
+        page = MeetingPage(ctl_holder)
+        self._live.append((page, ctl_holder))
+        page.resize(1000, 640)
+        page.show()
+        self._pump()
+
+        card = page._cards[sid][0]
+        label = self._transcript_label(card)
+        # Жорсткий укр. літерал — те саме обґрунтування, що й вище.
+        self.assertEqual(label.text(), "У записі немає звуку — доріжки порожні.")
+
+    def test_erasing_transcript_in_edit_panel_does_not_claim_silence(self):
+        """Суддя 30.07: та сама брехня «У записі немає звуку» лежала і в
+        _apply_edit панелі ручного редагування — якщо людина сама стирає
+        весь текст і зберігає, `new or tr("meeting_error_silence")`
+        підставляв тишу, хоча звук точно був (вона щойно правила його текст).
+        Порожній текст після ручного стирання має показувати чесне
+        повідомлення про стирання, а НЕ про відсутність звуку."""
+        from fronts.desktop.i18n import tr
+        from fronts.desktop.pages.edit_search import TranscriptEditPanel
+        sid = "2026-07-15_14-30-05"
+        meta = SimpleNamespace(
+            id=sid, status="done", title=None, preset="both",
+            audio_files={"mic": ["audio/mic/0001.wav"]},
+            processing={"status": "complete"})
+        ctl_holder = _RenderController([meta])
+        ctl_holder._impl.cfg.transcript_editing_enabled = True
+        from fronts.desktop.pages.meeting import MeetingPage
+        page = MeetingPage(ctl_holder)
+        self._live.append((page, ctl_holder))
+        page.resize(1000, 640)
+        page.show()
+        self._pump()
+
+        card = page._cards[sid][0]
+        label = self._transcript_label(card)
+        self.assertNotEqual(label.text(), "",
+                             "у фікстурі мав бути непорожній транскрипт")
+
+        panel = card.findChild(TranscriptEditPanel)
+        self.assertIsNotNone(panel, "панель редагування транскрипту не знайдена "
+                                     "— transcript_editing_enabled увімкнено")
+        panel.begin_edit()
+        panel._editor.setPlainText("")
+        panel._save()
+        self._pump()
+
+        # Жорсткий укр. літерал — те саме обґрунтування, що й вище.
+        self.assertEqual(
+            label.text(),
+            "Текст порожній, бо його стерли вручну в редагуванні. "
+            "Натисніть “Редагувати”, щоб вписати текст назад.")
+        self.assertNotEqual(label.text(), tr("meeting_error_silence"))
+        self.assertEqual(ctl_holder._impl.written_transcripts, [(sid, "")])
 
     def test_recorded_card_has_explicit_processing_progress_and_cancel(self):
         from PySide6.QtWidgets import QProgressBar, QPushButton
@@ -656,7 +958,6 @@ class MeetingRenderTests(unittest.TestCase):
         • пакет є, моделей нема → пропозиція завантажити, чекбокс вимкнено;
         • моделі перевірені → чекбокс активний, поле кількості з чекбоксом."""
         from unittest import mock
-        from fronts.desktop.i18n import tr
         from whisper_core.meeting import diarize
         page, _ = self._page([])
         self._open_settings(page)
@@ -666,7 +967,7 @@ class MeetingRenderTests(unittest.TestCase):
             self.assertFalse(page._diar_enabled.isEnabled())
             self.assertTrue(page._diar_download.isHidden())
             self.assertEqual(page._diar_status.text(),
-                             tr("set_diarization_unavailable"))
+                             "Розрізнення співрозмовників недоступне в цій збірці.")
 
         with mock.patch.object(diarize, "runtime_available", return_value=True), \
                 mock.patch.object(diarize, "models_present_fast", return_value=False):
@@ -674,7 +975,8 @@ class MeetingRenderTests(unittest.TestCase):
             self.assertFalse(page._diar_enabled.isEnabled())
             self.assertFalse(page._diar_download.isHidden())
             self.assertEqual(page._diar_status.text(),
-                             tr("set_diarization_missing"))
+                             "Завантажте локальні файли для розрізнення "
+                             "голосів (~34 МБ).")
 
         with mock.patch.object(diarize, "runtime_available", return_value=True), \
                 mock.patch.object(diarize, "models_present_fast", return_value=True):
@@ -686,7 +988,9 @@ class MeetingRenderTests(unittest.TestCase):
             page._diar_enabled.setChecked(True)
             page._refresh_diarization_controls()
             self.assertTrue(page._diar_count.isEnabled())    # обрано → поле активне
-            self.assertEqual(page._diar_status.text(), tr("set_diarization_ready"))
+            self.assertEqual(
+                page._diar_status.text(),
+                "Готово. Обробка відбувається локально на цьому комп’ютері.")
 
     def test_diar_count_field_fits_auto_placeholder(self):
         """Комбобокс «Кількість співрозмовників» вміщує текст «автоматично»/«automatic»
@@ -714,16 +1018,17 @@ class MeetingRenderTests(unittest.TestCase):
 
     def test_diar_count_combobox_select_and_save(self):
         """QComboBox співрозмовників: 10 пунктів (авто + 2..10), доступне ім'я, збереження в конфіг."""
-        from fronts.desktop.i18n import tr
         from PySide6.QtWidgets import QComboBox
         page, ctl = self._page([])
         self._open_settings(page)
         cnt = page._diar_count
         self.assertIsInstance(cnt, QComboBox)
-        self.assertEqual(cnt.accessibleName(), tr("set_diarization_count"))
+        # Жорсткі укр. літерали — assertEqual з tr(того самого ключа) не
+        # ловить видалений/зламаний ключ.
+        self.assertEqual(cnt.accessibleName(), "Кількість співрозмовників")
         self.assertEqual(cnt.count(), 10)
         self.assertEqual(cnt.itemData(0), None)
-        self.assertEqual(cnt.itemText(0), tr("set_diarization_auto"))
+        self.assertEqual(cnt.itemText(0), "автоматично")
         for k in range(2, 11):
             idx = k - 1
             self.assertEqual(cnt.itemData(idx), k)
@@ -942,7 +1247,7 @@ class MeetingRenderTests(unittest.TestCase):
         self.assertNotIsInstance(player, MultiTrackPlayer)
 
     def test_editor_opens_selected_track(self):
-        """feature/player-tracks (регрес суду): у нараді mic+sys кнопка
+        """feature/player-tracks (регрес рецензії): у нараді mic+sys кнопка
         «Редагувати аудіо» відкриває редактор САМЕ на обраній у селекторі
         доріжці, а не завжди на майстер-доріжці (mic). Інакше обрізати чи
         заглушити (audioedit_redact) голос співрозмовника (sys) було б неможливо

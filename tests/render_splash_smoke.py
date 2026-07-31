@@ -33,6 +33,38 @@ import tempfile
 _DIAG = Path(tempfile.gettempdir()) / "balachky-diag" / "splash"
 
 
+class SplashBrandLayoutTests(unittest.TestCase):
+    def tearDown(self):
+        from fronts.desktop.i18n import set_language
+        set_language("uk")
+
+    def _layout(self, language):
+        from fronts.desktop import splash
+        from fronts.desktop.i18n import set_language, tr
+
+        self.assertTrue(
+            hasattr(splash, "_brand_layout"),
+            "splash має надавати чисту логіку розкладки бренду",
+        )
+        set_language(language)
+        return splash._brand_layout(tr("app_title"))
+
+    def test_english_brand_has_one_centered_row(self):
+        self.assertEqual(
+            self._layout("en"),
+            (("Balachky", 225, 28),),
+        )
+
+    def test_ukrainian_brand_keeps_two_rows(self):
+        self.assertEqual(
+            self._layout("uk"),
+            (
+                ("Балачки", 214, 28),
+                ("у Коростені", 246, 18),
+            ),
+        )
+
+
 class SplashRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -255,6 +287,7 @@ class SplashThreadSmokeTests(unittest.TestCase):
 if __name__ == "__main__":
     suite = unittest.TestSuite()
     load = unittest.TestLoader().loadTestsFromTestCase
+    suite.addTests(load(SplashBrandLayoutTests))
     suite.addTests(load(SplashRenderTests))
     suite.addTests(load(SplashThreadSmokeTests))
     result = unittest.TextTestRunner(verbosity=2).run(suite)

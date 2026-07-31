@@ -168,6 +168,56 @@ class NarrowRowsTests(unittest.TestCase):
                                      f"{lang}, стан «{state}» на ширині "
                                      f"{self.width}: {_squeezed(tab)}")
 
+    def test_meeting_done_card_chips_no_horizontal_overflow(self):
+        """Чіпи часових позначок (до 12 кнопок) не повинні розпирати картку
+        завершеної наради за межі вікна горизонтальною прокруткою — на
+        1000/1280/1856px (діагноз 2026-07-30 №1). Сліпа зона рецензії 30.07:
+        visual_gate.py мокував read_meeting_utterances у [], тож блок
+        `if utterances and player: ...` узагалі не будував рядок чіпів —
+        тут даємо і повний список реплік, і робочий плеєр (meeting_audio_paths
+        на реальний файл), інакше цей ряд знову лишиться неперевіреним."""
+        from types import SimpleNamespace
+        page = self.win.meeting
+        ctrl = self.win.controller
+        tmp_audio = tempfile.mkdtemp()
+        fake_wav = os.path.join(tmp_audio, "mic.wav")
+        open(fake_wav, "wb").close()
+        meta = SimpleNamespace(
+            id="test-session", status="done", title="Тестова нарада",
+            preset="both", audio_files={"mic": ["mic/0001.wav"]},
+            processing={"status": "complete"}, bookmarks=[], speaker_names={},
+        )
+        utterances = [
+            SimpleNamespace(start=float(i * 5), end=float(i * 5 + 4),
+                            text=f"Репліка {i + 1}.")
+            for i in range(12)
+        ]
+        ctrl.list_meetings = lambda: [meta]
+        ctrl.read_meeting_transcript = lambda sid: "[00:00] Я: Доброго дня."
+        ctrl.read_meeting_utterances = lambda sid: utterances
+        ctrl.meeting_integrity_meta = lambda sid: SimpleNamespace(
+            status="unverified", audio_sha="a" * 32, events=[])
+        ctrl.protocol_model_ready = lambda: True
+        ctrl.meeting_audio_paths = lambda sid: {"mic": fake_wav}
+        try:
+            for width in (1000, 1280, 1856):
+                self.win.resize(width, self.win.height())
+                self._open(page)
+                page.refresh()
+                for _ in range(8):
+                    _APP.processEvents()
+                scroll = page._scroll
+                content = scroll.widget()
+                viewport_w = scroll.viewport().width()
+                needed_w = max(content.width(), content.minimumSizeHint().width())
+                self.assertLessEqual(
+                    needed_w, viewport_w + 3,
+                    f"на ширині {width} стрічка наради ширша за вікно "
+                    f"(needed={needed_w}, avail={viewport_w}px) — "
+                    f"горизонтальна прокрутка")
+        finally:
+            shutil.rmtree(tmp_audio, ignore_errors=True)
+
     def test_system_diagnostics_buttons_fit(self):
         tab = self._open_tab(tr("set_tab_system"))
         seen = _captions(tab)

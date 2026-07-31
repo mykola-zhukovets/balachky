@@ -102,7 +102,7 @@ class CommandEditGeneratorTests(unittest.TestCase):
         self.assertEqual(self._gen().run("текст", "  "), "")
 
     def test_fake_backend_rejected_not_stub(self):
-        """Блокер (урок судді): без llama worker бере FakeBackend (заглушка).
+        """Блокер (урок рецензента): без llama worker бере FakeBackend (заглушка).
         run() має підняти CommandEditError «недоступна», а НЕ повернути заглушку
         за успіх — інакше виділення заміниться сміттям. Сайдкар прибрано у finally."""
         _make_ready_model(self.tmp)

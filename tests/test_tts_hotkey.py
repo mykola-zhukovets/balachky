@@ -68,6 +68,24 @@ class TestListenSlot(unittest.TestCase):
                    side_effect=RuntimeError("elevated window")):
             self._slot()(ctl)                    # без винятку
 
+    def test_capture_failure_reports_honest_reason_not_cancelled(self):
+        """Аудит 'тихі відмови' №1: раніше збій capture_selection() маскувався
+        під tts_cancelled ('Озвучення скасовано') — неправдива причина. Тепер
+        людина бачить чесне 'не вдалося прочитати виділений текст', а не
+        вигадану відміну, і подія лишається в журналі."""
+        from fronts.desktop.i18n import tr
+        notified = []
+        ctl = SimpleNamespace(
+            tray=SimpleNamespace(notify=notified.append),
+            open_listen_panel=lambda t: notified.append(("panel", t)))
+        with patch("fronts.desktop.app.capture_selection",
+                   side_effect=RuntimeError("elevated window")), \
+             self.assertLogs(level="ERROR") as logs:
+            self._slot()(ctl)
+        self.assertEqual(notified, [tr("tts_selection_capture_failed")])
+        self.assertNotIn(tr("tts_cancelled"), notified)
+        self.assertTrue(any("виділ" in rec.lower() for rec in logs.output))
+
 
 class TestHotkeyConflict(unittest.TestCase):
     """Конфлікт RegisterHotKey (зайнята комбінація) → чесна обробка без краху."""

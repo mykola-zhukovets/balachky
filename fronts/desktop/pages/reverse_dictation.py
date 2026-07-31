@@ -14,9 +14,10 @@
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QTextEdit, QVBoxLayout,
+    QDialog, QHBoxLayout, QLabel, QPushButton, QTextEdit, QVBoxLayout,
 )
 
 from ..glass import GlassButton
@@ -120,8 +121,13 @@ class ReverseDictationDialog(QDialog):
         cancel.setAccessibleName(tr("common_cancel"))
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
-        self._save_btn = GlassButton(tr("revdict_save"))
+        # Плаский QPushButton (НЕ GlassButton): GlassButton малює все сам у
+        # paintEvent і QSS [accent="true"] на нього не лягає (лишається
+        # непомітним склом, як сусідні кнопки) — головна дія діалогу ховалась
+        # (той самий дефект, що знайдено на кнопці «Отримати текст наради», e092484).
+        self._save_btn = QPushButton(tr("revdict_save"))
         self._save_btn.setProperty("accent", True)
+        self._save_btn.setCursor(Qt.PointingHandCursor)
         self._save_btn.setAccessibleName(tr("revdict_save"))
         self._save_btn.clicked.connect(self._on_save)
         btns.addWidget(self._save_btn)

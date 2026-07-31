@@ -1,10 +1,10 @@
-# Збірка «Балачки у Коростені» — інсталер для Windows
+# Збірка “Балачки у Коростені” — інсталер для Windows
 
 Покроково відтворювана збірка: venv → PyInstaller (onedir) → Inno Setup
 (per-user, без UAC). Результат — `BalachkySetup-<версія>.exe`, який звичайний
 користувач ставить у два кліки без прав адміністратора.
 
-## Підтримувана конфігурація збірки
+## Канон рішення (не переглядати)
 
 - **PyInstaller 6.x, onedir** — onefile ЗАБОРОНЕНИЙ (антивірусні
   фальспозитиви + повільний старт через розпакування).
@@ -14,16 +14,45 @@
 - **Модель Whisper НЕ вшивається** — докачується при першому запуску в кеш
   HuggingFace користувача (`%USERPROFILE%\.cache\huggingface\hub`).
 
+## Два контури Python-оточення
+
+Не змішуйте спільне dev/frozen-оточення зі складальним:
+
+- **Спільний dev/frozen venv** (`.venv`) встановлює `requirements.txt` і,
+  коли потрібні frozen-тести чи локальні перевірки спеки,
+  `requirements-build.txt`. Важкого `llama-cpp-python` у цьому контурі немає:
+  рядок у `requirements.txt` навмисно закоментований, щоб не зачіпати 70+
+  worktree.
+- **Складальний venv** (окрема тека поза робочим деревом
+  репозиторію) — окреме середовище,
+  з якого робиться реліз-білд. Після двох спільних файлів воно додатково
+  встановлює `requirements-tts-build.txt`; саме там закріплено
+  `llama-cpp-python==0.3.34` і CPU-індекс wheel.
+
+`requirements-build.txt` в обох випадках лишається hash-lock рівно семи
+інструментів PyInstaller. Не переносьте до нього
+`llama-cpp-python`: це знову зробить важку runtime-залежність обов'язковою для
+спільного dev-оточення.
+
 ## Передумови
 
 - Windows 10/11 x64, Python 3.12.
-- venv з залежностями застосунку (`requirements.txt`) + `pyinstaller`
-  (dev-залежність):
+- Спільний dev/frozen venv без важкої залежності:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\pip install pyinstaller
+.venv\Scripts\pip install -r requirements-build.txt
+```
+
+- Для релізної збірки — окремий складальний venv:
+
+```powershell
+python -m venv <тека окремого складального середовища>
+$buildPython = "<тека окремого складального середовища>\Scripts\python.exe"
+& $buildPython -m pip install -r requirements.txt
+& $buildPython -m pip install -r requirements-build.txt
+& $buildPython -m pip install -r requirements-tts-build.txt
 ```
 
 - Inno Setup 6 (для кроку 3):
@@ -38,19 +67,69 @@ winget install -e --id JRSoftware.InnoSetup --silent --accept-package-agreements
 
 ## Крок 0 — звірити середовище з requirements
 
+Для спільного dev/frozen venv:
+
 ```powershell
 .venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install -r requirements-build.txt
 ```
 
-Крок обов'язковий перед кожною збіркою. Переконайся, що віртуальне середовище синхронізоване з `requirements.txt`. PyInstaller пакує лише ті залежності, які встановлені в середовищі збірки. Якщо якийсь опційний пакет відсутній у `.venv`, дистрибутив буде зібрано без нього, і відповідна функціональність працюватиме в режимі деградації.
+Для релізного складального venv:
+
+```powershell
+$buildPython = "<тека окремого складального середовища>\Scripts\python.exe"
+& $buildPython -m pip install -r requirements.txt
+& $buildPython -m pip install -r requirements-build.txt
+& $buildPython -m pip install -r requirements-tts-build.txt
+```
+
+Перед кожною релізною збіркою обов'язкові всі три команди другого блоку.
+Не встановлюйте `requirements-tts-build.txt` у спільну `.venv`.
+`requirements-build.txt` містить точні версії PyInstaller та його залежностей
+і SHA-256 дозволеного wheel для кожного пакета; `pip` перевіряє ці хеші під час
+встановлення. 25.07 виявилось, що в `.venv` не був
+установлений `psutil`, хоча він є і в `requirements.txt`, і в `hiddenimports`
+спеки. PyInstaller не може спакувати пакет, якого немає в середовищі, — тобто
+дистрибутив мовчки виходив без нього, і програма в релізі не міряла обсяг
+оперативної памʼяті: на будь-якому залізі поводилась як на 8 ГБ і не тримала
+розпізнавання й озвучення резидентно разом.
 
 ## Крок 1 — PyInstaller (onedir)
 
-З кореня репозиторію:
+З кореня репозиторію. Профіль складу задає
+`BALACHKY_BUILD_PROFILE`; дозволені рівно два значення:
+
+- `no-tts` — desktop, offline-діаризація і protocol-worker без
+  `balachky-tts-worker.exe`. Це детермінований дефолт і профіль публічного
+  інсталятора.
+- `full` — той самий склад плюс TTS-worker і весь стек озвучення.
+
+Публічна збірка (явний запис профілю рекомендований, хоча він збігається з
+дефолтом):
 
 ```powershell
+$env:BALACHKY_BUILD_PROFILE = "no-tts"
 .venv\Scripts\pyinstaller balachky.spec --noconfirm
+Remove-Item Env:\BALACHKY_BUILD_PROFILE
 ```
+
+Повна збірка:
+
+```powershell
+$env:BALACHKY_BUILD_PROFILE = "full"
+.venv\Scripts\pyinstaller balachky.spec --noconfirm
+Remove-Item Env:\BALACHKY_BUILD_PROFILE
+```
+
+На старті spec друкує один рядок
+`=== BALACHKY BUILD PROFILE: <profile> ===`. Невідоме чи порожнє явно задане
+значення зупиняє збірку з переліком допустимих профілів. Якщо профілю бракує
+обов'язкового модуля (наприклад, `torch` для `full` або `llama_cpp` для
+`no-tts`), збірка падає до `Analysis` і називає профіль, компонент та модуль.
+
+Застарілий `BALACHKY_SKIP_TTS` тимчасово підтримується:
+`1` мапиться на `no-tts`, `0` — на `full`, і spec друкує попередження.
+Суперечливе одночасне задання старої та нової змінних зупиняє збірку.
 
 Результат: `dist\Balachky\Balachky.exe` + тека `_internal\` (~390 МБ:
 PySide6, ctranslate2, onnxruntime, av, numpy…). Точка входу — `run_app.py`
@@ -77,17 +156,17 @@ dist\Balachky\Balachky.exe
 
 ## Номер збірки (git-коміт у сайдбарі й звіті)
 
-Сайдбар показує «версія 1.1.0 (abc1234)», де `abc1234` — короткий git-коміт
+Сайдбар показує “версія 1.1.0 (abc1234)”, де `abc1234` — короткий git-коміт
 збірки. Той самий рядок іде в info.txt звіту про проблему й у шапку тест-журналу.
 
 Механіка (аналогічна генерації `installer\version.iss`): крок PyInstaller у
 `balachky.spec` виконує `git rev-parse --short HEAD` і **перезаписує**
-`whisper_core\_buildinfo.py`, записуючи актуальний `COMMIT`. У dev-режимі
+`whisper_core\_buildinfo.py`, вбиваючи сталий `COMMIT`. У dev-режимі
 репозиторна версія файлу має `COMMIT = None` і читає git у рантаймі (відкат на
 `dev`, якщо git недоступний), тож збірка не потрібна, щоб побачити коміт локально.
 
 Після PyInstaller-збірки `whisper_core\_buildinfo.py` лишається зі вшитим
-комітом (робоче дерево «брудне» на цей файл). Щоб повернути dev-версію:
+комітом (робоче дерево “брудне” на цей файл). Щоб повернути dev-версію:
 
 ```powershell
 git checkout -- whisper_core\_buildinfo.py
@@ -95,29 +174,12 @@ git checkout -- whisper_core\_buildinfo.py
 
 ## Крок 3 — Inno Setup
 
-Якщо змінювалася версія у `whisper_core\__init__.py` — перегенерувати
+Якщо змінювалася версія у `whisper_core\version.py` — перегенерувати
 `installer\version.iss`:
 
 ```powershell
-.venv\Scripts\python -c "from whisper_core import __version__ as v; print(f'#define AppVersion \"{v}\"')" | Set-Content installer\version.iss -Encoding utf8BOM
+.venv\Scripts\python -c 'from whisper_core import DISPLAY_VERSION as d, WINDOWS_FILE_VERSION as w; q=chr(34); print("#define AppVersion "+q+d+q); print("#define WindowsFileVersion "+q+".".join(map(str,w))+q)' | Set-Content installer\version.iss -Encoding utf8BOM
 ```
-
-### Полегшена збірка (без озвучення)
-
-Воркер озвучення тягне torch+CUDA — це 4.7 ГБ на диску проти ~150 МБ усього
-іншого, а користуються озвученням не всі. Публічний інсталятор збираємо без
-нього:
-
-```powershell
-$env:BALACHKY_SKIP_TTS = "1"
-.venv\Scripts\pyinstaller balachky.spec --noconfirm
-Remove-Item Env:\BALACHKY_SKIP_TTS
-```
-
-У такій збірці працює все, крім озвучення: `sidecar.engine_available()`
-бачить відсутній `balachky-tts-worker.exe`, майстер перших кроків не
-пропонує завантажувати голос, кнопки читання чесно кажуть, що рушія немає.
-Повна збірка (з озвученням) — той самий рядок без змінної.
 
 Компіляція:
 
@@ -134,7 +196,7 @@ pwsh -File scripts\finalize_installer.ps1
 ```
 
 Скрипт рахує SHA-256, перейменовує файл у публікаційну назву
-`BalachkySetup-<версія>-beta-<перші 8 символів суми>.exe`, кладе поруч
+`BalachkySetup-<display-версія>-<перші 8 символів суми>.exe`, кладе поруч
 `<назва>.sha256` і друкує готовий рядок для опису релізу.
 
 Крок обов'язковий: описи релізів і README називають саме таку назву, а Inno
@@ -163,10 +225,10 @@ Setup сам суми в назву не додає. Доти це робило�
 
 ## Застереження
 
-- **SmartScreen**: exe та інсталер не підписані — Windows покаже «невідомий
-  видавець» / «Windows захистив ваш ПК» → «Докладніше → Виконати все одно».
-  Рішення — підписування коду довіреним сертифікатом або поступове накопичення репутації.
-- **Антивіруси**: PyInstaller-збірки інколи ловлять евристики. Обрана конфігурація
+- **SmartScreen**: exe та інсталер не підписані — Windows покаже “невідомий
+  видавець” / “Windows захистив ваш ПК” → “Докладніше → Виконати все одно”.
+  Ліки — сертифікат підпису коду (платно) або накопичення репутації.
+- **Антивіруси**: PyInstaller-збірки інколи ловлять евристики. Канон
   (onedir + без UPX) мінімізує це; при скарзі — перевірити на VirusTotal і
   подати false-positive репорт вендору.
 - **Оновлення**: `AppId` в `balachky.iss` сталий — нова версія ставиться

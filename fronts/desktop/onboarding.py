@@ -12,6 +12,7 @@ large-v3-turbo → mobiuslabsgmbh/faster-whisper-large-v3-turbo, НЕ Systran):
 (main() вважає onboarded) — моделі вже є у дев-кеші.
 """
 import logging
+import hashlib
 import os
 import shutil
 import threading
@@ -22,9 +23,10 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton,
     QButtonGroup, QPushButton, QProgressBar, QStackedWidget, QFileDialog,
-    QFrame, QCheckBox,
+    QFrame, QCheckBox, QMessageBox,
 )
 
+from .crash import anonymize_path
 from .i18n import tr, human_size
 from .hotkey import pretty
 from .links import GITHUB_URL, SUPPORT_URL   # єдине джерело зовнішніх посилань автора
@@ -33,7 +35,7 @@ from .links import GITHUB_URL, SUPPORT_URL   # єдине джерело зов�
 from whisper_core.models import (model_present, model_all_real,
                                  model_snapshot_usable,
                                  dereference_snapshot, repo_for, revision_for,
-                                 resolve_cache_dir)
+                                 resolve_cache_dir, model_download_manifest)
 from whisper_core import netlog   # доказова офлайновість: журнал вихідних з'єднань
 # Рушій озвучення є не в кожній збірці (полегшений інсталятор іде без нього) —
 # імпорт відкладений у функцію, щоб майстер не тягнув TTS-стек на старті.
@@ -52,6 +54,8 @@ _MB = 1024 * 1024
 def _has_network() -> bool:
     import socket
     try:
+        netlog.record("1.1.1.1", kind=netlog.OTHER, allowed=True,
+                      detail="connectivity-check")
         socket.create_connection(("1.1.1.1", 53), timeout=1.5).close()
         return True
     except Exception:
@@ -92,18 +96,37 @@ def check_free_space(target_dir: str | Path, required_bytes: int):
         raise OSError(tr("onb_err_disk_full", required=req, available=avail))
 
 
-def resumable_download_file(url: str, destination_path: Path, *, expected_size: int = None,
+def _sha256_of(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            checksum.update(block)
+    return checksum.hexdigest()
+
+
+def resumable_download_file(url: str, destination_path: Path, *,
+                            expected_size: int, expected_sha256: str,
                             progress_cb=None, cancel_check=None) -> None:
     """Автономне завантаження одного файла через HTTP з підтримкою Range (206)
     у стабільний тимчасовий файл <path>.incomplete БЕЗ підміни внутрішніх API.
     """
+    if len(expected_sha256) != 64:
+        raise ValueError("Expected SHA-256 must contain 64 hex characters")
+    expected_sha256 = expected_sha256.lower()
     if destination_path.exists():
-        if expected_size is None or destination_path.stat().st_size == expected_size:
+        if (destination_path.stat().st_size == expected_size
+                and _sha256_of(destination_path) == expected_sha256):
             return
     incomplete_path = destination_path.parent / (destination_path.name + ".incomplete")
     incomplete_path.parent.mkdir(parents=True, exist_ok=True)
     done = incomplete_path.stat().st_size if incomplete_path.exists() else 0
-    if expected_size is not None and done > expected_size:
+    if done == expected_size:
+        if _sha256_of(incomplete_path) == expected_sha256:
+            os.replace(incomplete_path, destination_path)
+            return
+        done = 0
+        incomplete_path.unlink(missing_ok=True)
+    elif done > expected_size:
         done = 0
         incomplete_path.unlink(missing_ok=True)
 
@@ -134,10 +157,15 @@ def resumable_download_file(url: str, destination_path: Path, *, expected_size: 
                     out.write(chunk)
                     received += len(chunk)
                     if progress_cb:
-                        progress_cb(received, expected_size or received)
-        if expected_size is not None and incomplete_path.stat().st_size != expected_size:
+                        progress_cb(received, expected_size)
+        if incomplete_path.stat().st_size != expected_size:
             raise OSError(f"Downloaded file size mismatch: {incomplete_path.stat().st_size} != {expected_size}")
-        incomplete_path.rename(destination_path)
+        got = _sha256_of(incomplete_path)
+        if got != expected_sha256:
+            incomplete_path.unlink(missing_ok=True)
+            raise OSError(
+                f"Downloaded file SHA-256 mismatch: {got} != {expected_sha256}")
+        os.replace(incomplete_path, destination_path)
     except InterruptedError:
         raise
     except Exception as exc:
@@ -221,35 +249,31 @@ class DownloadWorker(QThread):
             netlog.record("huggingface.co", kind=netlog.MODEL, allowed=True,
                           detail=self._repo_id)
 
-            rev = self._revision or "main"
+            rev = self._revision
+            if rev is None:
+                for model_name in ("small", "medium", "large-v3-turbo",
+                                   "large-v3"):
+                    if repo_for(model_name) == self._repo_id:
+                        rev = revision_for(model_name)
+                        break
+            manifest = model_download_manifest(self._repo_id, rev)
             snap_dir = Path(self._cache_dir) / ("models--" + self._repo_id.replace("/", "--")) / "snapshots" / rev
             snap_dir.mkdir(parents=True, exist_ok=True)
 
-            files = ["config.json", "preprocessor_config.json", "tokenizer.json", "vocabulary.json", "model.bin"]
-            for filename in files:
+            for asset in manifest:
                 if self._cancel.is_set():
                     raise InterruptedError()
+                filename = asset.filename
                 file_dest = snap_dir / filename
                 url = f"https://huggingface.co/{self._repo_id}/resolve/{rev}/{filename}"
-                try:
-                    resumable_download_file(
-                        url,
-                        file_dest,
-                        progress_cb=lambda done, total: self.progress.emit(done, total),
-                        cancel_check=self._cancel.is_set
-                    )
-                except OSError:
-
-                    if filename == "vocabulary.json":
-                        alt_url = f"https://huggingface.co/{self._repo_id}/resolve/{rev}/vocabulary.txt"
-                        resumable_download_file(
-                            alt_url,
-                            snap_dir / "vocabulary.txt",
-                            progress_cb=lambda done, total: self.progress.emit(done, total),
-                            cancel_check=self._cancel.is_set
-                        )
-                    else:
-                        raise
+                resumable_download_file(
+                    url,
+                    file_dest,
+                    expected_size=asset.size,
+                    expected_sha256=asset.sha256,
+                    progress_cb=lambda done, total: self.progress.emit(done, total),
+                    cancel_check=self._cancel.is_set
+                )
 
             refs_dir = snap_dir.parent.parent / "refs"
             refs_dir.mkdir(parents=True, exist_ok=True)
@@ -263,7 +287,8 @@ class DownloadWorker(QThread):
                               self._repo_id, e)
                 self.failed.emit(str(e))
         else:
-            logging.info("Модель %s готова у %s", self._repo_id, self._cache_dir)
+            logging.info("Модель %s готова у %s", self._repo_id,
+                        anonymize_path(self._cache_dir))
             self.finished_ok.emit()
 
 
@@ -299,7 +324,12 @@ class ExtraComponentWorker(QThread):
             elif self.comp_id == "protocol":
                 import whisper_core.protocol.model_manager as protocol_mm
                 import whisper_core.paths as paths
-                proto_dir = paths.protocol_models_dir()
+                # УВАГА: якісна тека САМЕ пресета "fast" (root/fast), не
+                # спільний корінь усіх пресетів — інакше файл лягав би туди,
+                # де його ніколи не знайде mm.resolve()/model_available() з
+                # решти програми, і модель мовчки лишалась би «не завантажена»
+                # (знайдено аудитом 31.07.2026 разом зі спекою бекграунд-докачки).
+                proto_dir = paths.protocol_model_dir("fast")
                 sz = protocol_mm.PRESETS["fast"].approx_size_bytes
                 check_free_space(proto_dir, sz)
                 protocol_mm.download_and_install(proto_dir, "fast", progress_cb=_progress_cb, cancel_check=self._cancel.is_set)
@@ -462,6 +492,11 @@ class FirstRunWizard(QDialog):
         self._extra_worker = None
         self.selected_extras = []
         self._gpu_done = False               # GPU-крок показуємо щонайбільше раз
+        # Чесна нумерація (рішення власника 31.07, варіант б): крок «Завантаження»
+        # реально показаний лише якщо щось справді довелось качати. Якщо ні —
+        # total_steps на кроці GPU зменшується на 1, щоб «Крок N з M» не обіцяв
+        # екран, якого людина так і не побачила.
+        self._download_shown = False
 
         # Лічильник кроків: Welcome(1), Model(2), Language(3), Voice(4), Extra(5), Download(6), GPU(7 - умовний)
         self._gpu_possible = self._gpu_step_possible()
@@ -501,7 +536,7 @@ class FirstRunWizard(QDialog):
         try:
             from .tray import Tray
             # fronts.desktop.profiles НЕ існує — правильний модуль у whisper_core
-            # (хибний імпорт мовчки вбивав трей на онбордингу, суд 24.07)
+            # (хибний імпорт мовчки вбивав трей на онбордингу, рецензія 24.07)
             from whisper_core import profiles
             from whisper_core import paths
             self._tray = Tray(
@@ -514,6 +549,62 @@ class FirstRunWizard(QDialog):
             self._tray.icon.show()
         except Exception:
             self._tray = None
+
+    def accept(self):
+        """Перед справжнім закриттям майстра — чесний підсумок (пункт 3
+        завдання власника 31.07, мінімум-варіант «в» поверх а+б): що готово
+        до роботи, що не завантажено/недоступне і де це ввімкнути пізніше.
+        accept() викликається з кількох гілок (GPU-крок, «Пропустити»
+        завантаження, фініш без GPU) — показуємо підсумок лише один раз."""
+        if not getattr(self, "_summary_shown", False):
+            self._summary_shown = True
+            self._show_finish_summary()
+        super().accept()
+
+    def _show_finish_summary(self):
+        from whisper_core import cuda_runtime
+        from whisper_core.tts import voices as _v
+        import whisper_core.meeting.diarization_models as diar_models
+        import whisper_core.protocol.model_manager as protocol_mm
+        import whisper_core.punctuator as punc
+        import whisper_core.paths as paths
+
+        lines = []
+
+        repo = repo_for(self.model_name)
+        rev = revision_for(self.model_name)
+        stt_ready = (model_present(self.model_dir, repo, rev)
+                    and model_snapshot_usable(self.model_dir, repo, rev))
+        lines.append(tr("onb_summary_stt_ready") if stt_ready
+                     else tr("onb_summary_stt_missing"))
+
+        if cuda_runtime.gpu_present():
+            gpu_on = self.use_gpu or cuda_runtime.runtime_ready()
+            lines.append(tr("onb_summary_gpu_on") if gpu_on
+                         else tr("onb_summary_gpu_off"))
+
+        if not _tts_engine_available():
+            lines.append(tr("onb_summary_voice_build_missing"))
+        else:
+            voice_id = _v.default_voice_for(self.language) or "styletts2_ua"
+            voice_ready = _v.voice_available(voice_id, root=self.voice_root)
+            lines.append(tr("onb_summary_voice_on") if voice_ready
+                         else tr("onb_summary_voice_off"))
+
+        extra_checks = [
+            (tr("onb_extra_diar_title"), diar_models.models_available(self.model_dir)),
+            (tr("onb_extra_proto_title"),
+             protocol_mm.model_available(paths.protocol_models_dir(), "fast")),
+            (tr("onb_extra_punc_title"), punc.model_available(paths.punctuator_model_dir())),
+        ]
+        for title, ready in extra_checks:
+            status = tr("onb_summary_ready") if ready else tr("onb_summary_not_ready")
+            lines.append(f"{title}: {status}")
+
+        lines.append("")
+        lines.append(tr("onb_summary_footer"))
+
+        QMessageBox.information(self, tr("onb_summary_title"), "\n".join(lines))
 
     def done(self, result):
         self._detach_voice_worker()
@@ -836,7 +927,9 @@ class FirstRunWizard(QDialog):
 
 
         diar_avail = diar_models.models_available(self.model_dir)
-        proto_avail = protocol_mm.model_available(paths.protocol_models_dir(), "fast")
+        # root/"fast" — та сама тека, куди її кладе download_and_install нижче
+        # (аудит 31.07.2026: спільний корінь тут завжди читався б як «нема»).
+        proto_avail = protocol_mm.model_available(paths.protocol_model_dir("fast"), "fast")
         punc_avail = punc.model_available(paths.punctuator_model_dir())
         tts_avail = tts_voices.voice_available("styletts2_ua", root=self.voice_root)
 
@@ -1025,6 +1118,10 @@ class FirstRunWizard(QDialog):
         працювати на процесорі (майстер не блокується)."""
         # Останній крок у загальному рахунку (5 з 5, коли показується)
         page, lay = _step_page(self._eyebrow(self._total_steps, "onb_sec_gpu"))
+        # єдиний QLabel на сторінці станом на цей момент — золотий лейбл кроку;
+        # зберігаємо посилання, щоб _finish_or_gpu міг чесно оновити «N з M»,
+        # якщо крок «Завантаження» так і не був показаний (варіант б)
+        self._gpu_eyebrow_lab = page.findChild(QLabel)
         self._gpu_intro = QLabel(tr("onb_gpu_intro"))
         self._gpu_intro.setWordWrap(True)
         lay.addWidget(self._gpu_intro)
@@ -1086,16 +1183,12 @@ class FirstRunWizard(QDialog):
                 self._detach_extra_worker()
             self._stack.setCurrentIndex(i - 1)
             if i - 1 == 3:
-                if _tts_engine_available():
-                    self._update_voice_page_state()
-                else:
-                    self._voice_dl_btn.hide()
-                    self._voice_retry_btn.hide()
-                    self._voice_cancel_btn.hide()
-                    self._voice_next_btn.hide()
-                    self._voice_status.setText("")
-                    self._voice_info.setText("")
-                    self._voice_skip_btn.show()
+                # _update_voice_page_state сама чесно розводить обидва стани
+                # (рушія нема / голос не завантажено) — окремого дублюючого
+                # розгалуження тут більше не треба (рецензія-3 24.07 боявся саме
+                # старої версії _update_voice_page_state, що сліпо пропонувала
+                # завантажити голос без рушія; тепер вона сама це враховує).
+                self._update_voice_page_state()
         self._sync_nav()
 
     def _go_next(self):
@@ -1104,12 +1197,14 @@ class FirstRunWizard(QDialog):
             self._stack.setCurrentIndex(i + 1)
         elif i == 2:
             self._collect_choices()
-            if not _tts_engine_available():
-                self._stack.setCurrentIndex(3)
-                self._advance_from_voice()
-            else:
-                self._stack.setCurrentIndex(3)
-                self._update_voice_page_state()
+            # Крок «Озвучення» показуємо ЗАВЖДИ (рішення власника 31.07,
+            # варіант а): раніше за відсутності рушія сторінка перемикалась і
+            # тієї ж миті пропускалась (_advance_from_voice відразу після
+            # setCurrentIndex) — людина її просто не встигала побачити і не
+            # дізнавалась, що озвучення взагалі існує. _update_voice_page_state
+            # сама показує чесне пояснення, коли рушія нема.
+            self._stack.setCurrentIndex(3)
+            self._update_voice_page_state()
         elif i == 3:
             self._advance_from_voice()
         elif i == 4:
@@ -1118,6 +1213,21 @@ class FirstRunWizard(QDialog):
 
 
     def _update_voice_page_state(self):
+        if not _tts_engine_available():
+            # Полегшена збірка без рушія синтезу мовлення (variant а рішення
+            # власника 31.07): чесно кажемо про це замість мовчазного стрибка
+            # через сторінку. Єдина дія — «Далі»; кнопку завантаження голосу
+            # 700+ МБ, який нема чим відтворити, не показуємо взагалі.
+            self._voice_status.setText(tr("onb_voice_engine_missing"))
+            self._voice_info.setText("")
+            self._voice_bar.hide()
+            self._voice_dl_btn.hide()
+            self._voice_retry_btn.hide()
+            self._voice_cancel_btn.hide()
+            self._voice_skip_btn.hide()
+            self._voice_next_btn.show()
+            return
+
         from whisper_core.tts import voices as _v
         voice_id = _v.default_voice_for(self.language) or "styletts2_ua"
         preset = _v.VOICE_PRESETS.get(voice_id)
@@ -1140,7 +1250,7 @@ class FirstRunWizard(QDialog):
 
         # голосу нема. Єдина канонічна перевірка — voice_available; власний
         # огляд тек (isdir/listdir) поверх неї лише здогадувався про
-        # «пошкоджено», не додаючи істини, — його прибрано (суд-3, п.6).
+        # «пошкоджено», не додаючи істини, — його прибрано (рецензія-3, п.6).
         self._voice_bar.hide()
         self._voice_retry_btn.hide()
         self._voice_cancel_btn.hide()
@@ -1169,7 +1279,7 @@ class FirstRunWizard(QDialog):
 
         # рантайм не готовий — єдина канонічна перевірка runtime_ready; власний
         # огляд тек (isdir/listdir) поверх неї лише здогадувався про «пошкоджені
-        # DLL», не додаючи істини, — його прибрано (суд-3, п.6).
+        # DLL», не додаючи істини, — його прибрано (рецензія-3, п.6).
         self._gpu_next_btn.hide()
         self._gpu_cancel.hide()
         self._gpu_bar.hide()
@@ -1241,10 +1351,18 @@ class FirstRunWizard(QDialog):
             # пошкоджені/непридатні» (напр. обірване докачування або symlink, що
             # не читається на frozen exe).
             if model_snapshot_usable(self.model_dir, repo, rev):
-                logging.info("Модель %s знайдена і придатна у %s — докачка не потрібна",
+                # Модель уже готова — але крок «Додаткові можливості» ВСЕ ОДНО
+                # показуємо (Дефект 1 аудиту 30.07: раніше тут стояв ранній
+                # return у _finish_or_gpu, і людина з готовою моделлю ніколи не
+                # дізнавалась про розрізнення голосів/протокол/пунктуацію/TTS).
+                # Якщо якісь із них не обрано, а качати справді нічого — сама
+                # сторінка «Додаткові можливості» (_advance_from_extra) піде
+                # прямо на фініш, побачивши це вже там.
+                logging.info("Модель %s знайдена і придатна у %s — докачка бази не потрібна",
                              self.model_name, self.model_dir)
-                self._heal_if_symlinks()
-                self._finish_or_gpu()
+                self._heal_if_symlinks()        # ідемпотентно, безпечно робити зараз
+                self._stack.setCurrentIndex(4)  # _page_extra
+                self._sync_nav()
                 return
             # модель є, але непридатна — готуємо текст «пошкоджено» заздалегідь,
             # щоб він був на місці, коли людина дійде до кроку завантаження
@@ -1267,11 +1385,12 @@ class FirstRunWizard(QDialog):
         extras_needed = len(getattr(self, "selected_extras", [])) > 0
 
         if not stt_needed and not extras_needed:
-            logging.info("Модель %s знайдена і придатна, додаткових компонентів немає — докачка не потрібна",
+            logging.info("Модель %s знайдена і придатна, додаткових компонентів немає — завантаження не потрібне",
                          self.model_name)
             self._heal_if_symlinks()
             self._finish_or_gpu()
             return
+        self._download_shown = True     # сторінку «Завантаження» реально показано
         self._stack.setCurrentIndex(5)  # _page_download
         self._start_download()
 
@@ -1333,6 +1452,13 @@ class FirstRunWizard(QDialog):
         if (not self._gpu_done and cuda_runtime.gpu_present()
                 and not cuda_runtime.runtime_ready()):
             self._gpu_done = True
+            # Чесна нумерація (варіант б): якщо крок «Завантаження» так і не
+            # був показаний (модель вже готова, додаткових компонентів не
+            # обрано), останній крок GPU не має вдавати, що перед ним був
+            # крок, якого людина не бачила — total_steps зменшуємо на 1.
+            if not self._download_shown:
+                self._total_steps -= 1
+            self._gpu_eyebrow_lab.setText(self._eyebrow(self._total_steps, "onb_sec_gpu"))
             self._stack.setCurrentIndex(self._gpu_index)
             self._update_gpu_page_state()
             self._sync_nav()
@@ -1470,6 +1596,16 @@ class FirstRunWizard(QDialog):
             return
 
         comp_id = extras.pop(0)
+        # E-бекграунд-докачка (аудит 31.07.2026): майстер може відкритись, коли
+        # головне вікно вже якісно якраз якісно качає ту саму модель протоколу
+        # (напр. з Наради) — не дублюємо друге якісне завантаження, переходимо
+        # до наступного пункту (модель дообереться там, де вже почалась).
+        if comp_id == "protocol":
+            from .download_manager import DownloadManager
+            import whisper_core.paths as paths
+            if DownloadManager.instance().is_downloading(paths.protocol_model_dir("fast")):
+                self._download_next_extra()
+                return
         item_info = next((it for it in getattr(self, "_extra_items", []) if it[0] == comp_id), None)
         title_str = tr(item_info[1]) if item_info else comp_id
         self._dl_status.setText(f"{tr('onb_sec_extra')}: {title_str}")

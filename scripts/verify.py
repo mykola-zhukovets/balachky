@@ -40,6 +40,13 @@ EXIT_LEGACY = 4
 EXIT_NO_CRYPTO = 5
 EXIT_SIGNATURE_EXPECTED = 6
 
+_KEY_ID_PATTERN = r"sha256:[0-9a-f]{64}"
+_INVALID_KEY_ID_MESSAGE = (
+    "Невірний формат key_id. Потрібно sha256: і 64 малі "
+    "шістнадцяткові символи.")
+_INVALID_TRUSTED_KEY_MESSAGE = (
+    "Невірний формат файла ключа. Перевірте key_id і public_key.")
+
 
 def sha256_of_file(path, chunk: int = _CHUNK) -> str:
     """SHA-256 файлу потоково."""
@@ -74,6 +81,20 @@ def _b64decode(s: str) -> bytes:
 
 def _compute_key_id(pub_bytes: bytes) -> str:
     return "sha256:" + hashlib.sha256(pub_bytes).hexdigest()
+
+
+def _is_canonical_key_id(value) -> bool:
+    import re
+    return (isinstance(value, str)
+            and re.fullmatch(_KEY_ID_PATTERN, value,
+                             flags=re.ASCII) is not None)
+
+
+def _parse_expected_key_id(value):
+    import argparse
+    if not _is_canonical_key_id(value):
+        raise argparse.ArgumentTypeError(_INVALID_KEY_ID_MESSAGE)
+    return value
 
 
 def read_events(log_path: Path):
@@ -203,7 +224,7 @@ def verify(session_dir: Path, log_path: Path, *,
     is_signed = isinstance(first_auth, dict)
 
     if not is_signed:
-        # ЗМІШАНИЙ ЖУРНАЛ (§7.2, follow-up крипто-суду): нульова подія без
+        # ЗМІШАНИЙ ЖУРНАЛ (§7.2, follow-up крипто-рецензії): нульова подія без
         # ``auth``, а пізніші події підписані. Справжній legacy-журнал таким
         # бути не може — це атака «зняти auth лише з events[0]», щоб згасити
         # сигнал «журнал підписаний» і отримати м'який код 4 замість BROKEN.
@@ -298,9 +319,9 @@ def verify(session_dir: Path, log_path: Path, *,
     # Підписи валідні — перевіряємо trust
     is_trusted = False
     if expect_key_id:
-        is_trusted = expect_key_id in seen_key_ids
+        is_trusted = seen_key_ids == {expect_key_id}
     elif trusted_keys:
-        is_trusted = bool(seen_key_ids & set(trusted_keys.keys()))
+        is_trusted = seen_key_ids.issubset(trusted_keys.keys())
 
     if is_trusted:
         return "verified", {
@@ -352,7 +373,7 @@ def verify_evidence(evidence_dir: Path, *,
 
     # 2. Перевірити підпис manifest.
     #
-    # КРИТИЧНО (блокер крипто-суду): поле signer.algorithm КОНТРОЛЮЄ АТАКЕР —
+    # КРИТИЧНО (блокер крипто-рецензії): поле signer.algorithm КОНТРОЛЮЄ АТАКЕР —
     # воно НЕ сміє вирішувати, чи взагалі перевіряти підпис. Раніше блок
     # перевірки виконувався лише коли manifest сам оголошував
     # algorithm == "Ed25519"; атакер без приватного ключа прибирав signer
@@ -478,20 +499,34 @@ def _load_trusted_key_file(path_str):
     """Завантажити публічний ключ із JSON-файла."""
     try:
         data = json.loads(Path(path_str).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        if "keys" in data:
+            entries = data["keys"]
+            if not isinstance(entries, list) or not entries:
+                return None
+        elif "key_id" in data and "public_key" in data:
+            entries = [data]
+        else:
+            return None
+
         keys = {}
-        if isinstance(data, dict):
-            if "keys" in data:
-                for entry in data["keys"]:
-                    kid = entry.get("key_id", "")
-                    pub = entry.get("public_key", "")
-                    if kid and pub:
-                        keys[kid] = _b64decode(pub)
-            elif "key_id" in data and "public_key" in data:
-                keys[data["key_id"]] = _b64decode(data["public_key"])
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return None
+            key_id = entry.get("key_id")
+            public_key = entry.get("public_key")
+            if (not _is_canonical_key_id(key_id)
+                    or not isinstance(public_key, str)):
+                return None
+            pub_bytes = _b64decode(public_key)
+            if (len(pub_bytes) != 32
+                    or _compute_key_id(pub_bytes) != key_id):
+                return None
+            keys[key_id] = pub_bytes
         return keys
-    except Exception as exc:
-        print("Помилка читання файла ключа: {}".format(exc), file=sys.stderr)
-        return {}
+    except Exception:
+        return None
 
 
 def main(argv=None) -> int:
@@ -505,6 +540,7 @@ def main(argv=None) -> int:
     parser.add_argument("target", nargs="?", default=".",
                         help="Тека наради або шлях до audit.jsonl")
     parser.add_argument("--expect-key-id", default=None,
+                        type=_parse_expected_key_id,
                         help=("Очікуваний key_id (sha256:<64hex>). "
                               "Якщо журнал непідписаний — код 6 (відмова), "
                               "а не код 4"))
@@ -517,6 +553,9 @@ def main(argv=None) -> int:
     trusted_keys = None
     if args.trusted_key:
         trusted_keys = _load_trusted_key_file(args.trusted_key)
+        if trusted_keys is None:
+            print(_INVALID_TRUSTED_KEY_MESSAGE, file=sys.stderr)
+            return EXIT_ABSENT
 
     print("Балачки — перевірка цілісності запису наради")
     print("Тека: {}".format(session_dir.resolve()))
@@ -553,10 +592,7 @@ def main(argv=None) -> int:
         return EXIT_UNTRUSTED
 
     if status == "signature_expected":
-        expected = d.get("expected_key_ids") or []
         print("ПІДПИСУ НЕМАЄ — ви заявили очікуваний ключ, а журнал непідписаний.")
-        if expected:
-            print("Очікувався ключ: {}".format(", ".join(expected)))
         print("Хеш-ланцюг цілий, але Ed25519-підпису в журналі немає взагалі.")
         print("Це або справді стара нарада (тоді запускайте без --expect-key-id")
         print("та --trusted-key), або з пакета зняли всі підписи.")

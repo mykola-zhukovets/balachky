@@ -189,6 +189,53 @@ def test_voice_memory_list_row_render_with_real_store(tmp_path):
     assert date_str in cell
 
 
+def test_voice_memory_table_headers_render_translated_text():
+    """Жива SettingsPage показує людські заголовки, а не fallback snake_case."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from fronts.desktop.pages.settings import SettingsPage
+    from tests.test_settings_performance import _InstallerController
+
+    class VoiceMemoryController(_InstallerController):
+        def list_voice_memories(self):
+            return [{
+                "name": "Наталя",
+                "samples_count": 1,
+                "updated_at": 1_700_000_000,
+            }]
+
+    app = QApplication.instance() or QApplication([])
+    previous_language = i18n.current_language()
+    page = None
+    try:
+        i18n.set_language("uk")
+        page = SettingsPage(VoiceMemoryController())
+        page._tabs.setCurrentIndex(4)  # вкладка «Нарада», де живе таблиця
+        page.show()
+        app.processEvents()
+
+        headers = [
+            page._vmem_table.horizontalHeaderItem(column).text()
+            for column in range(page._vmem_table.columnCount())
+        ]
+        assert page._vmem_table.isVisible()
+        assert headers == ["Назва", "# прикладів", "Дата", "Дії"]
+    finally:
+        i18n.set_language(previous_language)
+        if page is not None:
+            for timer in page.findChildren(QTimer):
+                timer.stop()
+            page.close()
+            page.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+
+
 def test_i18n_keys():
     keys = [
         "voice_memory_enabled",

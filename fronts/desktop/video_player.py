@@ -20,14 +20,16 @@ feature/video-player-mvp. Технологія — Qt Multimedia (QMediaPlayer +
 import logging
 import os
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QEvent, QUrl, Qt
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QVBoxLayout,
+    QDialog, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget,
 )
 
+from .crash import anonymize_path
 from .glass import GlassButton
 from .i18n import tr
+from .meeting_transcript_panel import TranscriptPanel
 from .player import _IconButton, _Slider, fmt_time
 from .player_tracks import FollowerGroup, TrackChannel, TrackMixerPanel
 
@@ -60,17 +62,38 @@ class VideoPlayerDialog(QDialog):
     Рядок «Звук екрана» додаємо ЛИШЕ якщо відео реально має власний звук —
     інакше це був би мертвий чекбокс (запис екрана наради без аудіодоріжки)."""
 
-    def __init__(self, path=None, parent=None, audio_tracks=None):
+    @staticmethod
+    def _default_size():
+        """Стартовий розмір діалогу: 85% доступного екрана (не менш ніж 760×540).
+        Раніше діалог завжди відкривався фіксованим 760×540 — на записі 2560×1600
+        це давало крихітний прямокутник посеред величезної сторінки, і дрібний
+        текст (документ/таблиця/презентація) був нечитабельним без перетягування
+        рамки вручну. Тепер плеєр одразу займає майже весь екран."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return 760, 540
+        avail = screen.availableGeometry()
+        w = max(760, int(avail.width() * 0.85))
+        h = max(540, int(avail.height() * 0.85))
+        return w, h
+
+    def __init__(self, path=None, parent=None, audio_tracks=None,
+                 utterances=None, speaker_names=None):
         super().__init__(parent)
         self._path = str(path) if path else None
         self._audio_tracks = list(audio_tracks or [])
         self._group = None
+        self._screen_protection_controller = None
         self._panel = None
         self._started_once = False
+        self._is_fullscreen = False
+        self._status_was_visible = False
+        self._transcript_panel = None
+        self._transcript_was_visible = False
         self.setWindowTitle(
             os.path.basename(self._path) if self._path else tr("video_title"))
         self.setModal(True)
-        self.resize(760, 540)
+        self.resize(*self._default_size())
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 14)
@@ -79,7 +102,7 @@ class VideoPlayerDialog(QDialog):
         if not _HAVE_QTMM:
             # Фолбек без QtMultimedia — одна кнопка системного плеєра (як InlinePlayer)
             self._player = self._audio = self._video = None
-            self._status = self._play_btn = None
+            self._status = self._play_btn = self._fs_btn = None
             note = QLabel(tr("video_unavailable"))
             note.setWordWrap(True)
             note.setProperty("muted", True)
@@ -96,14 +119,41 @@ class VideoPlayerDialog(QDialog):
         self._video = QVideoWidget(self)
         self._video.setMinimumSize(640, 360)
         self._video.setAccessibleName(tr("video_surface"))
-        root.addWidget(self._video, stretch=1)
+        # Подвійний клац по відео перемикає повний екран (вхід і вихід) —
+        # фільтр подій, бо QVideoWidget не має свого mouseDoubleClickEvent-гака.
+        self._video.installEventFilter(self)
+
+        # Розшифровка ПОРУЧ із відео (feature/meeting-video-text, етап 2):
+        # QSplitter — людина може перетягнути межу; лівий контейнер тримає
+        # ВСЕ, що раніше йшло прямо в root (відео/банер/контроли/мікшер), тож
+        # без реплік поведінка діалогу лишається БУКВАЛЬНО тою самою (жоден
+        # наявний тест видеоплеєра без уттерансів не бачить різниці).
+        self._splitter = None
+        body = root
+        if utterances:
+            self._splitter = QSplitter(Qt.Horizontal, self)
+            left_widget = QWidget(self._splitter)
+            body = QVBoxLayout(left_widget)
+            body.setContentsMargins(0, 0, 0, 0)
+            body.setSpacing(12)
+            self._splitter.addWidget(left_widget)
+            self._transcript_panel = TranscriptPanel(
+                utterances, speaker_names, self._splitter)
+            self._transcript_panel.seekRequested.connect(self._on_transcript_seek)
+            self._splitter.addWidget(self._transcript_panel)
+            self._splitter.setStretchFactor(0, 7)     # ~70% відео / 30% текст
+            self._splitter.setStretchFactor(1, 3)
+            self._transcript_was_visible = True
+            root.addWidget(self._splitter, stretch=1)
+        self._body = body
+        body.addWidget(self._video, stretch=1)
 
         # Банер людської помилки (кодек/битий файл) — прихований, поки все добре.
         self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setProperty("muted", True)
         self._status.setVisible(False)
-        root.addWidget(self._status)
+        body.addWidget(self._status)
 
         self._player = QMediaPlayer(self)
         self._audio = QAudioOutput(self)
@@ -157,15 +207,32 @@ class VideoPlayerDialog(QDialog):
         self._vol.moved.connect(self._on_volume)
         controls.addWidget(self._vol)
 
-        root.addLayout(controls)
+        self._fs_btn = _IconButton("fa6s.expand", tr("video_fullscreen_enter"),
+                                    size=16, icon_w=18)
+        self._fs_btn.clicked.connect(self._toggle_fullscreen)
+        controls.addWidget(self._fs_btn)
+
+        if self._transcript_panel is not None:
+            # Праву панель розшифровки можна згорнути окремо від повного
+            # екрана — QSplitter дає їй 0 ширини, коли вона схована.
+            self._transcript_btn = _IconButton(
+                "fa6s.message", tr("meeting_transcript_panel_toggle"),
+                size=16, icon_w=18)
+            self._transcript_btn.clicked.connect(self._toggle_transcript_panel)
+            controls.addWidget(self._transcript_btn)
+        else:
+            self._transcript_btn = None
+
+        body.addLayout(controls)
 
         self._player.positionChanged.connect(self._on_position)
         self._player.durationChanged.connect(self._on_duration)
         self._player.playbackStateChanged.connect(self._on_playback_state)
+        self._player.mediaStatusChanged.connect(self._on_media_status)
         self._player.errorOccurred.connect(self._on_error)
 
         if self._audio_tracks:
-            self._build_track_panel(root)
+            self._build_track_panel(body)
 
     def _build_track_panel(self, root):
         """Режим наради: відомі аудіоплеєри під відео-майстром + панель мікшера.
@@ -199,12 +266,17 @@ class VideoPlayerDialog(QDialog):
 
     # ---- показ / життєвий цикл ----
     @classmethod
-    def open_for(cls, parent, path, audio_tracks=None):
+    def open_for(cls, parent, path, audio_tracks=None, utterances=None,
+                 speaker_names=None):
         """Показати модальний плеєр для ``path`` і прибрати за собою. Гарантовано
         звільняє файловий хендл на закритті (закриття → closeEvent → release).
-        ``audio_tracks`` — синхронні аудіодоріжки наради (режим мікшера)."""
+        ``audio_tracks`` — синхронні аудіодоріжки наради (режим мікшера).
+        ``utterances``/``speaker_names`` — розшифровка наради поруч із відео
+        (feature/meeting-video-text, етап 2); без них діалог лишається чистим
+        відеоплеєром, як і раніше."""
         top = parent.window() if parent is not None else None
-        dlg = cls(path, top, audio_tracks=audio_tracks)
+        dlg = cls(path, top, audio_tracks=audio_tracks,
+                  utterances=utterances, speaker_names=speaker_names)
         dlg.exec()
         dlg.deleteLater()
 
@@ -215,8 +287,18 @@ class VideoPlayerDialog(QDialog):
         # після показу, тож застосовуємо саме тут (реєстрація → тумблер зніме WDA
         # з живого вікна при вимкненні).
         try:
-            from whisper_core.win_hardening import protect_window
-            protect_window(self)
+            controller = getattr(self.window(), "controller", None)
+            if controller is None and self.parentWidget() is not None:
+                controller = getattr(
+                    self.parentWidget().window(), "controller", None)
+            self._screen_protection_controller = controller
+            apply_protection = getattr(
+                controller, "apply_screen_protection_to_window", None)
+            if apply_protection is not None:
+                apply_protection(self)
+            else:
+                from whisper_core.win_hardening import protect_window
+                protect_window(self)
         except Exception:
             pass
         if self._started_once or self._player is None:
@@ -229,6 +311,17 @@ class VideoPlayerDialog(QDialog):
             self._show_error(tr("video_error"))
 
     def closeEvent(self, event):
+        try:
+            remove_protection = getattr(
+                self._screen_protection_controller,
+                "remove_screen_protection_from_window", None)
+            if remove_protection is not None:
+                remove_protection(self)
+            else:
+                from whisper_core.win_hardening import unprotect_window
+                unprotect_window(self)
+        except Exception:
+            pass
         self._release_source()
         super().closeEvent(event)
 
@@ -239,6 +332,81 @@ class VideoPlayerDialog(QDialog):
         if self._player is not None:
             self._player.stop()
             self._player.setSource(QUrl())
+
+    # ---- повний екран ----
+    # ПАСТКА Qt: QVideoWidget не можна переносити між батьківськими контейнерами
+    # (реперентинг руйнує поверхню відтворення QVideoSink — після виходу з
+    # повного екрана відео чорніє й більше не грає). Тому тут НІКОЛИ не
+    # робимо self._video.setParent(...) чи layout.addWidget(self._video) вдруге —
+    # відео лишається дитиною ``self`` завжди. Повний екран — це лише зміна
+    # СТАНУ ВІКНА (showFullScreen()/showNormal() на самому діалозі) плюс
+    # ховання сусідніх панелей (банер помилки, мікшер), а не перебудова дерева.
+    def eventFilter(self, obj, event):
+        if obj is self._video and event.type() == QEvent.MouseButtonDblClick:
+            self._toggle_fullscreen()
+            return True
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key_F and event.modifiers() == Qt.ControlModifier:
+            if self._transcript_panel is not None:
+                self._transcript_panel.open_search()
+                event.accept()
+                return
+        if key == Qt.Key_F11 or (
+                key == Qt.Key_F and event.modifiers() == Qt.NoModifier):
+            self._toggle_fullscreen()
+            event.accept()
+            return
+        if key == Qt.Key_Escape and self._is_fullscreen:
+            self._toggle_fullscreen()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _toggle_fullscreen(self):
+        if self._video is None:
+            return
+        if self._is_fullscreen:
+            self._exit_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self):
+        """Розгорнути ВІКНО на весь екран — відео й контроли лишаються, батько
+        відеовіджета не міняється. Сусідні панелі (банер помилки, мікшер наради,
+        панель розшифровки) ховаємо, щоб «видно тільки відео й керування»."""
+        self._is_fullscreen = True
+        if self._status is not None:
+            self._status_was_visible = self._status.isVisible()
+            self._status.setVisible(False)
+        if self._panel is not None:
+            self._panel.setVisible(False)
+        if self._transcript_panel is not None:
+            self._transcript_was_visible = self._transcript_panel.isVisible()
+            self._transcript_panel.setVisible(False)
+        if self._fs_btn is not None:
+            self._fs_btn.set_icon_name("fa6s.compress")
+            self._fs_btn.setToolTip(tr("video_fullscreen_exit"))
+            self._fs_btn.setAccessibleName(tr("video_fullscreen_exit"))
+        self.showFullScreen()
+
+    def _exit_fullscreen(self):
+        """Повернути звичайне вікно. Той самий батько відеовіджета — жодного
+        reparent-у — тому відтворення триває без чорного екрана."""
+        self._is_fullscreen = False
+        if self._status is not None and self._status_was_visible:
+            self._status.setVisible(True)
+        if self._panel is not None:
+            self._panel.setVisible(True)
+        if self._transcript_panel is not None and self._transcript_was_visible:
+            self._transcript_panel.setVisible(True)
+        if self._fs_btn is not None:
+            self._fs_btn.set_icon_name("fa6s.expand")
+            self._fs_btn.setToolTip(tr("video_fullscreen_enter"))
+            self._fs_btn.setAccessibleName(tr("video_fullscreen_enter"))
+        self.showNormal()
 
     # ---- керування ----
     def _toggle(self):
@@ -259,6 +427,25 @@ class VideoPlayerDialog(QDialog):
             self._player.setPosition(ms)
             if self._group is not None:
                 self._group.broadcast_seek(ms)
+
+    def _on_transcript_seek(self, ms: int):
+        """Клацання по репліці в панелі розшифровки → перемотати відео (і
+        аудіодоріжки наради, якщо режим мікшера) на її час."""
+        if self._player is None:
+            return
+        self._player.setPosition(ms)
+        if self._group is not None:
+            self._group.broadcast_seek(ms)
+
+    def _toggle_transcript_panel(self):
+        panel = self._transcript_panel
+        if panel is None:
+            return
+        show = not panel.isVisible()
+        panel.setVisible(show)
+        if self._transcript_btn is not None:
+            self._transcript_btn.set_icon_name(
+                "fa6s.message" if show else "fa6s.chevron-left")
 
     def _cycle_speed(self):
         self._speed_idx = (self._speed_idx + 1) % len(_VIDEO_SPEEDS)
@@ -293,6 +480,8 @@ class VideoPlayerDialog(QDialog):
         if dur > 0:
             self._seek.set_fraction(pos / dur)
         self._time.setText(f"{fmt_time(pos)} / {fmt_time(dur)}")
+        if self._transcript_panel is not None:
+            self._transcript_panel.set_active_ms(pos)
 
     def _on_duration(self, dur: int):
         self._time.setText(f"{fmt_time(self._player.position())} / {fmt_time(dur)}")
@@ -302,10 +491,22 @@ class VideoPlayerDialog(QDialog):
         self._play_btn.set_icon_name("fa6s.pause" if playing else "fa6s.play")
         self._play_btn.setToolTip(tr("player_pause") if playing else tr("player_play"))
 
+    def _on_media_status(self, status):
+        # Аудит чесності (31.07, знахідка 3): без цього обробника кінець
+        # відео НЕ звільняв джерело (той самий ідіом, що аудіо-плеєр —
+        # player.py._on_media_status), тож `_toggle`'ів `source().isEmpty()`
+        # ніколи не спрацьовував і кнопка «відтворити» після кінця мовчки
+        # не робила нічого. Тепер кінець → звільнити джерело й повернути
+        # повзунок на початок; наступний play() у `_toggle` перезавантажить
+        # і почне з нуля.
+        if status == QMediaPlayer.EndOfMedia:
+            self._release_source()
+            self._seek.set_fraction(0.0)
+
     def _on_error(self, _error, error_string):
         """Кодек відсутній / файл битий: людське повідомлення замість краху."""
         logging.warning("Відеоплеєр не зміг відтворити «%s»: %s",
-                        self._path, error_string)
+                        anonymize_path(self._path), error_string)
         self._show_error(tr("video_error"))
 
     def _show_error(self, message: str):

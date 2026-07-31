@@ -4,6 +4,12 @@ DEK генерується один раз на сховище. Малий ``.va
 обгортку: типово DPAPI поточного Windows-користувача; парольний режим замінює
 обгортку, а не перешифровує аудіо. Дані мають власний STREAM-формат: AES-256-GCM
 для кожного 64 KiB чанка, nonce = counter(11 байт) || final(1 байт).
+
+Кожен контейнер отримує 16-байтний випадковий ``file_id`` з ``os.urandom``.
+Під одним DEK формат розрахований не більш як на 2**32 файлів, а один файл —
+не більш як на 2**32 чанків (256 TiB). Межа чанків контролюється під час читання
+і запису. Межа файлів документована, але не має runtime-лічильника: надійний
+лічильник вимагав би постійного реєстру або зміни публічного API.
 """
 from __future__ import annotations
 
@@ -24,6 +30,9 @@ _FORMAT_VERSION = 1                 # legacy: file_id + chunk AAD only
 _CONTEXT_FORMAT_VERSION = 2         # binds a container to its session/path
 _MAGIC = b"BME"
 _FILE_ID_BYTES = 16
+_MAX_FILES_PER_DEK = 2**32
+_MAX_CHUNKS_PER_FILE = 2**32
+_MAX_PLAINTEXT_BYTES_PER_FILE = _MAX_CHUNKS_PER_FILE * CHUNK_SIZE
 _TAG_BYTES = 16
 _DEK_BYTES = 32
 _CRYPTPROTECT_UI_FORBIDDEN = 0x1
@@ -186,8 +195,10 @@ def _combine_secret(password, keyfile_bytes: bytes) -> bytes:
 
 
 def _nonce(index: int, final: bool) -> bytes:
-    if not 0 <= index < 2**64:
-        raise ValueError("Забагато чанків для формату шифрування")
+    if not 0 <= index < _MAX_CHUNKS_PER_FILE:
+        raise ValueError(
+            f"Зашифрований файл перевищує межу "
+            f"{_MAX_CHUNKS_PER_FILE} чанків")
     return index.to_bytes(11, "big") + (b"\x01" if final else b"\x00")
 
 def _context_bytes(context) -> bytes:
@@ -245,20 +256,23 @@ def _dpapi_call(data: bytes, *, protect: bool) -> bytes:
     target = DATA_BLOB()
     crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
-    kernel32.LocalFree.restype = ctypes.c_void_p
+    kernel32.LocalFree.argtypes = [ctypes.wintypes.HLOCAL]
+    kernel32.LocalFree.restype = ctypes.wintypes.HLOCAL
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB), ctypes.wintypes.LPCWSTR,
+        ctypes.POINTER(DATA_BLOB), ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptProtectData.restype = ctypes.wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(DATA_BLOB), ctypes.POINTER(ctypes.wintypes.LPWSTR),
+        ctypes.POINTER(DATA_BLOB), ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptUnprotectData.restype = ctypes.wintypes.BOOL
     fn = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
-    fn.restype = ctypes.wintypes.BOOL
     if protect:
-        fn.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_wchar_p,
-                       ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
-                       ctypes.wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
         ok = fn(ctypes.byref(source), "Balachky meeting vault", None, None, None,
                 _CRYPTPROTECT_UI_FORBIDDEN, ctypes.byref(target))
     else:
-        fn.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_void_p,
-                       ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
-                       ctypes.wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
         ok = fn(ctypes.byref(source), None, None, None, None,
                 _CRYPTPROTECT_UI_FORBIDDEN, ctypes.byref(target))
     if not ok:
@@ -650,11 +664,19 @@ def _encrypt_stream(inp, dst: Path, dek: bytes, context=None) -> None:
 def encrypt_file(src, dst, dek, *, context=None) -> None:
     src, dst = Path(src), Path(dst)
     if src.resolve() == dst.resolve(): raise ValueError("src і dst мають бути різними файлами")
+    if src.stat().st_size > _MAX_PLAINTEXT_BYTES_PER_FILE:
+        raise ValueError(
+            f"Відкритий файл перевищує максимальний розмір "
+            f"{_MAX_PLAINTEXT_BYTES_PER_FILE} байтів")
     with src.open("rb") as inp: _encrypt_stream(inp, dst, dek, context)
 
 
 def encrypt_bytes(data: bytes, dst, dek, *, context) -> None:
     import io
+    if len(data) > _MAX_PLAINTEXT_BYTES_PER_FILE:
+        raise ValueError(
+            f"Відкритий файл перевищує максимальний розмір "
+            f"{_MAX_PLAINTEXT_BYTES_PER_FILE} байтів")
     _encrypt_stream(io.BytesIO(data), Path(dst), dek, context)
 
 

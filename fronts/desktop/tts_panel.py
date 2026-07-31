@@ -72,17 +72,17 @@ class ListenPanel(QDialog):
         outer.addWidget(self._player)
         # СТРІМІНГ (§3.2 TTFS): чанки (= речення) грають послідовно, перший одразу.
         # Тримаємо ВЕСЬ список + індекс поточного — для навігації ◀/▶ між реченнями
-        # (суд хвилі 3: у стрімінгу nav іде по чанках, не по ms-таймлайну).
+        # (рецензія хвилі 3: у стрімінгу nav іде по чанках, не по ms-таймлайну).
         self._chunks = []              # [(wav, tagged_timings)] усі речення по порядку
         self._cur_index = -1
         self._resume_index = 0         # §9.2: з якого речення почати (reverse-resume)
-        self._resume_armed = False     # суд 5.2 Б1: resume дійсний РІВНО для наступного
+        self._resume_armed = False     # рецензія 5.2 Б1: resume дійсний РІВНО для наступного
         #                                synth-потоку; будь-який інший (не armed) потік
         #                                скидає його — застарілий індекс не глушить панель
-        self._resume_gen = None        # суд 5.3: ЦІЛЬОВА генерація arm (generation-токен
+        self._resume_gen = None        # рецензія 5.3: ЦІЛЬОВА генерація arm (generation-токен
         #                                контролера) — arm споживає лише чанк СВОЄЇ генерації
         self._active_gen = None        # генерація, що зараз програється (для відсіву чужих чанків)
-        self._text_rev = 0             # суд 5.2 Б2: лічильник заміни ВМІСТУ панелі
+        self._text_rev = 0             # рецензія 5.2 Б2: лічильник заміни ВМІСТУ панелі
         #                                (ревізія-гейт проти гонки правки під час діалогу)
         qmp = getattr(self._player, "_player", None)
         if qmp is not None:
@@ -136,7 +136,7 @@ class ListenPanel(QDialog):
     def set_text(self, text: str) -> None:
         if self._editor is not None:
             self._editor.setPlainText(text or "")
-        self._text_rev += 1              # суд 5.2 Б2: кожна заміна вмісту = нова ревізія
+        self._text_rev += 1              # рецензія 5.2 Б2: кожна заміна вмісту = нова ревізія
 
     def text_revision(self) -> int:
         """Суд 5.2 Б2: поточна ревізія тексту панелі. Інкрементується при КОЖНІЙ
@@ -179,7 +179,7 @@ class ListenPanel(QDialog):
                       generation=None) -> None:
         """Готовий чанк (= речення). Перший — грати НЕГАЙНО (перший звук швидкий);
         наступні — накопичуються; грають по завершенні поточного (EndOfMedia). Живий
-        потік заповнює _sentence_starts і членство «sentence» (суд хвилі 3 БЛОКЕР 1).
+        потік заповнює _sentence_starts і членство «sentence» (рецензія хвилі 3 БЛОКЕР 1).
 
         Суд 5.3: generation — токен synth-запиту контролера. Чанк ЧУЖОЇ (скасованої/
         старої) генерації ІГНОРУЄМО повністю, щоб уже поставлений у чергу Qt чанк
@@ -197,7 +197,7 @@ class ListenPanel(QDialog):
             self._chunks = []
             self._sentence_starts = []
             self._cur_index = -1
-            # generation-гейт (суд 5.2 Б1 + 5.3): resume-індекс діє РІВНО для тієї
+            # generation-гейт (рецензія 5.2 Б1 + 5.3): resume-індекс діє РІВНО для тієї
             # генерації, під яку його armed. Інша (не своя) генерація → скидаємо до 0,
             # інакше застарілий індекс від обірваного resume заглушив би це відтворення.
             if self._resume_armed and self._resume_gen in (None, generation):

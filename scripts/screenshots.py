@@ -5,9 +5,7 @@
 Знімок — системний (PIL.ImageGrab), кроп по DWMWA_EXTENDED_FRAME_BOUNDS:
 на відміну від widget.grab(), показує Mica-скло.
 
-Запуск із кореня репо:
-  .venv\\Scripts\\python scripts\\screenshots.py
-  .venv\\Scripts\\python scripts\\screenshots.py <output-dir> --lang=en
+Запуск із кореня репо:  .venv\\Scripts\\python scripts\\screenshots.py
 """
 import os
 # Цей скрипт РЕНДЕРИТЬ РЕАЛЬНЕ вікно (DWM/DirectWrite): offscreen тут заборонений
@@ -35,55 +33,31 @@ from PySide6.QtGui import QGuiApplication
 from whisper_core import profiles
 
 # аргументи: позиційний — інша тека виводу (напр., preview/ для ітерацій дизайну);
-# --states — додаткові кадри станів кнопок (disabled/focus) для Блоку 5 рубрики;
-# --lang=uk|en — мова інтерфейсу й безпечних демонстраційних даних.
+# --states — додаткові кадри станів кнопок (disabled/focus) для Блоку 5 рубрики.
 _POS = [a for a in sys.argv[1:] if not a.startswith("--")]
 _FLAGS = {a for a in sys.argv[1:] if a.startswith("--")}
 STATES = "--states" in _FLAGS
-LANG = next((a.partition("=")[2] for a in _FLAGS if a.startswith("--lang=")), "uk")
-if LANG not in {"uk", "en"}:
-    sys.exit("--lang має бути uk або en.")
 OUT = Path(_POS[0]).resolve() if _POS else ROOT / "docs" / "screenshots"
 
-FAKE_TERMS = {
-    "uk": """\
-# Демо-словник для скриншотів (жодних приватних даних)
+FAKE_TERMS = """\
+# Демо-словник для скріншотів (жодних приватних даних)
 [terms]
-Fable = ["фейбл", "файбл"]
+Kubernetes = ["кубернетес", "кубернетіс"]
 GitHub = ["гітхаб", "гіт хаб"]
 Cowork = ["коворк"]
 Python = ["пайтон", "пітон"]
 "ретранслятор" = ["ретрансльатор"]
-""",
-    "en": """\
-# Demo dictionary for screenshots (no private data)
-[terms]
-Fable = ["fayble"]
-GitHub = ["git hub"]
-Cowork = ["co work"]
-Python = ["pie thon"]
-"dashboard" = ["dash board"]
-""",
-}
+"""
 
 # частоти: нейромережа x4, дашборд x3, фронтенд x2 → кандидати вкладки «Словники»;
 # ts/final/source — для вкладки «Історія» (час, текст, позначка «з файлу»)
-FAKE_HISTORY = {
-    "uk": [
-        ("заливаю нову збірку нейромережа впала на другому кроці", "desktop"),
-        ("нейромережа знову перевчилась подивись дашборд", "desktop"),
-        ("додай на дашборд графік по фронтенд збірках", "file"),
-        ("нейромережа готова фронтенд теж", "desktop"),
-        ("дашборд оновив нейромережа в проді", "desktop"),
-    ],
-    "en": [
-        ("uploading the new build the neural network failed on step two", "desktop"),
-        ("the neural network finished training check the dashboard", "desktop"),
-        ("add a frontend build chart to the dashboard", "file"),
-        ("the neural network is ready and so is the frontend", "desktop"),
-        ("dashboard updated the neural network is in production", "desktop"),
-    ],
-}
+FAKE_HISTORY = [
+    ("заливаю нову збірку нейромережа впала на другому кроці", "desktop"),
+    ("нейромережа знову перевчилась подивись дашборд", "desktop"),
+    ("додай на дашборд графік по фронтенд збірках", "file"),
+    ("нейромережа готова фронтенд теж", "desktop"),
+    ("дашборд оновив нейромережа в проді", "desktop"),
+]
 
 
 def make_sandbox() -> Path:
@@ -92,21 +66,20 @@ def make_sandbox() -> Path:
     proot = tmp / "profiles"
     default = proot / "default"
     default.mkdir(parents=True)
-    (default / "terms.toml").write_text(FAKE_TERMS[LANG], encoding="utf-8")
+    (default / "terms.toml").write_text(FAKE_TERMS, encoding="utf-8")
     import time
     now = round(time.time())
-    history = FAKE_HISTORY[LANG]
     (default / "history.jsonl").write_text(
         "\n".join(json.dumps(
-            {"ts": now - (len(history) - i) * 5400,
+            {"ts": now - (len(FAKE_HISTORY) - i) * 5400,
              "raw": raw, "final": raw, "source": src}, ensure_ascii=False)
-            for i, (raw, src) in enumerate(history)) + "\n",
+            for i, (raw, src) in enumerate(FAKE_HISTORY)) + "\n",
         encoding="utf-8")
     (default / "profile.json").write_text('{"memory": true}', encoding="utf-8")
     kolega = proot / "kolega"
     kolega.mkdir()
     (kolega / "terms.toml").write_text(
-        '[terms]\nFable = ["фейбл"]\nGitHub = ["гітхаб"]\n', encoding="utf-8")
+        '[terms]\nKubernetes = ["кубернетес"]\nGitHub = ["гітхаб"]\n', encoding="utf-8")
     (kolega / "profile.json").write_text('{"memory": true}', encoding="utf-8")
     (proot / "state.json").write_text('{"active": "default"}', encoding="utf-8")
     return tmp
@@ -155,7 +128,12 @@ def grab_window(win, out_path: Path):
     from PIL import ImageGrab
     rect = ctypes.wintypes.RECT()
     DWMWA_EXTENDED_FRAME_BOUNDS = 9
-    ctypes.windll.dwmapi.DwmGetWindowAttribute(
+    dwm = ctypes.windll.dwmapi
+    dwm.DwmGetWindowAttribute.argtypes = (
+        ctypes.wintypes.HWND, ctypes.wintypes.DWORD, ctypes.c_void_p,
+        ctypes.wintypes.DWORD)
+    dwm.DwmGetWindowAttribute.restype = ctypes.c_long
+    dwm.DwmGetWindowAttribute(
         int(win.winId()), DWMWA_EXTENDED_FRAME_BOUNDS,
         ctypes.byref(rect), ctypes.sizeof(rect))
     img = ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom))
@@ -168,14 +146,16 @@ def grab_window(win, out_path: Path):
 def main():
     if sys.platform != "win32":
         sys.exit("Тільки Windows (DWM/Mica).")
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    shcore = ctypes.windll.shcore
+    shcore.SetProcessDpiAwareness.argtypes = (ctypes.c_int,)
+    shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+    shcore.SetProcessDpiAwareness(2)
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
 
-    from fronts.desktop import i18n, theme
+    from fronts.desktop import theme
     from fronts.desktop.theme import QSS, load_fonts
-    i18n.set_language(LANG)
     load_fonts()
     app.setStyleSheet(QSS)
     theme.apply_link_colors(app)   # як app.py на старті: роль Link = акцент теми
@@ -192,8 +172,6 @@ def main():
 
     ctrl = FakeController(sandbox)
     ctrl.cfg.backdrop = "auto"
-    ctrl.cfg.language = LANG
-    ctrl.cfg.ui_language = LANG
 
     # суцільний темний фон на весь екран: у крайні пікселі вікна (межа,
     # заокруглені кути) не просочиться вміст чужих вікон позаду
@@ -217,82 +195,41 @@ def main():
 
     # --- Диктування: 3 фейк-картки (додаються ПІСЛЯ кадру порожнього стану) ---
     def populate_dictation():
-        samples = {
-            "uk": [
-                ("залив реліз на гітхаб", "залив реліз на GitHub",
-                 [("залив", 0.95), ("реліз", 0.9), ("на", 0.99), ("гітхаб", 0.82)]),
-                ("запиши думку про новий дашборд поки не забув",
-                 "запиши думку про новий дашборд поки не забув",
-                 [("запиши", 0.93), ("думку", 0.9), ("про", 0.98), ("новий", 0.95),
-                  ("дашборд", 0.42), ("поки", 0.96), ("не", 0.99), ("забув", 0.94)]),
-                ("зустріч перенесли на п'ятницю о третій",
-                 "зустріч перенесли на п'ятницю о третій",
-                 [("зустріч", 0.94), ("перенесли", 0.9), ("на", 0.99),
-                  ("п'ятницю", 0.87), ("о", 0.98), ("третій", 0.92)]),
-            ],
-            "en": [
-                ("uploaded the release to git hub", "uploaded the release to GitHub",
-                 [("uploaded", 0.95), ("the", 0.99), ("release", 0.9),
-                  ("to", 0.99), ("git", 0.88), ("hub", 0.82)]),
-                ("write down the dashboard idea before I forget",
-                 "write down the dashboard idea before I forget",
-                 [("write", 0.93), ("down", 0.9), ("the", 0.98), ("dashboard", 0.42),
-                  ("idea", 0.95), ("before", 0.96), ("I", 0.99), ("forget", 0.94)]),
-                ("the meeting moved to Friday at three",
-                 "the meeting moved to Friday at three",
-                 [("the", 0.99), ("meeting", 0.94), ("moved", 0.9), ("to", 0.99),
-                  ("Friday", 0.87), ("at", 0.98), ("three", 0.92)]),
-            ],
-        }
-        for raw, final, words in samples[LANG]:
-            win.dictation.add_entry(raw, final, words)
+        win.dictation.add_entry(
+            "залив реліз на гітхаб", "залив реліз на GitHub",      # терміни виправлено
+            [("залив", 0.95), ("реліз", 0.9), ("на", 0.99), ("гітхаб", 0.82)])
+        win.dictation.add_entry(
+            "запиши думку про новий дашборд поки не забув",        # непевне слово (золоте)
+            "запиши думку про новий дашборд поки не забув",
+            [("запиши", 0.93), ("думку", 0.9), ("про", 0.98), ("новий", 0.95),
+             ("дашборд", 0.42), ("поки", 0.96), ("не", 0.99), ("забув", 0.94)])
+        win.dictation.add_entry(
+            "зустріч перенесли на п'ятницю о третій",              # звичайна картка
+            "зустріч перенесли на п'ятницю о третій",
+            [("зустріч", 0.94), ("перенесли", 0.9), ("на", 0.99), ("п'ятницю", 0.87),
+             ("о", 0.98), ("третій", 0.92)])
 
     # --- Файли: 2 елементи черги (готовий + у процесі) ---
     # сегменти з таймкодами → на картці активне меню «Зберегти як…» (srt/vtt/docx)
-    file_samples = {
-        "uk": (
-            [r"C:\Demo\голосове-від-колеги.ogg", r"C:\Demo\нарада-понеділок.m4a"],
-            "Доброго ранку. Нагадую: о десятій - планірка по релізу, "
-            "о другій - демо для замовника. Порядок денний скинув у чат.",
-            [
-                (0.0, 2.6, "Доброго ранку."),
-                (2.6, 6.4, "Нагадую: о десятій - планірка по релізу,"),
-                (6.4, 9.8, "о другій - демо для замовника."),
-                (9.8, 12.5, "Порядок денний скинув у чат."),
-            ],
-        ),
-        "en": (
-            [r"C:\Demo\voice-note-from-a-colleague.ogg", r"C:\Demo\monday-meeting.m4a"],
-            "Good morning. Reminder: release planning is at ten, "
-            "and the customer demo is at two. The agenda is in the chat.",
-            [
-                (0.0, 2.6, "Good morning."),
-                (2.6, 6.4, "Reminder: release planning is at ten,"),
-                (6.4, 9.8, "and the customer demo is at two."),
-                (9.8, 12.5, "The agenda is in the chat."),
-            ],
-        ),
-    }
-    file_names, file_text, fake_segments = file_samples[LANG]
-    win.files.add_files(file_names)
+    win.files.add_files([r"C:\Demo\голосове-від-колеги.ogg",
+                         r"C:\Demo\нарада-понеділок.m4a"])
+    fake_segments = [
+        (0.0, 2.6, "Доброго ранку."),
+        (2.6, 6.4, "Нагадую: о десятій — планірка по релізу,"),
+        (6.4, 9.8, "о другій — демо для замовника."),
+        (9.8, 12.5, "Порядок денний скинув у чат."),
+    ]
     # feature/model-bottlenecks (під-хвиля 2): words із ймовірностями — картка файлу
     # тепер підсвічує непевні слова так само, як стрічка (тут «планірка» 0.44<0.5).
-    fake_words = {
-        "uk": [
-            ("Доброго", 0.95), ("ранку", 0.93), ("Нагадую", 0.9), ("о", 0.98),
-            ("десятій", 0.88), ("планірка", 0.44), ("по", 0.97), ("релізу", 0.83),
-            ("о", 0.98), ("другій", 0.9), ("демо", 0.86), ("для", 0.98),
-            ("замовника", 0.91), ("Порядок", 0.93), ("денний", 0.9),
-            ("скинув", 0.89), ("у", 0.99), ("чат", 0.87),
-        ],
-        "en": [
-            ("Good", 0.95), ("morning", 0.93), ("Reminder", 0.9),
-            ("release", 0.83), ("planning", 0.44), ("is", 0.99), ("at", 0.98),
-            ("ten", 0.88), ("customer", 0.91), ("demo", 0.86), ("two", 0.9),
-            ("agenda", 0.93), ("chat", 0.87),
-        ],
-    }[LANG]
-    ctrl.file_done.emit(1, file_text, "done:38", fake_segments, fake_words)
+    fake_words = [
+        ("Доброго", 0.95), ("ранку", 0.93), ("Нагадую", 0.9), ("о", 0.98),
+        ("десятій", 0.88), ("планірка", 0.44), ("по", 0.97), ("релізу", 0.83),
+        ("о", 0.98), ("другій", 0.9), ("демо", 0.86), ("для", 0.98),
+        ("замовника", 0.91), ("Порядок", 0.93), ("денний", 0.9), ("скинув", 0.89),
+        ("у", 0.99), ("чат", 0.87)]
+    ctrl.file_done.emit(1, "Доброго ранку. Нагадую: о десятій — планірка по релізу, "
+                           "о другій — демо для замовника. Порядок денний скинув у чат.",
+                        "done:38", fake_segments, fake_words)
     # КОД стану, не перекладений текст: _on_status порівнює з FileStatus,
     # інакше busy-пілюля (спінер + німб) не потрапляє на канонічний кадр
     ctrl.file_status.emit(2, FileStatus.TRANSCRIBING)
@@ -308,7 +245,13 @@ def main():
         # секція «Система» (оновлення + чекбокси) — ОКРЕМА вкладка, а не «низ
         # довгої сторінки»: налаштування давно розбито на вкладки QTabWidget, тож
         # старий скрол першої вкладки залишав кадр 07b дублем 07 (Розпізнавання).
-        win.settings._tabs.setCurrentIndex(win.settings._tabs.count() - 1)
+        # 30.07: «Про програму» стала новою останньою вкладкою — «Система» тепер
+        # шукається за назвою, а не за індексом count()-1.
+        from fronts.desktop.i18n import tr
+        tabs = win.settings._tabs
+        idx = next(i for i in range(tabs.count())
+                  if tabs.tabText(i) == tr("set_tab_system"))
+        tabs.setCurrentIndex(idx)
 
     seq = [("00-dictation-empty", 0, None),
            ("01-dictation", 0, populate_dictation),

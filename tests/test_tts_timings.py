@@ -1,4 +1,4 @@
-"""Хвиля 1: координатні хелпери таймінгів — document anchor + UTF-16."""
+"""Хвиля 1: координатні хелпери таймінгів — document anchor + UTF-16 (умова рецензії)."""
 import sys
 import unittest
 from pathlib import Path
@@ -161,7 +161,7 @@ class TestGoldenViaWorker(unittest.TestCase):
             self.assertEqual(w["raw_end"], 5)
 
     def test_worker_returns_fragment_relative(self):
-        # §3.2 (ревізія): worker НЕ бейкає editor-anchor (source_start_cp) — вертає
+        # §3.2 (рецензія): worker НЕ бейкає editor-anchor (source_start_cp) — вертає
         # FRAGMENT-relative координати; editor-anchor додає БАТЬКО. Тож попри
         # source_start_cp=100 перше слово фрагмента має raw_start=0.
         chunks = self._synth("привіт", source_start_cp=100)
@@ -193,7 +193,7 @@ class TestGoldenViaWorker(unittest.TestCase):
             self.assertEqual(w["raw_end"], 6)
 
     def test_first_chunk_capped_on_long_text_want_timings(self):
-        # БЛОКЕР суду: TTFS<0.5c для playback (want_timings=True). Довгий текст без
+        # БЛОКЕР рецензії: TTFS<0.5c для playback (want_timings=True). Довгий текст без
         # крапок (перелік/адреса, 40 слів) → ПЕРШИЙ чанк ≤ cap слів, не один шматок.
         from whisper_core.tts import FIRST_CHUNK_MAX_WORDS
         long = " ".join(f"пункт{i}" for i in range(40))

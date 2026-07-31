@@ -3,6 +3,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import patch
 import numpy as np
 
@@ -66,6 +68,60 @@ class ScreenStudioTests(unittest.TestCase):
         # H.264/libx264 (GPL) і контейнер MP4 прибрано; лишається WebM/VP9 (BSD) —
         # єдиний надійний VP9-контейнер (у PyAV немає муксера з іменем 'mkv').
         self.assertEqual(available_formats(_AV()), ["webm"])
+
+class DesktopAppScreenRecordStartTests(unittest.TestCase):
+    """Аудит 'тихі відмови' №2 (fronts/desktop/pages/screen.py:265-267): коли
+    DesktopApp.screen_record_start повертає False, кнопка на сторінці більше
+    не має мовчати — контролер зобов'язаний надіслати screen_record_error
+    ПЕРЕД поверненням False, інакше UI нема на що реагувати."""
+
+    def _fake_self(self, tmp):
+        emitted_errors = []
+        emitted_states = []
+        fake = SimpleNamespace(
+            _screen_recorder=None,
+            _screen_recordings_root=lambda: Path(tmp),
+            screen_record_error=SimpleNamespace(emit=emitted_errors.append),
+            screen_record_state=SimpleNamespace(emit=emitted_states.append),
+        )
+        return fake, emitted_errors, emitted_states
+
+    def test_already_recording_emits_error_before_returning_false(self):
+        from fronts.desktop.app import DesktopApp
+        with tempfile.TemporaryDirectory() as tmp:
+            fake, errors, states = self._fake_self(tmp)
+            fake._screen_recorder = SimpleNamespace(is_running=True)
+            result = DesktopApp.screen_record_start(fake, {"kind": "monitor", "index": 1}, {})
+        self.assertFalse(result)
+        self.assertEqual(len(errors), 1, "має бути видима причина відмови, а не тиша")
+        self.assertEqual(states, [])
+
+    def test_engine_rejected_start_emits_error_before_returning_false(self):
+        from fronts.desktop.app import DesktopApp
+        rejecting_recorder = SimpleNamespace(start=lambda *a, **k: False)
+        with tempfile.TemporaryDirectory() as tmp:
+            fake, errors, states = self._fake_self(tmp)
+            with mock.patch("whisper_core.screen.recorder.ScreenRecorder",
+                            return_value=rejecting_recorder):
+                result = DesktopApp.screen_record_start(
+                    fake, {"kind": "monitor", "index": 1}, {"format": "webm"})
+        self.assertFalse(result)
+        self.assertEqual(len(errors), 1, "рушій відхилив старт — людина мусить дізнатись чому")
+        self.assertEqual(states, [])
+
+    def test_successful_start_emits_recording_state_and_no_error(self):
+        from fronts.desktop.app import DesktopApp
+        accepting_recorder = SimpleNamespace(start=lambda *a, **k: True)
+        with tempfile.TemporaryDirectory() as tmp:
+            fake, errors, states = self._fake_self(tmp)
+            with mock.patch("whisper_core.screen.recorder.ScreenRecorder",
+                            return_value=accepting_recorder):
+                result = DesktopApp.screen_record_start(
+                    fake, {"kind": "monitor", "index": 1}, {"format": "webm"})
+        self.assertTrue(result)
+        self.assertEqual(errors, [])
+        self.assertEqual(states, ["recording"])
+
 
 if __name__ == "__main__": unittest.main()
 

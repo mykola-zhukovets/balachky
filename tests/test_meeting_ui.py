@@ -66,7 +66,8 @@ class _RunThread:
 
 class _FakeStream:
     def __init__(self, *, kind, device_index, channels, rate, sink,
-                 on_stall, on_device_lost, on_sink_error=None, on_audio=None):
+                 on_stall, on_device_lost, on_sink_error=None, on_audio=None,
+                 on_silence=None, on_silence_resolved=None):
         self.kind = kind
         self.started = False
         self.stopped = False
@@ -110,6 +111,7 @@ def fake_meeting(*, wavs=None, session_factory=None, stitch=None,
     cap = types.ModuleType("whisper_core.meeting.capture")
     ses = types.ModuleType("whisper_core.meeting.session")
     post = types.ModuleType("whisper_core.meeting.postprocess")
+    voice = types.ModuleType("whisper_core.meeting.voice_memory")
     # audit_log (chain-of-custody) — РЕАЛЬНИЙ модуль: він самодостатній (без Qt,
     # без capture/session), тож підмінений пакет має віддавати справжній журнал.
     # Інакше лінивий `from whisper_core.meeting import audit_log` у _audit_event
@@ -120,6 +122,8 @@ def fake_meeting(*, wavs=None, session_factory=None, stitch=None,
     cap.NATIVE_CHANNELS = 2
     cap.default_input = lambda name=None: {"index": 1, "name": "Мікрофон (тест)"}
     cap.default_loopback = lambda: {"index": 2, "name": "Динаміки (loopback)"}
+    cap.default_communications_device_name = lambda: None
+    cap.is_device_busy_error = lambda exc: False
     cap.CaptureStream = _FakeStream
 
     for name in ("RECORDING", "STOPPED", "PROCESSING", "DONE", "ERROR",
@@ -147,20 +151,28 @@ def fake_meeting(*, wavs=None, session_factory=None, stitch=None,
     post.write_transcript = write_transcript or (
         lambda d, utt, *, me_label, others_label: (d / "transcript.txt",
                                                     d / "transcript.json"))
+    voice.delete_pending_centroids = lambda profile, session_id: True
 
     mods = {
         "whisper_core.meeting": pkg,
         "whisper_core.meeting.capture": cap,
         "whisper_core.meeting.session": ses,
         "whisper_core.meeting.postprocess": post,
+        "whisper_core.meeting.voice_memory": voice,
         "whisper_core.meeting.audit_log": _audit_log,
     }
     pkg.capture, pkg.session, pkg.postprocess = cap, ses, post
+    pkg.voice_memory = voice
     pkg.audit_log = _audit_log
     saved = {k: sys.modules.get(k) for k in mods}
     sys.modules.update(mods)
     try:
-        yield SimpleNamespace(capture=cap, session=ses, postprocess=post)
+        yield SimpleNamespace(
+            capture=cap,
+            session=ses,
+            postprocess=post,
+            voice_memory=voice,
+        )
     finally:
         for k, v in saved.items():
             if v is None:
@@ -175,6 +187,7 @@ def _controller(**overrides):
     c = SimpleNamespace(
         cfg=SimpleNamespace(meeting_dir=None, meeting_sources="mic",
                             sounds=False, input_device=None),
+        profile="default",
         tray=_Tray(),
         _busy=False,
         _capturing=False,
@@ -286,6 +299,155 @@ class ConfigMeetingTests(unittest.TestCase):
             self.assertIn("meeting_sources", text)   # пресет пишемо завжди
 
 
+# ---------------------------------------------------------- чесні аудіо-попередження
+class AudioVisibilityTests(unittest.TestCase):
+    def test_persistent_non_enospc_sink_error_shows_recording_warning(self):
+        c = _controller()
+        marked = []
+        sess = SimpleNamespace(
+            id="2026-07-30_12-00-00",
+            mark_storage_error=lambda track, elapsed: marked.append((track, elapsed)))
+        expected = (
+            "Одна з аудіодоріжок наради не зберігається через збій запису. "
+            "Зупиніть нараду й перевірте доступ до папки нарад.")
+
+        DesktopApp._on_meeting_storage_error(
+            c, sess, "mic", PermissionError("access denied"), 65.0)
+
+        self.assertEqual(marked, [])                  # не називаємо збій “диск повний”
+        self.assertEqual(c.meeting_storage_warning.emits, [
+            (sess.id, 65.0, expected)])
+        self.assertEqual(c.transcription_error.emits, [expected])
+
+    def test_default_microphone_fallback_state_is_visible(self):
+        c = SimpleNamespace(
+            tray=_Tray(), recorder=SimpleNamespace(recording=False))
+        expected = (
+            "Обраний мікрофон недоступний. Запис триває через системний мікрофон — "
+            "перевірте джерело в Налаштуваннях.")
+
+        with patch("fronts.desktop.app.diagnostic_event"):
+            DesktopApp._on_dictation_audio_state(c, "fallback")
+
+        self.assertEqual(c.tray.notes, [expected])
+
+
+class _FakeLabel:
+    """Мінімальна заміна QLabel для тестів _refresh_device_note/_on_audio_state
+    без живого QApplication: лише ті методи, які торкає код сторінки."""
+
+    def __init__(self):
+        self.visible = False
+        self.text = None
+        self.props = {}
+
+    def show(self):
+        self.visible = True
+
+    def hide(self):
+        self.visible = False
+
+    def setText(self, text):
+        self.text = text
+
+    def setProperty(self, key, value):
+        self.props[key] = value
+
+    def style(self):
+        class _Style:
+            def unpolish(self, _w):
+                pass
+
+            def polish(self, _w):
+                pass
+        return _Style()
+
+
+class DeviceNoteTests(unittest.TestCase):
+    """Ризик 1 (аудит 30.07): показ фактичного пристрою системного звуку ДО
+    старту наради, з окремим попередженням, коли мультимедійний дефолт і роль
+    «для зв'язку» різняться."""
+
+    def _page(self, meeting_sources="mic+sys"):
+        cfg = SimpleNamespace(meeting_sources=meeting_sources)
+        return SimpleNamespace(controller=SimpleNamespace(cfg=cfg),
+                               _device_note=_FakeLabel(), _ui_state="idle")
+
+    def test_hidden_when_system_audio_not_selected(self):
+        from fronts.desktop.pages import meeting as meeting_page
+        page = self._page(meeting_sources="mic")
+        with fake_meeting():
+            meeting_page.MeetingPage._refresh_device_note(page)
+        self.assertFalse(page._device_note.visible)
+
+    def test_shows_device_name_when_roles_match(self):
+        from fronts.desktop.pages import meeting as meeting_page
+        page = self._page()
+        with fake_meeting() as fk:
+            fk.capture.default_loopback = lambda: {"index": 1, "name": "Динаміки"}
+            fk.capture.default_communications_device_name = lambda: "Динаміки"
+            meeting_page.MeetingPage._refresh_device_note(page)
+        self.assertTrue(page._device_note.visible)
+        self.assertIn("Динаміки", page._device_note.text)
+        self.assertNotEqual(page._device_note.props.get("badge"), "error")
+
+    def test_warns_when_communications_role_differs(self):
+        from fronts.desktop.pages import meeting as meeting_page
+        page = self._page()
+        with fake_meeting() as fk:
+            fk.capture.default_loopback = lambda: {"index": 1, "name": "Динаміки"}
+            fk.capture.default_communications_device_name = lambda: "USB-гарнітура"
+            meeting_page.MeetingPage._refresh_device_note(page)
+        self.assertTrue(page._device_note.visible)
+        self.assertIn("USB-гарнітура", page._device_note.text)
+        self.assertEqual(page._device_note.props.get("badge"), "error")
+
+    def test_no_mismatch_warning_when_communications_role_unknown(self):
+        """Чесна межа: якщо роль «для зв'язку» не вдалося дізнатись (None) —
+        мовчимо про мисматч, а не вигадуємо попередження з нічого."""
+        from fronts.desktop.pages import meeting as meeting_page
+        page = self._page()
+        with fake_meeting() as fk:
+            fk.capture.default_loopback = lambda: {"index": 1, "name": "Динаміки"}
+            fk.capture.default_communications_device_name = lambda: None
+            meeting_page.MeetingPage._refresh_device_note(page)
+        self.assertNotIn("для зв'язку", page._device_note.text or "")
+        self.assertNotEqual(page._device_note.props.get("badge"), "error")
+
+    def test_skipped_while_recording(self):
+        from fronts.desktop.pages import meeting as meeting_page
+        page = self._page()
+        page._ui_state = "recording"
+        with fake_meeting() as fk:
+            fk.capture.default_loopback = lambda: {"index": 1, "name": "Динаміки"}
+            meeting_page.MeetingPage._refresh_device_note(page)
+        self.assertFalse(page._device_note.visible)   # не смикнули підпис
+
+
+class SilenceWarningUiTests(unittest.TestCase):
+    """Ризик 5: вартовий тиші лише попереджає на живій картці, не зупиняючи
+    запис (перевірка контролера — MeetingStartTests/test_meeting_capture.py)."""
+
+    def test_silence_state_shows_persistent_warning(self):
+        from fronts.desktop.pages import meeting as meeting_page
+        page = SimpleNamespace(_silence_warning=_FakeLabel(),
+                               _audio_note=_FakeLabel())
+        meeting_page.MeetingPage._on_audio_state(page, "sys", "silence")
+        self.assertTrue(page._silence_warning.visible)
+        self.assertTrue(page._silence_warning.text)
+
+    def test_silence_resolved_hides_the_warning(self):
+        """Суддівське зауваження 30.07: коли звук зрештою з'являється, банер
+        мусить сам зникнути, а не брехати про тишу, якої вже нема."""
+        from fronts.desktop.pages import meeting as meeting_page
+        page = SimpleNamespace(_silence_warning=_FakeLabel(),
+                               _audio_note=_FakeLabel())
+        meeting_page.MeetingPage._on_audio_state(page, "sys", "silence")
+        self.assertTrue(page._silence_warning.visible)
+        meeting_page.MeetingPage._on_audio_state(page, "sys", "silence_resolved")
+        self.assertFalse(page._silence_warning.visible)
+
+
 # ------------------------------------------------------------------- старт/стоп
 class MeetingStartTests(unittest.TestCase):
     def test_start_onlymic_opens_one_stream(self):
@@ -334,6 +496,98 @@ class MeetingStartTests(unittest.TestCase):
             fk.capture.default_loopback = lambda: None
             ok = DesktopApp.meeting_start(c, "both")
         self.assertFalse(ok)
+        self.assertEqual(c.tray.notes, [tr("meeting_no_loopback")])
+
+    def test_start_reports_exclusive_mode_as_device_busy(self):
+        """Ризик 6 (аудит 30.07): пристрій зайнятий іншою програмою в
+        ексклюзивному режимі → окреме зрозуміле повідомлення, а не загальне
+        «не вдалося ініціалізувати системний звук»."""
+        from fronts.desktop.i18n import tr
+
+        class _BoomStream(_FakeStream):
+            def start(self):
+                if self.kind == "sys":
+                    raise RuntimeError("AUDCLNT_E_DEVICE_IN_USE")
+                super().start()
+
+        c = _controller(cfg=SimpleNamespace(meeting_dir=None,
+                                            meeting_sources="mic+sys", sounds=False,
+                                            input_device=None))
+        with fake_meeting() as fk:
+            fk.capture.CaptureStream = _BoomStream
+            fk.capture.is_device_busy_error = (
+                lambda exc: "device_in_use" in str(exc).lower())
+            with self.assertLogs(level="ERROR"):
+                ok = DesktopApp.meeting_start(c, "both")
+        self.assertFalse(ok)
+        self.assertEqual(c.tray.notes, [tr("meeting_device_busy")])
+
+    def test_start_mic_failure_reports_mic_not_system_sound(self):
+        """Аудит чесності (31.07, знахідка 1): збій СТАРТУ МІКРОФОНА мусить
+        називати мікрофон, а не радити перевірити колонки — старий код ловив
+        будь-яку помилку старту потоку одним except і завжди показував
+        meeting_no_loopback (текст про системний звук)."""
+        from fronts.desktop.i18n import tr
+
+        class _BoomMicStream(_FakeStream):
+            def start(self):
+                if self.kind == "mic":
+                    raise RuntimeError("input overflowed")
+                super().start()
+
+        c = _controller()
+        with fake_meeting() as fk:
+            fk.capture.CaptureStream = _BoomMicStream
+            with self.assertLogs(level="ERROR"):
+                ok = DesktopApp.meeting_start(c, "onlymic")
+        self.assertFalse(ok)
+        self.assertEqual(c.tray.notes, [tr("meeting_mic_start_failed")])
+        self.assertNotIn(tr("meeting_no_loopback"), c.tray.notes)
+
+    def test_start_mic_busy_reports_mic_device_busy_not_system(self):
+        """Той самий клас, для ексклюзивного режиму: мікрофон зайнятий іншою
+        програмою мусить казати про мікрофон, а не про системний звук."""
+        from fronts.desktop.i18n import tr
+
+        class _BoomMicStream(_FakeStream):
+            def start(self):
+                if self.kind == "mic":
+                    raise RuntimeError("AUDCLNT_E_DEVICE_IN_USE")
+                super().start()
+
+        c = _controller()
+        with fake_meeting() as fk:
+            fk.capture.CaptureStream = _BoomMicStream
+            fk.capture.is_device_busy_error = (
+                lambda exc: "device_in_use" in str(exc).lower())
+            with self.assertLogs(level="ERROR"):
+                ok = DesktopApp.meeting_start(c, "onlymic")
+        self.assertFalse(ok)
+        self.assertEqual(c.tray.notes, [tr("meeting_mic_device_busy")])
+
+    def test_modern_both_sources_warn_before_session_creation_without_loopback(self):
+        from fronts.desktop.i18n import tr
+        from whisper_core.config import MEETING_SYSTEM_SOURCE, meeting_microphone_token
+
+        c = _controller(cfg=SimpleNamespace(
+            meeting_dir=None, meeting_record_sources=[
+                meeting_microphone_token("Conference headset"),
+                MEETING_SYSTEM_SOURCE,
+            ], sounds=False, input_device="Conference headset"))
+        created = []
+
+        def factory(*args, **kwargs):
+            created.append((args, kwargs))
+            return _FakeSession("should-not-start", c._meetings_root())
+
+        with fake_meeting(session_factory=factory) as fk:
+            fk.capture.selected_input = lambda _name: {
+                "index": 1, "name": "Conference headset"}
+            fk.capture.default_loopback = lambda: None
+            ok = DesktopApp.meeting_start(c, "both")
+
+        self.assertFalse(ok)
+        self.assertEqual(created, [])
         self.assertEqual(c.tray.notes, [tr("meeting_no_loopback")])
 
     def test_start_device_enumeration_failure_is_toast_not_crash(self):
@@ -710,14 +964,40 @@ class MeetingGatingTests(unittest.TestCase):
 
 # ----------------------------------------------------------- команди-хелпери
 class MeetingCommandTests(unittest.TestCase):
-    def test_delete_meeting_calls_core(self):
-        deleted = []
+    def test_delete_meeting_moves_session_to_trash(self):
+        """delete_meeting тепер м'яко видаляє (кошик), а не rmtree одразу.
+        Тека мусить фізично переїхати під
+        <root>/.trash/, лишаючись цілою (файл усередині нею й лишається)."""
         c = _controller()
-        with fake_meeting() as fk:
-            # delete_session тепер приймає й корінь сховища (рубіж 3 захисту)
-            fk.session.delete_session = lambda d, root=None: deleted.append(d) or True
+        root = c._meetings_root()
+        session_dir = root / "2026-07-15_10-00-00"
+        session_dir.mkdir(parents=True)
+        (session_dir / "meeting.json").write_text("{}", encoding="utf-8")
+        with fake_meeting():
+            failures = DesktopApp.delete_meeting(c, "2026-07-15_10-00-00")
+        self.assertEqual(failures, ())
+        self.assertFalse(session_dir.exists())
+        from whisper_core import trash as mtrash
+        trashed_entries = [p for p in mtrash.trash_root(root).iterdir() if p.is_dir()]
+        self.assertEqual(len(trashed_entries), 1)
+        self.assertTrue((trashed_entries[0] / "meeting.json").exists())
+        self.assertEqual(c._last_trashed_meeting, trashed_entries[0])
+
+    def test_restore_meeting_moves_session_back(self):
+        c = _controller()
+        root = c._meetings_root()
+        session_dir = root / "2026-07-15_10-00-00"
+        session_dir.mkdir(parents=True)
+        (session_dir / "meeting.json").write_text("{}", encoding="utf-8")
+        with fake_meeting():
             DesktopApp.delete_meeting(c, "2026-07-15_10-00-00")
-        self.assertEqual(deleted, [c._meeting_session_dir("2026-07-15_10-00-00")])
+            trashed_dir = c._last_trashed_meeting
+            restored = DesktopApp.restore_meeting(c, trashed_dir)
+        self.assertEqual(restored, session_dir)
+        self.assertTrue(session_dir.is_dir())
+        self.assertTrue((session_dir / "meeting.json").exists())
+        self.assertFalse(trashed_dir.exists())
+        self.assertIsNone(c._last_trashed_meeting)
 
     def test_list_meetings_keeps_live_postprocess_stopped_session(self):
         marked = []
@@ -869,7 +1149,7 @@ class DiarizationDownloadWorkerTests(unittest.TestCase):
 
 
 class MeetingScreenRecordToggleTests(unittest.TestCase):
-    """Виправлення 1: до цього meeting_screen_enabled НЕ вмикав ЖОДЕН продакшн-UI
+    """Фікс 1: до цього meeting_screen_enabled НЕ вмикав ЖОДЕН продакшн-UI
     (лише тест-фейки), тож відео наради лишалось недосяжним для нового профілю.
     Тепер чекбокс «Записувати екран під час наради» у налаштуваннях наради
     вмикає його через контролер set_meeting_screen_enabled."""
@@ -1072,7 +1352,7 @@ class ModelCardDestructiveTests(unittest.TestCase):
         self.assertEqual(opened, [])
 
     def test_redownload_staged_replaces_without_deleting_on_yes(self):
-        """Виправлення 2: «Так» НЕ стирає старий файл наперед — запускає staged-докачку
+        """Фікс 2: «Так» НЕ стирає старий файл наперед — запускає staged-докачку
         (force=True), яка підмінить модель лише ПІСЛЯ успіху. Другого consent нема."""
         from fronts.desktop.pages import meeting as mp
         from whisper_core.protocol import model_manager as mm
@@ -1155,6 +1435,123 @@ class IntegrityJournalLinesTests(unittest.TestCase):
         self.assertIn("[", lines[0])                    # мітка часу присутня
 
 
+class MeetingConfirmReviewTests(unittest.TestCase):
+    """Аудит 'тихі відмови' №5 (meeting.py:2407-2410): порожнє ім'я/посада у
+    підтвердженні перегляду наради раніше тихо не додавало підпис. Тепер
+    людина мусить побачити явне попередження і подію в журналі."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        if QApplication.instance() is None:
+            cls.app = QApplication([])
+
+    def test_empty_name_shows_warning_and_logs_instead_of_silence(self):
+        from fronts.desktop.pages.meeting import MeetingPage
+        from unittest.mock import MagicMock
+
+        fake = SimpleNamespace(
+            controller=SimpleNamespace(meeting_add_review=lambda sid, name: False),
+            refresh=MagicMock())
+
+        with patch("fronts.desktop.pages.meeting.QInputDialog.getText",
+                   return_value=("", True)), \
+             patch("fronts.desktop.pages.meeting._meeting_warn") as mock_warn, \
+             self.assertLogs(level="WARNING") as logs:
+            MeetingPage._confirm_review(fake, "session-1")
+
+        fake.refresh.assert_not_called()
+        mock_warn.assert_called_once()
+        self.assertIn("Підпис НЕ додано", mock_warn.call_args[0][2])
+        self.assertTrue(any("session-1" in rec for rec in logs.output))
+
+    def test_valid_name_adds_review_and_refreshes(self):
+        """Контроль: штатний шлях (ім'я непорожнє) не має зламатись мутацією."""
+        from fronts.desktop.pages.meeting import MeetingPage
+        from unittest.mock import MagicMock
+
+        added = []
+        fake = SimpleNamespace(
+            controller=SimpleNamespace(
+                meeting_add_review=lambda sid, name: added.append((sid, name)) or True),
+            refresh=MagicMock())
+
+        with patch("fronts.desktop.pages.meeting.QInputDialog.getText",
+                   return_value=("Капітан Іваненко", True)), \
+             patch("fronts.desktop.pages.meeting._meeting_warn") as mock_warn:
+            MeetingPage._confirm_review(fake, "session-1")
+
+        fake.refresh.assert_called_once()
+        mock_warn.assert_not_called()
+        self.assertEqual(added, [("session-1", "Капітан Іваненко")])
+
+
+class MeetingDeleteUndoToastTests(unittest.TestCase):
+    """_confirm_delete показує тост із «Повернути» після м'якого видалення
+    (кошик). Рецензент впіймав тиху відмову: клік
+    «Повернути», коли кошик уже почистився/збій диска (restore_meeting
+    повертає None), раніше просто ігнорувався — жодного сигналу людині."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        if QApplication.instance() is None:
+            cls.app = QApplication([])
+
+    def _fake_page(self, *, delete_result=(), restore_result):
+        from unittest.mock import MagicMock
+        return SimpleNamespace(
+            controller=SimpleNamespace(
+                delete_meeting=lambda sid: delete_result,
+                restore_meeting=lambda td: restore_result,
+                _last_trashed_meeting=Path("trashed-session"),
+            ),
+            refresh=MagicMock(),
+            _stop_players=lambda sid: True,
+        )
+
+    def test_undo_click_shows_failure_toast_when_restore_returns_none(self):
+        from fronts.desktop.pages.meeting import MeetingPage
+
+        fake = self._fake_page(restore_result=None)
+        undo_calls = []
+
+        def _fake_undo_toast(parent, text, on_undo, *, undo_label=None):
+            undo_calls.append((text, undo_label))
+            on_undo()   # симулюємо клік «Повернути» одразу
+
+        with patch("fronts.desktop.pages.meeting._meeting_confirm",
+                   return_value=True), \
+             patch("fronts.desktop.pages.meeting.motion.undo_toast",
+                   side_effect=_fake_undo_toast), \
+             patch("fronts.desktop.pages.meeting.motion.toast") as mock_toast:
+            MeetingPage._confirm_delete(fake, "2026-07-15_10-00-00")
+
+        self.assertEqual(len(undo_calls), 1)
+        mock_toast.assert_called_once()
+        self.assertEqual(
+            mock_toast.call_args[0][1],
+            "Не вдалося повернути нараду з кошика — "
+            "можливо, кошик уже почистився.")
+
+    def test_undo_click_no_failure_toast_when_restore_succeeds(self):
+        from fronts.desktop.pages.meeting import MeetingPage
+
+        fake = self._fake_page(restore_result=Path("restored"))
+
+        def _fake_undo_toast(parent, text, on_undo, *, undo_label=None):
+            on_undo()
+
+        with patch("fronts.desktop.pages.meeting._meeting_confirm",
+                   return_value=True), \
+             patch("fronts.desktop.pages.meeting.motion.undo_toast",
+                   side_effect=_fake_undo_toast), \
+             patch("fronts.desktop.pages.meeting.motion.toast") as mock_toast:
+            MeetingPage._confirm_delete(fake, "2026-07-15_10-00-00")
+
+        mock_toast.assert_not_called()
+
+
 class MeetingExportMenuAndDialogsTests(unittest.TestCase):
     """Тести для згрупованого випадаючого меню «Експортувати в…», доступності (accessibleName)
     та кастомних діалогів повідомлень без системних іконок Qt."""
@@ -1208,6 +1605,112 @@ class MeetingExportMenuAndDialogsTests(unittest.TestCase):
         self.assertEqual(i18n.tr("dialog_yes"), "Так")
         self.assertEqual(i18n.tr("dialog_no"), "Ні")
         self.assertEqual(i18n.tr("dialog_ok"), "Гаразд")
+
+
+class MeetingBookmarkButtonTests(unittest.TestCase):
+    """feature/bookmarks-stage1: клік по кнопці «Закладка» на сторінці НЕ має
+    відкривати модальний діалог під час запису (спека, розд. 2.2, вимога
+    завдання) — момент фіксується миттєво, підпис можна додати пізніше."""
+
+    def test_click_does_not_block_with_dialog(self):
+        from fronts.desktop.pages.meeting import MeetingPage
+
+        calls = []
+        fake = SimpleNamespace(
+            controller=SimpleNamespace(
+                add_meeting_bookmark=lambda: calls.append(True)))
+
+        with patch("fronts.desktop.pages.meeting.QInputDialog.getText") as dlg:
+            MeetingPage._add_bookmark(fake)
+
+        dlg.assert_not_called()
+        self.assertEqual(calls, [True])
+
+
+class MeetingBookmarkAuditTests(unittest.TestCase):
+    """feature/bookmarks-stage1: DesktopApp.add_meeting_bookmark атомарно пише
+    мітку і в meeting.json (bookmarks), і подію bookmark_added у audit.jsonl —
+    той самий неруйнівний шлях (_audit_event), що і created/stopped/finalized.
+    Реальний MeetingSession/audit_log (без моків) — тести читають фактичний
+    вміст файлів, не намір."""
+
+    def _session(self, tmp):
+        from whisper_core.meeting.session import create_session
+        return create_session(Path(tmp), ["mic"])
+
+    def test_bookmark_saved_and_logged_with_verified_chain(self):
+        import time
+        from whisper_core.meeting import audit_log
+        from whisper_core.meeting.session import load_meta
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sess = self._session(tmp)
+            c = SimpleNamespace(
+                tray=_Tray(),
+                _meeting_active=True,
+                _meeting_session=sess,
+                _meeting_started_at=time.monotonic() - 5.0)
+
+            ok = DesktopApp.add_meeting_bookmark(c, "Домовились про бюджет")
+            self.assertTrue(ok)
+
+            # (б) meeting.json дійсно несе нову мітку.
+            meta = load_meta(sess.dir)
+            self.assertEqual(len(meta.bookmarks), 1)
+            self.assertEqual(meta.bookmarks[0]["title"], "Домовились про бюджет")
+            self.assertGreaterEqual(meta.bookmarks[0]["timestamp"], 5.0)
+
+            # (а) audit.jsonl дійсно несе подію bookmark_added, і ланцюг зелений.
+            events = audit_log.read_events(sess.dir)
+            self.assertEqual(events[-1]["type"], "bookmark_added")
+            self.assertEqual(events[-1]["note"]["title"], "Домовились про бюджет")
+            self.assertEqual(events[-1]["note"]["source"], "live_button")
+            res = audit_log.verify_chain(sess.dir)
+            self.assertEqual(res.status, audit_log.STATUS_VERIFIED)
+
+            self.assertEqual(len(c.tray.notes), 1)
+
+    def test_hotkey_source_is_recorded_distinctly(self):
+        import time
+        from whisper_core.meeting import audit_log
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sess = self._session(tmp)
+            c = SimpleNamespace(
+                tray=_Tray(),
+                _meeting_active=True,
+                _meeting_session=sess,
+                _meeting_started_at=time.monotonic())
+
+            DesktopApp.add_meeting_bookmark(c, source="live_hotkey")
+
+            events = audit_log.read_events(sess.dir)
+            self.assertEqual(events[-1]["note"]["source"], "live_hotkey")
+
+    def test_inactive_session_is_silent_noop(self):
+        c = SimpleNamespace(tray=_Tray(), _meeting_active=False,
+                            _meeting_session=None)
+        self.assertFalse(DesktopApp.add_meeting_bookmark(c))
+        self.assertEqual(c.tray.notes, [])
+
+    def test_old_session_without_bookmarks_still_loads(self):
+        """Зворотна сумісність (вимога завдання): нарада без поля bookmarks
+        (стара сесія) відкривається так само, як раніше."""
+        from whisper_core.meeting.session import MeetingMeta
+
+        legacy_json = MeetingMeta(
+            schema=1, id="legacy", created=0, status="done",
+            preset="onlymic", sources=["mic"]).to_json()
+        import json as _json
+        payload = _json.loads(legacy_json)
+        del payload["bookmarks"]
+        with tempfile.TemporaryDirectory() as tmp:
+            sess_dir = Path(tmp)
+            (sess_dir / "meeting.json").write_text(
+                _json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            from whisper_core.meeting.session import load_meta
+            meta = load_meta(sess_dir)
+            self.assertEqual(meta.bookmarks, [])
 
 
 if __name__ == "__main__":

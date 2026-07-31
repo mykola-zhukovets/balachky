@@ -1,13 +1,17 @@
-"""Smoke-рендер toast «Звіт про проблему» з хабу «Про програму» — ОКРЕМИЙ процес.
+"""Smoke-рендер toast «Звіт про проблему» з вкладки «Про програму» — ОКРЕМИЙ
+процес.
 
-Регресія (суд fix/ux-texts): _report_from_about() показував toast на сторінці
-Налаштувань (self.settings). Коли хаб «Про програму» відкрито НЕ зі сторінки
-Налаштувань, ця сторінка — прихована сторінка QStackedWidget, тож дочірній
-QLabel toast'у не ставав видимим (show() на дитині прихованого віджета). Фікс:
-toast показуємо на ВИДИМОМУ головному вікні (toast_target=self.window()).
+Було (до 30.07): звіт викликався з модального хабу AboutDialog, який міг
+бути відкритий з будь-якої сторінки, тож toast показувався на видимому
+головному вікні (регресія рецензії fix/ux-texts — toast_target=self.window()).
 
-Живий тест: головна сторінка — Диктування (НЕ Налаштування), викликаємо звіт,
-перевіряємо win._toast.isVisible() == True (offscreen).
+Стало: модальне вікно прибрано. Клік по шапці сайдбара переводить на
+сторінку Налаштування → вкладку «Про програму» (settings.select_about_tab).
+Кнопка звіту звідти тепер завжди клікається лише коли SettingsPage вже є
+видимою сторінкою — тож toast показується прямо на ній
+(_report_problem більше не приймає toast_target). Тест стереже: клік по
+шапці з НЕ-налаштувань сторінки веде саме на вкладку «Про програму», і
+звідти toast видимий.
 
     python -m unittest tests.render_report_toast_smoke
     python tests/render_report_toast_smoke.py
@@ -65,6 +69,24 @@ class ReportToastSmokeTests(unittest.TestCase):
     def setUp(self):
         self._win = None
 
+    def _confirm_report_dialog(self):
+        """Натиснути «Створити звіт» на модальному діалозі підтвердження, щойно
+        він з'явиться (QTimer.singleShot(0, …) стріляє з наступною ітерацією
+        event loop — саме тоді, коли dlg.exec() уже блокує потік)."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from fronts.desktop.i18n import tr
+
+        def _click_ok():
+            for w in QApplication.topLevelWidgets():
+                if isinstance(w, QMessageBox) and w.isVisible():
+                    for btn in w.buttons():
+                        if btn.text().replace("&", "") == tr("set_report_confirm_ok"):
+                            btn.click()
+                            return
+
+        QTimer.singleShot(0, _click_ok)
+
     def tearDown(self):
         from PySide6.QtCore import QTimer
         win = self._win
@@ -82,62 +104,88 @@ class ReportToastSmokeTests(unittest.TestCase):
         self._win = None
         self._flush_deferred(self._app)
 
-    def test_about_report_toast_visible_from_three_current_pages(self):
+    def test_header_click_from_other_page_opens_about_tab_and_report_toasts(self):
         from fronts.desktop import report as report_mod
-        from fronts.desktop import about as about_mod
         from fronts.desktop.i18n import tr
         from fronts.desktop.main_window import ClickableFrame, MainWindow, _PAGES
         from PySide6.QtWidgets import QPushButton
 
         # zip не пишемо на реальний Desktop — підміняємо збірку звіту
         orig_build = report_mod.build_report_zip
-        orig_exec = about_mod.AboutDialog.exec
         report_mod.build_report_zip = lambda *a, **k: Path("C:/тест/report.zip")
 
-        def _click_report(dialog):
-            """Натиснути реальну кнопку хабу, не входячи в модальний event loop."""
-            dialog.show()
-            self._app.processEvents()
-            buttons = [b for b in dialog.findChildren(QPushButton)
-                       if b.accessibleName() == tr("set_report_problem")]
-            self.assertEqual(len(buttons), 1, "у хабі нема кнопки звіту")
-            buttons[0].click()
-            self._app.processEvents()
-            return dialog.result()
-
-        about_mod.AboutDialog.exec = _click_report
         try:
             win = MainWindow(_NavController(self._sandbox))
             self._win = win
             win.show()                        # offscreen, але стан «видиме»
+
+            # починаємо НЕ з Налаштувань — з Диктування
+            dict_index = next(i for i, (_icon, key) in enumerate(_PAGES)
+                              if key == "nav_dictation")
+            win.set_page(dict_index)
+            self._app.processEvents()
+
             headers = [f for f in win.findChildren(ClickableFrame)
                        if f.accessibleName() == tr("about_open")]
             self.assertEqual(len(headers), 1, "не знайдено клікабельну шапку")
+            headers[0].clicked.emit()
+            self._app.processEvents()
 
-            # Диктування / Аудіофайли («Записи») / Нарада: три різні сторінки,
-            # жодна не є SettingsPage, на якій живе делегована логіка звіту.
-            for page_key in ("nav_dictation", "nav_audio", "nav_meeting"):
-                with self.subTest(page=page_key):
-                    index = next(i for i, (_icon, key) in enumerate(_PAGES)
-                                 if key == page_key)
-                    win.set_page(index)
-                    self._app.processEvents()
-                    headers[0].clicked.emit()  # шапка → AboutDialog → кнопка звіту
-                    self._app.processEvents()
+            self.assertEqual(
+                win.pages.currentIndex(), win.pages.indexOf(win.settings),
+                "клік по шапці не перевів на сторінку Налаштувань")
+            self.assertEqual(
+                win.settings._tabs.currentIndex(), win.settings._tabs.count() - 1,
+                "клік по шапці не відкрив вкладку «Про програму» (мала бути "
+                "остання вкладка)")
+            self.assertEqual(
+                win.settings._tabs.tabText(win.settings._tabs.currentIndex()),
+                tr("set_tab_about"))
 
-                    self.assertEqual(win.pages.currentIndex(), index,
-                                     "звіт несподівано перемкнув сторінку")
-                    toast = getattr(win, "_toast", None)
-                    self.assertIsNotNone(toast, "toast не створено")
-                    self.assertIs(toast.parentWidget(), win,
-                                  "toast причеплено до прихованої SettingsPage")
-                    self.assertTrue(
-                        toast.isVisible(),
-                        f"toast невидимий зі сторінки {page_key}")
-                    self.assertIn("report.zip", toast.text())
+            buttons = [b for b in win.settings.findChildren(QPushButton)
+                       if b.accessibleName() == tr("set_report_problem")
+                       and b.isVisible()]
+            self.assertEqual(
+                len(buttons), 1,
+                "мала бути рівно одна видима кнопка звіту — на поточній вкладці")
+            # fix/log-privacy: клік тепер спершу відкриває модальний діалог
+            # підтвердження (чесний опис вмісту архіву) — авто-натискаємо
+            # «Створити звіт» одразу після появи діалогу, інакше exec()
+            # заблокує тест.
+            self._confirm_report_dialog()
+            buttons[0].click()
+            self._app.processEvents()
+
+            self.assertEqual(win.pages.currentIndex(),
+                             win.pages.indexOf(win.settings),
+                             "звіт несподівано перемкнув сторінку")
+            toast = getattr(win.settings, "_toast", None)
+            self.assertIsNotNone(toast, "toast не створено")
+            self.assertTrue(toast.isVisible(),
+                            "toast невидимий на вкладці «Про програму»")
+            self.assertIn("report.zip", toast.text())
         finally:
-            about_mod.AboutDialog.exec = orig_exec
             report_mod.build_report_zip = orig_build
+
+    def test_about_tab_help_button_present_and_wired(self):
+        """Кнопка «Довідка» на вкладці «Про програму» під'єднана до тієї самої
+        дії, що й діагностика вкладки «Система» (без дублювання логіки)."""
+        from fronts.desktop.i18n import tr
+        from fronts.desktop.main_window import MainWindow
+        from PySide6.QtWidgets import QPushButton
+
+        win = MainWindow(_NavController(self._sandbox))
+        self._win = win
+        win.show()
+        win.set_page(win.pages.indexOf(win.settings))
+        win.settings.select_about_tab()
+        self._app.processEvents()
+
+        help_buttons = [b for b in win.settings.findChildren(QPushButton)
+                        if b.accessibleName() == tr("set_help")
+                        and b.isVisible()]
+        self.assertEqual(len(help_buttons), 1,
+                         "мала бути рівно одна видима кнопка довідки")
 
 
 if __name__ == "__main__":

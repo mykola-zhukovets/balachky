@@ -59,9 +59,9 @@ def _splash_hue():
 
 
 def _hue_tint(pm: QPixmap, hue) -> QPixmap:
-    """Жук-медальйон — КАНОНІЧНИЙ бренд-маскот (пам'ять проєкту:
-    balachky-mascot-canon; затверджений мультяшний стиль, векторні редизайни
-    відхилені), не елемент інтерфейсу — персоналізація кольору його НЕ
+    """Жук-медальйон — КАНОНІЧНИЙ бренд-маскот (затверджений мультяшний
+    стиль, векторні редизайни відхилені), не елемент інтерфейсу:
+    персоналізація кольору його НЕ
     перефарбовує. Єдиний виняток — 'red' (hue=0): це не естетичний вибір, а
     вимога сумісності з приладами нічного бачення (жодного не-червоного
     світла), формула 70+175·lum / 28·lum / 28·lum лишається ТОЧНО такою, що
@@ -115,6 +115,17 @@ _CARD_RADIUS = 14.0
 _CARD_BG = "#221D12"          # фон компактної картки (референс Миколи)
 _CARD_BORDER = "#4A442F"      # тонка рамка картки
 _TRACK = "#3B3526"            # жолоб смужки прогресу
+
+
+def _brand_layout(title: str):
+    brand, sub = (title.split(" ", 1) + [""])[:2]
+    if sub:
+        return (
+            (brand, 214, 28),
+            (sub, 246, 18),
+        )
+    return ((brand, 225, 28),)
+
 
 _BEETLE_MS = 260              # привітальне «прокидання» жука: fade + підйом (OutCubic)
 _BEETLE_RISE = 8              # підйом жука знизу під час привітання (логічні px)
@@ -256,19 +267,21 @@ class SplashScreen(QSplashScreen):
         p.drawRoundedRect(card.adjusted(0.5, 0.5, -0.5, -0.5),
                           _CARD_RADIUS, _CARD_RADIUS)
         # назва: «Балачки» + «у Коростені» (єдиний ключ app_title, перше слово / решта)
-        title = tr("app_title")
-        brand, sub = (title.split(" ", 1) + [""])[:2]
+        brand_layout = _brand_layout(tr("app_title"))
+        brand, brand_y, brand_height = brand_layout[0]
         p.setPen(QColor(theme.TEXT_STRONG))
         f = QFont("Segoe UI")
         f.setPixelSize(20)
         f.setBold(True)
         p.setFont(f)
-        p.drawText(QRect(0, 214, _W, 28), Qt.AlignHCenter, brand)
-        p.setPen(QColor(theme.TEXT_MUTED))
-        f2 = QFont("Segoe UI")
-        f2.setPixelSize(13)
-        p.setFont(f2)
-        p.drawText(QRect(0, 246, _W, 18), Qt.AlignHCenter, sub)
+        p.drawText(QRect(0, brand_y, _W, brand_height), Qt.AlignHCenter, brand)
+        if len(brand_layout) > 1:
+            sub, sub_y, sub_height = brand_layout[1]
+            p.setPen(QColor(theme.TEXT_MUTED))
+            f2 = QFont("Segoe UI")
+            f2.setPixelSize(13)
+            p.setFont(f2)
+            p.drawText(QRect(0, sub_y, _W, sub_height), Qt.AlignHCenter, sub)
         # напис «ЗАВАНТАЖЕННЯ…» (splash_eyebrow, uppercase-стиль лейбла)
         f3 = QFont("Segoe UI")
         f3.setPixelSize(11)
@@ -422,6 +435,12 @@ class SplashScreen(QSplashScreen):
         """Готово: показати головне вікно й тихо розчинити заставку поверх нього.
 
         Анімації вимкнені → просто показати вікно й закрити splash (без руху)."""
+        def notify_window_ready():
+            callback = getattr(
+                window, "maybe_show_test_log_text_reminder", None)
+            if callable(callback):
+                QTimer.singleShot(0, callback)
+
         self._finished = True
         # гейт заповнення й привітання більше не потрібні
         if self._gate_timer is not None:
@@ -439,6 +458,7 @@ class SplashScreen(QSplashScreen):
         if not motion.animations_enabled():
             window.show()
             self.finish(window)          # штатне закриття QSplashScreen
+            notify_window_ready()
             return
         window.show()                    # вікно зʼявляється ПІД заставкою
         if self._progress_shown:
@@ -451,6 +471,7 @@ class SplashScreen(QSplashScreen):
         anim.setEndValue(1.0)
         anim.valueChanged.connect(self._on_fade)
         anim.finished.connect(self._on_fade_done)
+        anim.finished.connect(notify_window_ready)
         self._fade_anim = anim
         anim.start(QAbstractAnimation.DeleteWhenStopped)
 

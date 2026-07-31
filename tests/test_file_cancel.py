@@ -44,7 +44,9 @@ from PySide6.QtWidgets import QApplication, QProgressBar  # noqa: E402
 
 from fronts.desktop import motion  # noqa: E402
 from fronts.desktop.glass import GlassButton  # noqa: E402
-from fronts.desktop.i18n import tr  # noqa: E402
+from fronts.desktop.i18n import (   # noqa: E402
+    current_language, set_language, tr,
+)
 from fronts.desktop.main_window import FilesPage, FileStatus  # noqa: E402
 from tests.render_nav_smoke import _NavController, _make_sandbox  # noqa: E402
 
@@ -87,6 +89,9 @@ class _FilesPageCase(unittest.TestCase):
         motion.init_config(SimpleNamespace(animations=False))   # без живих таймерів
 
     def setUp(self):
+        self._language = current_language()
+        self.addCleanup(set_language, self._language)
+        set_language("uk")
         self.sandbox = _make_sandbox()
         self.controller = _RecordingController(self.sandbox)
         self.page = FilesPage(self.controller)
@@ -223,7 +228,7 @@ class CancelVisibilityTests(_FilesPageCase):
                            FileStatus.CANCELLED, [], [])
         self.app.processEvents()
         self.assertEqual(status.kind(), "warn")
-        self.assertEqual(status.accessibleName(), tr("badge_cancelled"))
+        self.assertEqual(status.accessibleName(), "скасовано")
 
     def test_cancelled_card_offers_retry(self):
         self._add_row()

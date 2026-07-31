@@ -44,7 +44,7 @@ class AssetRootTests(unittest.TestCase):
 class SafeUnderTests(unittest.TestCase):
     """paths.safe_under() — захист від path-traversal (спільний для CLI/MCP).
 
-    Ключова гарантія за порадою судді: symlink УСЕРЕДИНІ root, що вказує
+    Ключова гарантія за порадою рецензента: symlink УСЕРЕДИНІ root, що вказує
     НАЗОВНІ, після resolve() спливає за межі → safe_under має відхилити.
     """
 

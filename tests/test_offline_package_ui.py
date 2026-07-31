@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from fronts.desktop.i18n import tr, set_language
 from fronts.desktop.main_window import MainWindow
 from fronts.desktop.pages.settings import OfflineExportDialog, OfflineImportDialog
+from whisper_core import paths
 from whisper_core.offline_package import ComponentExportInfo
 from tests.render_nav_smoke import _NavController
 
@@ -26,6 +27,11 @@ class TestOfflinePackageUI(unittest.TestCase):
     def setUp(self):
         set_language("uk")
         self.tmp_dir = tempfile.mkdtemp()
+        user_dir_patch = patch.object(
+            paths, "USER_DIR", Path(self.tmp_dir) / "userdata"
+        )
+        user_dir_patch.start()
+        self.addCleanup(user_dir_patch.stop)
         self.controller = _NavController(self.tmp_dir)
         self.win = MainWindow(self.controller)
         self.win.show()
@@ -204,6 +210,41 @@ class TestOfflinePackageUI(unittest.TestCase):
 
         self.assertIsNotNone(dlg.import_result)
         self.assertIn("punctuator", dlg.import_result.installed)
+
+    def test_import_dialog_broken_package_logs_and_shows_warning_not_silence(self):
+        """Аудит 'тихі відмови' №3 (settings.py:1867-1870): невалідний офлайн-
+        пакет (немає маркера) не має мовчки нічого не робити. Конструктор
+        діалогу вже показує власне попередження — перевіряємо, що воно
+        реально з'явилось І подія лишилась у журналі, а не просто return."""
+        src_dir = Path(self.tmp_dir) / "not_a_package"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        with patch.object(QFileDialog, "getExistingDirectory", return_value=str(src_dir)), \
+             patch.object(QMessageBox, "warning") as mock_warn, \
+             self.assertLogs(level="WARNING") as logs:
+            self.settings._btn_import_pkg.click()
+        mock_warn.assert_called_once()
+        self.assertTrue(
+            any("імпорт" in rec.lower() or "import" in rec.lower() for rec in logs.output),
+            f"немає запису в журналі про відхилений імпорт: {logs.output}")
+
+    def test_import_dialog_unexpected_error_logs_and_shows_message_not_silence(self):
+        """Аудит №3: НЕочікуваний виняток (не OfflinePackageError) у конструкторі
+        діалогу раніше проковтувався голим 'except Exception: return' — без
+        вікна й без журналу. Тепер людина повинна побачити повідомлення."""
+        src_dir = Path(self.tmp_dir) / "import_src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        with patch.object(QFileDialog, "getExistingDirectory", return_value=str(src_dir)), \
+             patch("fronts.desktop.pages.settings.OfflineImportDialog",
+                   side_effect=RuntimeError("несподівана поломка - імітація для тесту")), \
+             patch.object(QMessageBox, "critical") as mock_crit, \
+             self.assertLogs(level="ERROR") as logs:
+            self.settings._btn_import_pkg.click()
+        mock_crit.assert_called_once()
+        self.assertIn(tr("offline_pkg_import_unexpected_error"), mock_crit.call_args[0][2])
+        self.assertTrue(
+            any("несподівана поломка" in rec for rec in logs.output) or
+            any("import" in rec.lower() or "імпорт" in rec.lower() for rec in logs.output),
+            f"виняток мав потрапити в журнал: {logs.output}")
 
     def test_import_button_fails_when_core_mutated(self):
         """Мутація в import_package ламає UI-сценарій завантаження."""

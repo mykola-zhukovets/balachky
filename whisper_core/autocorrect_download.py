@@ -13,6 +13,7 @@ feature/punctuation-plus.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import urllib.request
@@ -20,9 +21,11 @@ from pathlib import Path
 
 from . import netlog   # доказова офлайновість: журнал вихідних з'єднань
 
-# hermitdave/FrequencyWords @ master, content/2018/uk/uk_50k.txt (MIT).
+# hermitdave/FrequencyWords, закріплений commit (MIT).
+DICT_REVISION = "525f9b560de45753a5ea01069454e72e9aa541c6"
 DICT_URL = ("https://raw.githubusercontent.com/hermitdave/FrequencyWords/"
-            "master/content/2018/uk/uk_50k.txt")
+            f"{DICT_REVISION}/content/2018/uk/uk_50k.txt")
+DICT_SHA256 = "881686fe66a168b79f6a9ee2f6cbbf944cfb12bfb7040913ef535cb29bd86ec9"
 # Мінімальний розмір валідного словника (реально ~870 КБ); захист від半-качаного
 # чи недокачаного файлу, що symspellpy мовчки прийняв би за порожній словник.
 MIN_DICT_BYTES = 100_000
@@ -30,6 +33,14 @@ MIN_DICT_BYTES = 100_000
 
 class AutocorrectDownloadError(RuntimeError):
     pass
+
+
+def _sha256_of(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            checksum.update(block)
+    return checksum.hexdigest()
 
 
 def _is_reparse_point(path: Path) -> bool:
@@ -73,7 +84,9 @@ def download_and_install(target_path, progress_cb=None, cancel_check=None) -> No
     Уже наявний валідний файл — no-op. Качаємо у тимчасовий файл поруч (той самий
     том → перейменування атомарне), перевіряємо розмір, тоді os.replace."""
     target = Path(target_path)
-    if target.is_file() and not _is_reparse_point(target) and target.stat().st_size >= MIN_DICT_BYTES:
+    if (target.is_file() and not _is_reparse_point(target)
+            and target.stat().st_size >= MIN_DICT_BYTES
+            and _sha256_of(target) == DICT_SHA256):
         return
     if target.exists() and _is_reparse_point(target):
         raise AutocorrectDownloadError("Файл словника не може бути symlink або reparse point")
@@ -85,6 +98,9 @@ def download_and_install(target_path, progress_cb=None, cancel_check=None) -> No
         _download(DICT_URL, tmp, progress_cb, cancel_check)
         if tmp.stat().st_size < MIN_DICT_BYTES:
             raise AutocorrectDownloadError("Завантажений словник надто малий або порожній")
+        if _sha256_of(tmp) != DICT_SHA256:
+            raise AutocorrectDownloadError(
+                "Контрольна сума завантаженого словника не збіглася")
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)

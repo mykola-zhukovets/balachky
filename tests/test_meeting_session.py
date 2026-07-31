@@ -1,10 +1,13 @@
 """Юніти сторони запису наради (Б1) — session.py. Без Qt, без реального аудіо:
 сегменти пишемо байтами у tempfile, вміст не важить (лічильники — за довжиною)."""
+from contextlib import contextmanager
+import shutil
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import uuid
 
 from whisper_core.meeting import session
 from whisper_core.meeting.session import (
@@ -19,6 +22,16 @@ from whisper_core.meeting import (
 
 def _frames(n_frames: int, bytes_per_frame: int = 4) -> bytes:
     return b"\x00" * (n_frames * bytes_per_frame)
+
+
+@contextmanager
+def _workspace_temp_dir(prefix):
+    path = Path.cwd() / f"{prefix}{uuid.uuid4().hex}"
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def _crashed_session(root, *, frames, rate=100, channels=1,
@@ -55,6 +68,18 @@ class SessionDirTests(unittest.TestCase):
                 b = MeetingSession(Path(tmp), ["mic"])
             self.assertEqual(a.id, "2026-07-15_14-30-05")
             self.assertEqual(b.id, "2026-07-15_14-30-05-1")
+
+    def test_deleted_audit_tombstone_reserves_collision_suffix(self):
+        with _workspace_temp_dir(".meeting-tombstone-") as root:
+            base = "2026-07-15_14-30-05"
+            (root / f".{base}.audit.deleted").write_text(
+                '{"version": 2, "identity": {"first_hash": "old"}}\n',
+                encoding="utf-8",
+            )
+            with patch.object(session.time, "strftime", return_value=base):
+                meeting = MeetingSession(root, ["mic"])
+
+            self.assertEqual(meeting.id, base + "-1")
 
     def test_both_preset_derives_from_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -158,6 +183,112 @@ class MetaTests(unittest.TestCase):
             again = s.finalize(STATUS_STOPPED)   # другий виклик нічого не міняє
             self.assertEqual(again.status, STATUS_DONE)
             self.assertEqual(first.duration, again.duration)
+
+
+class FinalizeDurabilityTests(unittest.TestCase):
+    """Довговічність артефактів сесії при фіналізації: хвостові *.f32-сегменти
+    (не пройшли ротацію) і meeting.json мусять дійти на диск через fsync, а
+    збій одного файлу не має зривати фіналізацію."""
+
+    @staticmethod
+    def _tracking_open(fd_to_path):
+        """Ловить лише файли, відкриті ПІСЛЯ активації патча (meeting.json.tmp
+        з'являється саме під час finalize; хвостові *.f32 вже відкриті раніше
+        —для них шлях беремо напряму з st["file"].fileno())."""
+        real_open = open
+
+        def tracking_open(file, mode="r", *args, **kwargs):
+            stream = real_open(file, mode, *args, **kwargs)
+            if isinstance(file, (str, Path)) and any(c in mode for c in "wax+"):
+                fd_to_path[stream.fileno()] = Path(file).resolve()
+            return stream
+        return tracking_open
+
+    @staticmethod
+    def _open_track_fds(session_obj):
+        """fd -> resolved path для доріжок, чий сегмент ще не закритий (тобто
+        саме той хвіст, який має fsync'нути finalize())."""
+        result = {}
+        for track, st in session_obj._tracks.items():
+            if st["file"] is not None:
+                path = session_obj.dir / track / f"{st['index']:04d}.f32"
+                result[st["file"].fileno()] = path.resolve()
+        return result
+
+    def test_finalize_fsyncs_every_tail_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s = MeetingSession(Path(tmp), ["mic", "sys"], rate=100, channels=1,
+                               segment_seconds=1)
+            s.mic_sink(_frames(50))   # < segment_frames(100) -> лишається відкритим
+            s.sys_sink(_frames(30))   # так само
+            fd_to_path = self._open_track_fds(s)
+            expected_tracks = set(fd_to_path.values())
+            self.assertEqual(len(expected_tracks), 2)   # обидві доріжки справді відкриті
+            # fd resolve() лише в момент виклику — ОС переюзає номери дескрипторів
+            # щойно попередній файл закрито (mic закривається до відкриття
+            # meeting.json.tmp), тож мапу не можна читати постфактум.
+            fsynced_paths = []
+            real_fsync = session.os.fsync
+
+            def tracking_fsync(fd):
+                fsynced_paths.append(fd_to_path.get(fd))
+                return real_fsync(fd)
+
+            with patch("builtins.open", self._tracking_open(fd_to_path)), \
+                 patch.object(session.os, "fsync", tracking_fsync):
+                s.finalize()
+
+            fsynced_paths = set(fsynced_paths)
+            self.assertTrue(expected_tracks.issubset(fsynced_paths))
+            meta_tmp = [p for p in fsynced_paths
+                       if p is not None and p.name.startswith("meeting.json.")]
+            self.assertEqual(len(meta_tmp), 1)
+
+    def test_finalize_survives_one_fsync_failure_and_logs_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s = MeetingSession(Path(tmp), ["mic", "sys"], rate=100, channels=1,
+                               segment_seconds=1)
+            s.mic_sink(_frames(50))
+            s.sys_sink(_frames(30))
+            fd_to_path = self._open_track_fds(s)
+            # Хендли хвостових сегментів ДО finalize — щоб потім довести, що
+            # finally закрив кожен, навіть той, чий fsync упав (мутація рецензента
+            # 31.07: без finally жоден тест не червонів).
+            tail_handles = [st["file"] for st in s._tracks.values()
+                            if st["file"] is not None]
+            self.assertEqual(len(tail_handles), 2)
+            real_fsync = session.os.fsync
+
+            def failing_fsync(fd):
+                path = fd_to_path.get(fd)
+                if path is not None and path.parent.name == "mic":
+                    raise OSError("simulated disk failure")
+                return real_fsync(fd)
+
+            with patch("builtins.open", self._tracking_open(fd_to_path)), \
+                 patch.object(session.os, "fsync", failing_fsync), \
+                 patch.object(session, "logging") as mock_logging:
+                meta = s.finalize(STATUS_STOPPED)   # не має підняти OSError
+
+            self.assertEqual(meta.status, STATUS_STOPPED)   # фіналізація завершена
+            self.assertTrue(s._finalized)
+            self.assertTrue((s.dir / "mic" / "0000.f32").exists())
+            self.assertTrue((s.dir / "sys" / "0000.f32").exists())
+            self.assertEqual(load_meta(s.dir).status, STATUS_STOPPED)
+            mock_logging.warning.assert_called_once()
+            warning_args = mock_logging.warning.call_args
+            self.assertNotIn("Traceback", str(warning_args))
+            mock_logging.exception.assert_not_called()
+            for f in tail_handles:
+                self.assertTrue(f.closed, "finally мусить закрити хендл "
+                                          "навіть при збої fsync")
+            # Шлях у попередженні — знеособлений, не сирий (конвенція
+            # anonymize_path модуля; tmp лежить під C:\Users\<логін>).
+            from whisper_core.paths import anonymize_path
+            raw = str(s.dir / "mic" / "0000.f32")
+            joined_paths = warning_args.args[2]
+            self.assertNotIn(raw, joined_paths)
+            self.assertIn(anonymize_path(raw), joined_paths)
 
 
 class RegistryTests(unittest.TestCase):

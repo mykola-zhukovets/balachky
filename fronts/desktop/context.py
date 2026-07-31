@@ -34,7 +34,8 @@ CORE_WINDOW_CLASS = "Windows.UI.Core.CoreWindow"
 #: список не редагують (безпека понад налаштування). Порівняння — lower-case
 #: точний збіг імені exe. ЄДИНЕ джерело переліку — wininput.PASSWORD_MANAGERS
 #: (той самий блок-лист, що й для набору тексту в paste.py); зведено інтегратором
-#: wave-2, щоб два переліки не розходились.
+#: wave-2, щоб два переліки не розходились. Захист best effort: перейменований
+#: або портативний exe не збіжиться з цим переліком.
 from .wininput import PASSWORD_MANAGERS as SECURITY_BLOCKLIST
 
 
@@ -95,10 +96,16 @@ class ContextResolver:
 
     # --- низькорівневі Win32-кроки (мокаються в тестах) ---
     def _foreground_hwnd(self) -> int:
-        return int(ctypes.WinDLL("user32", use_last_error=True).GetForegroundWindow())
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetForegroundWindow.argtypes = ()
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        return int(user32.GetForegroundWindow())
 
     def _pid_for_hwnd(self, hwnd) -> int:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetWindowThreadProcessId.argtypes = (
+            wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
         pid = wintypes.DWORD(0)
         user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
         return int(pid.value)
@@ -110,6 +117,15 @@ class ContextResolver:
             return ""
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (
+            wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = (
+            wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD))
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
         if not handle:
             return ""
@@ -124,6 +140,11 @@ class ContextResolver:
 
     def _title_for_hwnd(self, hwnd) -> str:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetWindowTextLengthW.argtypes = (wintypes.HWND,)
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = (
+            wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+        user32.GetWindowTextW.restype = ctypes.c_int
         length = user32.GetWindowTextLengthW(wintypes.HWND(hwnd))
         if length <= 0:
             return ""
@@ -137,6 +158,15 @@ class ContextResolver:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         WNDENUMPROC = ctypes.WINFUNCTYPE(
             wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.GetClassNameW.argtypes = (
+            wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+        user32.GetClassNameW.restype = ctypes.c_int
+        user32.GetWindowThreadProcessId.argtypes = (
+            wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.EnumChildWindows.argtypes = (
+            wintypes.HWND, WNDENUMPROC, wintypes.LPARAM)
+        user32.EnumChildWindows.restype = wintypes.BOOL
         found = {"pid": 0}
 
         def _cb(child, _lparam):
@@ -293,6 +323,9 @@ def press_enter() -> bool:
     INPUT_KEYBOARD = 1
     try:
         user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.SendInput.argtypes = (
+            wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
+        user32.SendInput.restype = wintypes.UINT
 
         def _mk(flags):
             inp = _INPUT(type=INPUT_KEYBOARD)

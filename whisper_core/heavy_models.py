@@ -36,7 +36,7 @@ def _default_total_ram() -> int:
     """Загальна RAM машини. psutil опційний → якщо недоступний, FAIL-CLOSED: віддаємо
     значення НИЖЧЕ порога, тобто вмикаємо ексклюзивний режим (STT/TTS не резидентні
     разом) — на невідомому/8 ГБ залізі захист має спрацьовувати, а не мовчати
-    (перевірка: fail-closed, не fail-open). Тести інжектять свій провайдер."""
+    (рецензія: fail-closed, не fail-open). Тести інжектять свій провайдер."""
     try:
         import psutil
         return int(psutil.virtual_memory().total)
@@ -114,7 +114,7 @@ class HeavyModelCoordinator:
         # ПОЗА ним. Гонку закриває САМ force_unload: він атомарно (під lifecycle-lock)
         # ще раз звіряє busy й повертає False, якщо STT зайнятий/лишився LOADED. Тому
         # ПЕРЕВІРЯЄМО його результат — інакше lease видався б попри невивантажений STT
-        # (перевірка: ігнорування False → race).
+        # (рецензія: ігнорування False → race).
         with self._lock:
             if self._stt_is_busy():
                 return False                     # активний STT не вбиваємо мовчки

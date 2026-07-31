@@ -175,14 +175,24 @@ class HotkeyManager:
         self._ids = itertools.count(1)
         self._suspended = False
         self._user32 = None
+        self._stop_unconfirmed = False
 
     # --- публічний API (будь-який потік) ---
     def start(self) -> bool:
         if sys.platform != "win32":
             return False
         if self._thread is not None:
-            return self._ok
+            if self._stop_unconfirmed:
+                if not self._thread.is_alive():
+                    self._clear_stopped_state()
+                else:
+                    log.warning("hotkeys: повторний запуск відхилено — зупинку "
+                                "попереднього message-loop не підтверджено")
+                    return False
+            else:
+                return self._ok
         self._ready.clear()
+        self._stop_unconfirmed = False
         self._thread = threading.Thread(target=self._run, name="hotkey-loop",
                                         daemon=True)
         self._thread.start()
@@ -221,20 +231,32 @@ class HotkeyManager:
         if self._thread is not None and self._suspended:
             self._call(self._do_resume)
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
+        """True — message-loop підтверджено зупинився; False — потік іще живий."""
         t = self._thread
         if t is None:
-            return
+            return True
         tid = self._thread_id
         if tid is not None and self._user32 is not None:
             if not self._user32.PostThreadMessageW(tid, WM_QUIT, 0, 0):
                 log.warning("hotkeys: PostThreadMessage(WM_QUIT) не вдався (err=%s)",
                             ctypes.get_last_error())
         t.join(3.0)
+        if t.is_alive():
+            self._stop_unconfirmed = True
+            log.warning("hotkeys: message-loop не завершився за 3 с; "
+                        "стан і записи реєстрацій збережено")
+            return False
+        self._clear_stopped_state()
+        return True
+
+    def _clear_stopped_state(self) -> None:
+        """Очистити lifecycle-стан лише після підтвердженої смерті потоку."""
         self._thread = None
         self._thread_id = None
         self._ok = False
         self._suspended = False
+        self._stop_unconfirmed = False
         with self._lock:
             self._entries.clear()
             self._tasks.clear()
@@ -334,7 +356,10 @@ class HotkeyManager:
         user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
         user32.GetAsyncKeyState.restype = ctypes.c_short
         self._user32 = user32
-        self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetCurrentThreadId.argtypes = ()
+        kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+        self._thread_id = kernel32.GetCurrentThreadId()
 
         # примусово створити чергу повідомлень ДО звіту «готово», щоб перший
         # PostThreadMessage не загубився (та сама грабля, що в mousehook)
@@ -564,7 +589,8 @@ def shutdown(cfg) -> None:
     legacy — keyboard.unhook_all, як і раніше."""
     if backend_is_native(cfg):
         if _manager is not None:
-            _manager.stop()
+            if not _manager.stop():
+                log.warning("hotkeys: shutdown не підтвердив зупинку message-loop")
         return
     try:
         import keyboard

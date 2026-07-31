@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 # Тести регресії нижче імпортують DesktopApp — Qt без реального екрана.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -24,13 +24,36 @@ from whisper_core.engine import Engine
 from fronts.desktop.recorder import classify_mic_level, peak_dbfs
 
 
+class _TrackedStream:
+    def __init__(self):
+        self.closed = False
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+def _recorder_with_close_guard(test_case):
+    stream = _TrackedStream()
+    test_case.addCleanup(
+        lambda: test_case.assertTrue(stream.closed, "Recorder не закрив InputStream")
+    )
+    with patch("fronts.desktop.recorder.sd.InputStream", return_value=stream):
+        from fronts.desktop.recorder import Recorder
+        recorder = Recorder(16000)
+    test_case.addCleanup(recorder.close)
+    return recorder
+
+
 
 class RecorderLiveSinkTests(unittest.TestCase):
     def test_callback_without_live_sink_does_not_raise(self):
-        stream = Mock()
-        with patch("fronts.desktop.recorder.sd.InputStream", return_value=stream):
-            from fronts.desktop.recorder import Recorder
-            recorder = Recorder(16000)
+        recorder = _recorder_with_close_guard(self)
         recorder.start()
         recorder._cb(np.ones((8, 1), dtype=np.float32), 8, None, None)
         self.assertEqual(len(recorder._frames), 1)
@@ -38,10 +61,7 @@ class RecorderLiveSinkTests(unittest.TestCase):
 
     def test_set_live_sink_assigns_and_clears(self):
         # set_live_sink(fn) виставляє _live_sink, set_live_sink(None) — очищає
-        stream = Mock()
-        with patch("fronts.desktop.recorder.sd.InputStream", return_value=stream):
-            from fronts.desktop.recorder import Recorder
-            recorder = Recorder(16000)
+        recorder = _recorder_with_close_guard(self)
 
         def sink(_block):
             pass
@@ -60,10 +80,7 @@ class StopLiveDictationCrashTests(unittest.TestCase):
 
     def test_stop_live_dictation_does_not_raise(self):
         from fronts.desktop.app import DesktopApp
-        from fronts.desktop.recorder import Recorder
-        stream = Mock()
-        with patch("fronts.desktop.recorder.sd.InputStream", return_value=stream):
-            recorder = Recorder(16000)
+        recorder = _recorder_with_close_guard(self)
         ns = SimpleNamespace(recorder=recorder, _live_dictation=None)
         DesktopApp._stop_live_dictation(ns)      # не має кидати AttributeError
         self.assertIsNone(recorder._live_sink)

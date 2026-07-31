@@ -15,6 +15,7 @@ import unittest
 from fronts.desktop.i18n import STRINGS
 
 UK = STRINGS["uk"]
+EN = STRINGS["en"]
 
 # Технічну назву моделі КАНОН дозволяє як довідку В ДУЖКАХ (принцип 3:
 # «Технічні назви (large-v3-turbo, .srt) лишаємо тільки в дужках»). Ці ключі —
@@ -84,6 +85,23 @@ class CanonForbiddenWords(unittest.TestCase):
         hits = sorted(k for k, v in UK.items()
                       if any(ch in str(v) for ch in bad))
         self.assertEqual(hits, [], f"лише “ ”, не «» чи „: {hits}")
+
+    def test_vault_locked_mentions_recovery_way_out(self):
+        """meeting_error_vault_locked: пароль забуто — найчастіший реальний випадок.
+        Код відновлення (unlock_with_recovery у storage_crypto.py) справді відкриває
+        сховище в усіх режимах, що ведуть до цієї помилки (VaultPasswordRequired) —
+        текст мусить прямо казати про цей вихід, а не лишати читача без ради."""
+        uk_text = UK["meeting_error_vault_locked"]
+        self.assertIn("код відновлення", uk_text.lower(),
+                       "UK-текст має згадувати код відновлення як вихід")
+        self.assertIn("забув пароль", uk_text.lower(),
+                       "UK-текст має вказати посилання «Забув пароль»")
+
+        en_text = EN["meeting_error_vault_locked"]
+        self.assertIn("recovery code", en_text.lower(),
+                       "EN text must mention the recovery code as a way out")
+        self.assertIn("forgot", en_text.lower(),
+                       "EN text must point to the “Forgot password” link")
 
     def test_author_signature_styling(self):
         """Підпис автора на вітальному кроці: один рядок та розмір шрифту level=body (>= 15px)."""

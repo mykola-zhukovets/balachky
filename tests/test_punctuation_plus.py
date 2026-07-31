@@ -6,12 +6,17 @@
 
 Стиль — як test_filler_cleanup.py / test_voice_punctuation.py.
 """
+import hashlib
+import os
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from tests._isolation import reset_process_caches
 from whisper_core import autocorrect, punctuator, paths
 from whisper_core.config import Config
 from whisper_core.terms import Terms
@@ -61,6 +66,30 @@ class PathsTests(unittest.TestCase):
 
 
 class AutocorrectAvailabilityTests(unittest.TestCase):
+    def setUp(self):
+        reset_process_caches()
+
+    def test_integrity_cache_isolated_by_dictionary_path(self):
+        trusted = b"trusted dictionary payload"
+        expected = hashlib.sha256(trusted).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trusted_path = root / "trusted.txt"
+            corrupt_path = root / "corrupt.txt"
+            trusted_path.write_bytes(trusted)
+            corrupt_path.write_bytes(trusted[::-1])
+            stamp = 1_700_000_000_000_000_000
+            os.utime(trusted_path, ns=(stamp, stamp))
+            os.utime(corrupt_path, ns=(stamp, stamp))
+            self.assertEqual(
+                autocorrect._integrity_fingerprint(trusted_path),
+                autocorrect._integrity_fingerprint(corrupt_path))
+
+            self.assertTrue(
+                autocorrect.dictionary_available(trusted_path, expected))
+            self.assertFalse(
+                autocorrect.dictionary_available(corrupt_path, expected))
+
     def test_symspell_available(self):
         # symspellpy стоїть у venv → True; тест лишається валідним і як
         # документація очікуваного контракту функції
@@ -84,6 +113,37 @@ class AutocorrectAvailabilityTests(unittest.TestCase):
                 self.assertFalse(autocorrect.available(p))
         finally:
             p.unlink()
+
+    def test_dictionary_hash_repeats_only_after_mtime_change(self):
+        p = _fixture_dict()
+        expected = hashlib.sha256(p.read_bytes()).hexdigest()
+        real_hasher = autocorrect.hashlib.sha256
+        calls = []
+
+        def counted_hasher(*args, **kwargs):
+            calls.append(True)
+            return real_hasher(*args, **kwargs)
+
+        try:
+            with patch.object(
+                    autocorrect.hashlib, "sha256",
+                    side_effect=counted_hasher):
+                self.assertTrue(
+                    autocorrect.dictionary_available(p, expected))
+                self.assertEqual(len(calls), 1)
+                self.assertTrue(
+                    autocorrect.dictionary_available(p, expected))
+                self.assertEqual(len(calls), 1)
+                old_stat = p.stat()
+                os.utime(
+                    p,
+                    ns=(old_stat.st_atime_ns,
+                        old_stat.st_mtime_ns + 2_000_000_000))
+                self.assertTrue(
+                    autocorrect.dictionary_available(p, expected))
+                self.assertEqual(len(calls), 2)
+        finally:
+            p.unlink(missing_ok=True)
 
     def test_load_corrector_none_without_package(self):
         with patch.object(autocorrect, "symspell_available", return_value=False):
@@ -158,10 +218,10 @@ class PunctuatorGracefulTests(unittest.TestCase):
             self.assertFalse(punctuator.model_available(d))
             self.assertFalse(punctuator.available(d))
 
-    def test_model_marker_makes_available(self):
+    def test_marker_without_model_files_is_not_available(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "READY").write_text("ok", encoding="utf-8")
-            self.assertTrue(punctuator.model_available(d))
+            self.assertFalse(punctuator.model_available(d))
 
     def test_load_model_none_when_unavailable(self):
         with tempfile.TemporaryDirectory() as d:
@@ -191,6 +251,97 @@ class PunctuatorGracefulTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 with self.assertRaises(punctuator.PunctuatorDownloadError):
                     punctuator.download_and_install(d)
+
+    def test_load_model_restores_valid_previous_directory_when_target_missing(self):
+        payloads = {
+            "model.onnx": b"trusted-model",
+            "tokens.model": b"trusted-tokens",
+        }
+        assets = tuple(
+            punctuator.ModelAsset(
+                url=f"https://example.invalid/{name}",
+                filename=name,
+                size=len(payload),
+                sha256=hashlib.sha256(payload).hexdigest())
+            for name, payload in payloads.items())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "punctuator"
+            backup = root / ".punctuator.prev-review"
+            backup.mkdir()
+            for name, payload in payloads.items():
+                (backup / name).write_bytes(payload)
+            (backup / "READY").write_text("ok", encoding="utf-8")
+            (backup / "config.yaml").write_text("languages: [uk]\n",
+                                                 encoding="utf-8")
+
+            model_module = types.ModuleType(
+                "punctuators.models.punc_cap_seg_model")
+            model_module.PunctCapSegConfigONNX = Mock(return_value=object())
+            expected_model = object()
+            model_module.PunctCapSegModelONNX = Mock(return_value=expected_model)
+
+            with patch.object(punctuator, "MODEL_ASSETS", assets), \
+                    patch.object(
+                        punctuator, "punctuators_available", return_value=True), \
+                    patch.dict(sys.modules, {
+                        "punctuators.models.punc_cap_seg_model": model_module,
+                    }), \
+                    self.assertLogs(
+                        "whisper_core.punctuator", level="WARNING") as logs:
+                loaded = punctuator.load_model(target)
+
+            self.assertIs(loaded, expected_model)
+            self.assertTrue(target.is_dir())
+            self.assertFalse(backup.exists())
+            self.assertTrue(all(
+                (target / name).read_bytes() == payload
+                for name, payload in payloads.items()))
+            self.assertTrue(any("віднов" in line.lower() for line in logs.output))
+
+    def test_activation_failure_retries_rollback_after_sharing_violation(self):
+        payload = b"trusted-model"
+        asset = punctuator.ModelAsset(
+            url="https://example.invalid/model.onnx",
+            filename="model.onnx",
+            size=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest())
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "punctuator"
+            target.mkdir()
+            (target / "old.marker").write_text("old", encoding="utf-8")
+            real_replace = punctuator.os.replace
+            replace_calls = []
+
+            def flaky_replace(source, destination):
+                replace_calls.append((Path(source), Path(destination)))
+                if len(replace_calls) == 2:
+                    raise OSError("stage activation failed")
+                if len(replace_calls) == 3:
+                    raise PermissionError("sharing violation")
+                return real_replace(source, destination)
+
+            def fake_download(_asset, destination, *_args, **_kwargs):
+                destination.write_bytes(payload)
+
+            with patch.object(punctuator, "MODEL_ASSETS", (asset,)), \
+                    patch.object(
+                        punctuator, "model_available", return_value=False), \
+                    patch.object(
+                        punctuator, "punctuators_available", return_value=True), \
+                    patch.object(
+                        punctuator, "_download_asset", side_effect=fake_download), \
+                    patch.object(
+                        punctuator.os, "replace", side_effect=flaky_replace):
+                with self.assertRaisesRegex(OSError, "stage activation failed"):
+                    punctuator.download_and_install(target)
+
+            self.assertTrue(target.is_dir())
+            self.assertEqual(
+                (target / "old.marker").read_text(encoding="utf-8"), "old")
+            self.assertEqual(len(replace_calls), 4)
+            self.assertEqual(
+                list(target.parent.glob(".punctuator.prev-*")), [])
 
 
 class ProtectedWordsTests(unittest.TestCase):
@@ -336,6 +487,9 @@ class PolicyDrivenEnhancementTests(unittest.TestCase):
 class RunAutocorrectIntegrationTests(unittest.TestCase):
     """_run_autocorrect: доступність гейтить крок; захист слів профілю діє."""
 
+    def setUp(self):
+        reset_process_caches()
+
     def test_skips_when_unavailable(self):
         from fronts.desktop.app import DesktopApp
         fake = SimpleNamespace(cfg=SimpleNamespace())
@@ -350,7 +504,12 @@ class RunAutocorrectIntegrationTests(unittest.TestCase):
         try:
             fake = SimpleNamespace(cfg=SimpleNamespace())
             terms = Terms(hotwords="", variant_map={"балачкі": "Балачки"})
-            with patch.object(paths, "autocorrect_dict_path", return_value=dict_path):
+            with patch.object(
+                    paths, "autocorrect_dict_path", return_value=dict_path), \
+                    patch(
+                        "whisper_core.autocorrect_download.DICT_SHA256",
+                        hashlib.sha256(
+                            dict_path.read_bytes()).hexdigest()):
                 # «привт» виправляється, «балачкі» (слово профілю) — ні
                 out = DesktopApp._run_autocorrect(fake, "привт балачкі", terms)
             self.assertEqual(out, "привіт балачкі")

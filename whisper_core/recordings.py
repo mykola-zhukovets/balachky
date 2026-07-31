@@ -26,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .paths import anonymize_path
+
 # Безпечне ім'я запису = рівно те, що генерує save_recording: локальний час
 # старту "РРРР-ММ-ДД_гг-хх-сс" з опційним суфіксом колізії "-N", розширення .wav.
 # Один компонент шляху, без роздільників / ".." — не дає видалити щось поза текою.
@@ -215,13 +217,13 @@ def delete_recording(root, name) -> bool:
     target = root / name
     if not _within_root(target, root):
         logging.warning("delete_recording: %r поза сховищем %r — відмова",
-                        str(target), str(root))
+                        anonymize_path(target), anonymize_path(root))
         return False
     if not target.exists():
         return False
     try:
         target.unlink()
     except OSError:
-        logging.exception("Не вдалося видалити запис %s", target)
+        logging.exception("Не вдалося видалити запис %s", anonymize_path(target))
         return False
     return True

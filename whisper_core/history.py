@@ -17,18 +17,30 @@ _THREAD_LOCKS_GUARD = threading.Lock()
 
 
 @contextmanager
-def history_lock(path: Path):
-    """Один lock для append і rewrite history.jsonl, між потоками й процесами."""
+def history_lock(path: Path, timeout: float | None = None):
+    """Один lock для append/rewrite, між потоками й процесами.
+
+    ``timeout`` обмежує очікування в секундах; ``None`` зберігає попередню
+    поведінку без обмеження.
+    """
     path = Path(path)
+    if timeout is not None and timeout < 0:
+        raise ValueError("lock timeout must be non-negative")
+    deadline = None if timeout is None else time.monotonic() + timeout
     key = str(path.resolve())
     with _THREAD_LOCKS_GUARD:
         thread_lock = _THREAD_LOCKS.setdefault(key, threading.Lock())
-    with thread_lock:
+    if deadline is None:
+        acquired = thread_lock.acquire()
+    else:
+        acquired = thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
+    if not acquired:
+        raise TimeoutError(f"Timed out waiting for lock: {path}")
+    try:
         lock_path = path.with_name(path.name + ".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, "a+b") as lock_file:
-            lock_file.seek(0)
-            if not lock_file.read(1):
+            if os.fstat(lock_file.fileno()).st_size == 0:
                 lock_file.seek(0)
                 lock_file.write(b"0")
                 lock_file.flush()
@@ -39,17 +51,38 @@ def history_lock(path: Path):
                     try:
                         msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
                         break
-                    except OSError:
-                        time.sleep(0.01)
+                    except OSError as exc:
+                        if deadline is not None and time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"Timed out waiting for lock: {lock_path}") from exc
+                        delay = 0.01
+                        if deadline is not None:
+                            delay = min(delay, max(0.0, deadline - time.monotonic()))
+                        time.sleep(delay)
                 unlock = lambda: msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                if deadline is None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                else:
+                    while True:
+                        try:
+                            fcntl.flock(
+                                lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            break
+                        except OSError as exc:
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError(
+                                    f"Timed out waiting for lock: {lock_path}") from exc
+                            time.sleep(min(
+                                0.01, max(0.0, deadline - time.monotonic())))
                 unlock = lambda: fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             try:
                 yield
             finally:
                 unlock()
+    finally:
+        thread_lock.release()
 
 
 # Публічний lock для всіх операцій над history.jsonl; alias лишає сумісність.

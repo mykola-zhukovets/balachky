@@ -4,4 +4,20 @@
 Фронти (desktop, telegram) ходять до ядра, не навпаки.
 """
 
-__version__ = "1.2.3"
+from .version import (
+    DISPLAY_VERSION,
+    PEP440_VERSION,
+    RELEASE_CHANNEL,
+    WINDOWS_FILE_VERSION,
+)
+
+__all__ = [
+    "DISPLAY_VERSION",
+    "PEP440_VERSION",
+    "RELEASE_CHANNEL",
+    "WINDOWS_FILE_VERSION",
+    "__version__",
+]
+
+# Backwards-compatible public alias for human-readable/reporting consumers.
+__version__ = DISPLAY_VERSION

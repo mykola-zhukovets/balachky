@@ -1,6 +1,8 @@
 """Експорт і фрагменти аудіо наради: stdlib WAV + PyAV, без Qt."""
 from __future__ import annotations
 
+import os
+import tempfile
 import wave
 from pathlib import Path
 import numpy as np
@@ -46,8 +48,21 @@ def write_wav(path, audio: np.ndarray, sample_rate: int) -> Path:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     pcm = (np.clip(np.asarray(audio, dtype=np.float32), -1, 1) * 32767.0).astype("<i2")
-    with wave.open(str(out), "wb") as dst:
-        dst.setnchannels(1); dst.setsampwidth(2); dst.setframerate(int(sample_rate)); dst.writeframes(pcm.tobytes())
+    fd, staged_name = tempfile.mkstemp(
+        prefix=f".{out.stem}.", suffix=out.suffix, dir=str(out.parent))
+    staged = Path(staged_name)
+    published = False
+    try:
+        os.close(fd)
+        with wave.open(str(staged), "wb") as dst:
+            dst.setnchannels(1); dst.setsampwidth(2); dst.setframerate(int(sample_rate)); dst.writeframes(pcm.tobytes())
+        with staged.open("r+b") as durable:
+            os.fsync(durable.fileno())
+        os.replace(staged, out)
+        published = True
+    finally:
+        if not published:
+            staged.unlink(missing_ok=True)
     return out
 
 # feature/clean-mix: анти-кліпінг лімітер міксу.
@@ -72,36 +87,75 @@ def soft_limit(mixed: np.ndarray, threshold: float = _LIMIT_THRESHOLD,
     shaped = threshold + room * np.tanh(over / room)
     return np.where(mag > threshold, np.sign(mixed) * shaped, mixed).astype(np.float32)
 
-def mix_tracks(tracks: list[np.ndarray]) -> np.ndarray:
-    """Вирівняти доріжки від нуля, звести прямою сумою та обмежити піки
-    м'яким лімітером — щоб гучні одночасні голоси не спотворювались кліпінгом."""
-    tracks = [np.asarray(a, dtype=np.float32).reshape(-1) for a in tracks if np.asarray(a).size]
-    if not tracks:
+def mix_tracks(tracks: list[np.ndarray], weights: list[float] | None = None) -> np.ndarray:
+    """Вирівняти доріжки від нуля, звести зваженою сумою та обмежити піки
+    м'яким лімітером — щоб гучні одночасні голоси не спотворювались кліпінгом.
+
+    ``weights[i]`` масштабує ``tracks[i]`` перед сумою (баланс мікшера плеєра:
+    гучність доріжки/mute=0/соло). ``None`` або коротший за ``tracks`` список —
+    відсутні ваги трактуються як 1.0, тож старі виклики без балансу (рівна
+    сума) поводяться як раніше."""
+    pairs = []
+    for i, a in enumerate(tracks):
+        arr = np.asarray(a, dtype=np.float32).reshape(-1)
+        if not arr.size:
+            continue
+        w = float(weights[i]) if weights is not None and i < len(weights) else 1.0
+        pairs.append((arr, w))
+    if not pairs:
         return np.empty(0, dtype=np.float32)
-    n = max(a.size for a in tracks)
+    n = max(arr.size for arr, _w in pairs)
     mixed = np.zeros(n, dtype=np.float32)
-    for audio in tracks:
-        mixed[:audio.size] += audio   # пряма сума: тихі/поодинокі ділянки зберігають рівень
+    for arr, w in pairs:
+        if w != 0.0:               # вимкнена/заглушена соло доріжка (w=0) не додає нічого
+            mixed[:arr.size] += arr * w
     return soft_limit(mixed)
 
-def mix_wavs(paths) -> tuple[np.ndarray, int]:
+def mix_wavs(paths, weights: list[float] | None = None) -> tuple[np.ndarray, int]:
     loaded = [read_wav(p) for p in paths]
     if not loaded:
         return np.empty(0, dtype=np.float32), 16000
     rates = {rate for _audio, rate in loaded}
     if len(rates) != 1:
         raise ValueError("Доріжки мають різну частоту дискретизації")
-    return mix_tracks([audio for audio, _rate in loaded]), rates.pop()
+    return mix_tracks([audio for audio, _rate in loaded], weights), rates.pop()
 
-def export_audio(source_paths, output, fmt: str, bitrate_kbps: int = 128, *, mix: bool = False, start: float | None = None, end: float | None = None) -> Path:
+def export_balanced_wav(source_paths, output, weights: list[float] | None = None) -> Path:
+    """Звести доріжки наради з балансом мікшера плеєра (гучність/mute/соло) у
+    НОВИЙ WAV-файл — «Зберегти зведення». Читає лише ``source_paths``, оригінали
+    не чіпає. Без PyAV/кодеків (на відміну від ``export_audio``): WAV завжди
+    доступний, тож ця кнопка не залежить від наявних кодеків стиснення.
+
+    Ваги йдуть парами до ``source_paths`` за індексом, тому відсутній файл НЕ
+    відкидається мовчки: інакше ваги з'їхали б на чужі доріжки, а журнал
+    цілісності записав би коефіцієнти, яких у файлі насправді немає (рецензія 31.07)."""
+    paths = [Path(p) for p in source_paths]
+    if not paths:
+        raise ValueError("Немає аудіодоріжки для зведення")
+    missing = next((p for p in paths if not p.is_file()), None)
+    if missing is not None:
+        raise ValueError(f"Доріжка відсутня: {missing}")
+    audio, rate = mix_wavs(paths, weights)
+    if not audio.size:
+        raise ValueError("Доріжки порожні — нічого зводити")
+    return write_wav(output, audio, rate)
+
+def export_audio(source_paths, output, fmt: str, bitrate_kbps: int = 128, *, mix: bool = False, weights: list[float] | None = None, start: float | None = None, end: float | None = None) -> Path:
     """Експортувати першу доріжку або мікс у MP3/M4A через PyAV."""
     fmt = (fmt or "").lower()
     if fmt not in available_formats():
         raise RuntimeError(f"Кодек для .{fmt} недоступний у цьому PyAV")
-    paths = [Path(p) for p in source_paths if Path(p).is_file()]
+    if weights is not None:
+        # З вагами фільтрувати не можна — індекси ваг з'їдуть (див. export_balanced_wav).
+        paths = [Path(p) for p in source_paths]
+        missing = next((p for p in paths if not p.is_file()), None)
+        if missing is not None:
+            raise ValueError(f"Доріжка відсутня: {missing}")
+    else:
+        paths = [Path(p) for p in source_paths if Path(p).is_file()]
     if not paths:
         raise ValueError("Немає аудіодоріжки для експорту")
-    audio, rate = mix_wavs(paths) if mix else read_wav(paths[0])
+    audio, rate = mix_wavs(paths, weights) if mix else read_wav(paths[0])
     if start is not None or end is not None:
         first, last = timestamp_range(start or 0.0, end if end is not None else audio.size / rate, rate, audio.size)
         audio = audio[first:last]
@@ -110,14 +164,28 @@ def export_audio(source_paths, output, fmt: str, bitrate_kbps: int = 128, *, mix
     import av
     codec, container_fmt = _FORMATS[fmt]
     output = Path(output); output.parent.mkdir(parents=True, exist_ok=True)
-    container = av.open(str(output), mode="w", format=container_fmt)
+    fd, staged_name = tempfile.mkstemp(
+        prefix=f".{output.stem}.", suffix=output.suffix,
+        dir=str(output.parent))
+    staged = Path(staged_name)
+    published = False
     try:
-        stream = container.add_stream(codec, rate=rate)
-        stream.layout = "mono"; stream.bit_rate = max(8, int(bitrate_kbps)) * 1000
-        frame = av.AudioFrame.from_ndarray(audio.reshape(1, -1), format="fltp", layout="mono")
-        frame.sample_rate = rate
-        for packet in stream.encode(frame): container.mux(packet)
-        for packet in stream.encode(None): container.mux(packet)
+        os.close(fd)
+        container = av.open(str(staged), mode="w", format=container_fmt)
+        try:
+            stream = container.add_stream(codec, rate=rate)
+            stream.layout = "mono"; stream.bit_rate = max(8, int(bitrate_kbps)) * 1000
+            frame = av.AudioFrame.from_ndarray(audio.reshape(1, -1), format="fltp", layout="mono")
+            frame.sample_rate = rate
+            for packet in stream.encode(frame): container.mux(packet)
+            for packet in stream.encode(None): container.mux(packet)
+        finally:
+            container.close()
+        with staged.open("r+b") as durable:
+            os.fsync(durable.fileno())
+        os.replace(staged, output)
+        published = True
     finally:
-        container.close()
+        if not published:
+            staged.unlink(missing_ok=True)
     return output

@@ -91,7 +91,7 @@ class KaraokeHighlighter:
         # ЯКЕ речення грає — за позицією (ms); ЯКІ слова в ньому — за ТЕКСТОВОЮ
         # належністю (word["sentence"], проставлене merge_sentences), НЕ за ms-вікном.
         # Інакше через допуск hifigan (~400 мс) межове «тут.» перед крапкою могло б
-        # підсвітитись у наступному реченні (блокер суду §8.5).
+        # підсвітитись у наступному реченні (блокер рецензії §8.5).
         si = _t.sentence_at(self._sentence_starts, position_ms)
         if si < 0 or not self._word_timings:
             return None

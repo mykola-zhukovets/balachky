@@ -6,10 +6,12 @@
 що був активним на момент диктування (знімок у on_release).
 """
 import datetime
+import errno
 import json
 import logging
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -37,7 +39,7 @@ from whisper_core import paths, profiles, updates, cuda_runtime, export
 from whisper_core import recordings          # feature/player-recordings
 from whisper_core import corpus               # feature/accuracy-corpus
 from whisper_core import audioedit           # feature/audio-editor
-from whisper_core import __version__
+from whisper_core import DISPLAY_VERSION, PEP440_VERSION
 from whisper_core.config import Config
 from whisper_core.live import LiveTranscriber
 from whisper_core.engine import (
@@ -45,7 +47,7 @@ from whisper_core.engine import (
     NullEngine, ModelAbsentError,
     cuda_runtime_available, is_cuda_runtime_error,
 )
-from whisper_core.model_lifecycle import ModelLifecycle, LOADED, UNLOADED
+from whisper_core.model_lifecycle import ModelLifecycle, LOADED, LOADING, UNLOADED
 from whisper_core.terms import build_terms, read_terms_dict, merge_terms_data
 from whisper_core import phrasebook           # feature/bilingual-memory
 from whisper_core.punctuation import apply_voice_punctuation  # feature/voice-punctuation
@@ -76,7 +78,9 @@ from .recorder import (
     Recorder, MIC_TEST_SECONDS, classify_mic_level, play_audio,  # feature/audio-qol
 )
 from .paste import (
-    paste_text, snapshot_clipboard, restore_clipboard, undo_paste, PASTE_BLOCKED,
+    paste_text, begin_clipboard_restore, end_clipboard_restore,
+    cancel_clipboard_restore, panic_clear_clipboard,
+    restore_clipboard, undo_paste, PASTE_BLOCKED,
     capture_selection,             # feature/voice-edit-selection: зчитати виділене
     send_nav,   # feature/office-voice-nav
     target_changed,                                     # feature/paste-safety
@@ -84,10 +88,13 @@ from .paste import (
 )
 from whisper_core import navcommands  # feature/office-voice-nav
 from whisper_core.dictation_queue import DictationQueue  # feature/dictation-queue
-from whisper_core.meeting.audit_log import AuditLogCorrupt  # блокер Т56: чесне попередження
+from whisper_core.meeting.audit_log import (  # блокер Т56 + delete-barrier
+    AuditLogCorrupt,
+    AuditLogDeleted,
+)
 from .main_window import MainWindow, FileStatus, app_icon
 from . import sounds
-from .crash import diagnostic_event, apply_log_level, apply_test_mode, test_log
+from .crash import diagnostic_event, apply_log_level, apply_test_mode, test_log, anonymize_path
 
 # База профілів (dev — корінь репо, frozen — %LOCALAPPDATA%\Balachky);
 # централізовано у whisper_core.paths, тут лише псевдонім для читабельності
@@ -95,6 +102,18 @@ ROOT = paths.profiles_root()
 
 _UPDATE_INTERVAL = 7 * 24 * 3600     # не частіше ніж раз на тиждень
 _UPDATE_CACHE_SCHEMA = 1             # 1: очистити тестовий кеш до першого релізу
+
+
+def _within_root(target: Path, root: Path) -> bool:
+    """target ФІЗИЧНО під root (realpath резолвить "..", симлінки, регістр
+    тому) — той самий трирубіжний traversal-захист, що в whisper_core.recordings
+    (RecordActionBar: rename/delete запису екрана)."""
+    try:
+        rt = os.path.realpath(target)
+        rr = os.path.realpath(root)
+        return rt != rr and os.path.commonpath([rt, rr]) == rr
+    except (ValueError, OSError):
+        return False
 
 
 def _migrate_update_cache() -> None:
@@ -124,7 +143,7 @@ def _should_show_onboarding(settings, config_exists, models_env, current_version
       • конфіг-файла (config.toml) немає.
 
     Третій сигнал (скарга власника 25.07): версія, на якій майстер востаннє
-    пройдено, відрізняється від поточної ``whisper_core.__version__`` — новий
+    пройдено, відрізняється від поточної ``DISPLAY_VERSION`` — новий
     крок майстра (наприклад, «Додаткові можливості») інакше лишається
     невидимим для людини, що оновилась поверх наявної інсталяції. Порожнє чи
     відсутнє збережене значення теж трактуємо як «давня версія» (показати).
@@ -183,7 +202,7 @@ def _apply_onboarding_result(cfg, wizard, settings, current_version=None):
     непорушений крок ніколи не затре чуже налаштування дефолтом майстра
     (ГОЛОВНА ПАСТКА завдання: оновлення не має стирати мову/хоткей/модель).
 
-    ``current_version`` (whisper_core.__version__), якщо задано, зберігається
+    ``current_version`` (`DISPLAY_VERSION`), якщо задано, зберігається
     поруч з «onboarded» — щоб наступний запуск ТІЄЇ САМОЇ версії не показував
     майстер знову (сигнал версії в _should_show_onboarding).
 
@@ -280,7 +299,7 @@ def _deliver_paste(app, text, auto_enter, pinned_target=None, pinned_pid=None):
     ніж вставити у чужий чат): текст лишаємо в буфері й повідомляємо, щоб вставити
     вручну Ctrl+V. pinned_target=None → ціль не закріплювали, гейт не діє.
 
-    feature/dictation-queue (рекомендація суду): для джоба ЧЕРГИ (pinned_pid
+    feature/dictation-queue (рекомендація рецензії): для джоба ЧЕРГИ (pinned_pid
     відомий → відкладена вставка) звірку вікна робимо ЗАВЖДИ, незалежно від
     тумблера. Між записом і вставкою з черги минає значно більше часу (фонова
     розшифровка попередніх фраз), тож фокус устигає піти в чуже вікно набагато
@@ -296,6 +315,7 @@ def _deliver_paste(app, text, auto_enter, pinned_target=None, pinned_pid=None):
         # лишається стара звірка за HWND (негайний шлях).
         cur_pid = wininput.get_window_pid(cur_hwnd) if _queue_job else None
         if target_changed_ex(pinned_target[0], pinned_pid, cur_hwnd, cur_pid):
+            cancel_clipboard_restore()
             pyperclip.copy(text)   # гарантуємо текст у буфері (paste_text не звали)
             logging.info("Диктування: активне вікно змінилось від старту — "
                          "вставку не роблю, текст лишається в буфері")
@@ -303,20 +323,37 @@ def _deliver_paste(app, text, auto_enter, pinned_target=None, pinned_pid=None):
                 tr("app_paste_window_changed", window=(cur_title or "?")))
             return
     restore = app.cfg.restore_clipboard
-    previous = snapshot_clipboard() if restore else ""
+    if restore:
+        previous = begin_clipboard_restore()
+    else:
+        cancel_clipboard_restore()
+        previous = ""
     typing = getattr(app.cfg, "paste_typing_fallback", False)
-    result = paste_text(text, typing_fallback=typing)
+    owner_hwnd = getattr(app, "_clipboard_owner_hwnd", None)
+    try:
+        if owner_hwnd:
+            result = paste_text(text, typing_fallback=typing, owner_hwnd=owner_hwnd)
+        else:
+            result = paste_text(text, typing_fallback=typing)
+    except BaseException:
+        if restore:
+            end_clipboard_restore()
+        raise
     if result == PASTE_BLOCKED:
+        if restore:
+            end_clipboard_restore()
         logging.info("Диктування: активне вікно — менеджер паролів; "
                      "текст лишився лише в буфері")
         app.transcription_error.emit(tr("app_paste_blocked"))
     elif result is None:
+        if restore:
+            end_clipboard_restore()
         logging.warning("Диктування: не вдалося вставити текст жодним зі "
                         "способів — лишається в буфері")
         app.transcription_error.emit(tr("app_paste_failed"))
     else:
         if restore:
-            restore_clipboard(previous)
+            restore_clipboard(previous, expected=text)
         # feature/qol-pack: запам'ятати вставку (скасувати/повторити) + опційний
         # звук підтвердження — ПІСЛЯ фактичної вставки. Тут спільна точка для
         # негайного шляху й вставки після перегляду (feature/paste-preview), тож
@@ -441,12 +478,14 @@ def _secure_meeting_finish(app, sess, session_dir, status):
         return msession.load_meta(session_dir)
     except VaultPasswordRequired:
         msession.mark_encryption_pending(session_dir, status)
-        logging.warning("Meeting vault is locked; encryption is queued for %s", session_dir)
+        logging.warning("Meeting vault is locked; encryption is queued for %s",
+                        anonymize_path(session_dir))
         raise
     except Exception:
         # Never trade confidentiality failure for silent data loss. encrypt_session
         # is resumable and leaves its marker plus the last verified source files.
-        logging.exception("Meeting encryption failed; resumable data retained at %s", session_dir)
+        logging.exception("Meeting encryption failed; resumable data retained at %s",
+                          anonymize_path(session_dir))
         raise
 
 
@@ -482,20 +521,61 @@ def _cleanup_stale_meeting_temps(max_age_seconds=3600):
                 if path.is_dir() and now - path.stat().st_mtime >= max_age_seconds:
                     shutil.rmtree(path)
             except OSError:
-                logging.warning("Could not remove stale meeting plaintext temp: %s", path)
+                logging.warning("Could not remove stale meeting plaintext temp: %s",
+                                anonymize_path(path))
 
 
-# Блокер Т56: попередження про пошкоджений журнал цілісності показуємо ОДИН раз
-# на сесію (прапорець) наявним механізмом тостів. Нотифікатор реєструє DesktopApp
+def _cleanup_panic_plaintext_temps() -> bool:
+    """Remove all known plaintext temp artifacts and report whether all disappeared."""
+    import shutil
+
+    root = Path(tempfile.gettempdir())
+    success = True
+    for prefix in (
+            "balachky-meeting-",
+            "balachky-meeting-media-",
+            "balachky-tts-plain-"):
+        try:
+            targets = tuple(root.glob(prefix + "*"))
+        except OSError:
+            logging.exception("Could not enumerate panic plaintext temps for %s", prefix)
+            success = False
+            continue
+        for path in targets:
+            try:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+            except OSError:
+                logging.warning("Could not remove panic plaintext temp: %s",
+                                anonymize_path(path))
+                success = False
+                continue
+            try:
+                still_exists = path.exists()
+            except OSError:
+                still_exists = True
+            if still_exists:
+                success = False
+    return success
+
+
+# Попередження про втрату події журналу цілісності показуємо ОДИН раз на нараду
+# для кожної причини наявним механізмом тостів. Нотифікатор реєструє DesktopApp
 # у __init__ (tray.notify); _audit_event — модульна функція без self, тож бере
-# його звідси, а не з екземпляра.
+# його звідси, а не з екземпляра. Історична назва лишається для сумісності тестів.
 _audit_corrupt_notifier = None
 _audit_corrupt_warned_sessions: set[str] = set()
+_audit_deleted_warned_sessions: set[str] = set()
+_audit_timeout_warned_sessions: set[str] = set()
+_audit_unavailable_warned_sessions: set[str] = set()
+_AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS = 1.0
 
 
 def _set_audit_corrupt_notifier(notify) -> None:
     """DesktopApp реєструє свій tray.notify — щоб модульний _audit_event міг
-    показати тост про пошкоджений журнал (він не має доступу до self)."""
+    показати тост про недописаний журнал (він не має доступу до self)."""
     global _audit_corrupt_notifier
     _audit_corrupt_notifier = notify
 
@@ -519,10 +599,70 @@ def _warn_audit_corrupt(session_dir_or_id=None) -> None:
             logging.exception("Не вдалося показати попередження про пошкоджений журнал")
 
 
+def _warn_audit_deleted(session_dir_or_id=None) -> None:
+    """Чесно попередити про відмову append через tombstone видаленої наради."""
+    session_key = Path(session_dir_or_id).name if session_dir_or_id else "unknown"
+    logging.warning(
+        "Подію журналу цілісності наради %s не дописано: "
+        "нараду вже позначено видаленою",
+        session_key,
+    )
+    if session_key in _audit_deleted_warned_sessions:
+        return
+    _audit_deleted_warned_sessions.add(session_key)
+    notify = _audit_corrupt_notifier
+    if notify is not None:
+        try:
+            notify(tr("meeting_audit_deleted_warn"))
+        except Exception:
+            logging.exception(
+                "Не вдалося показати попередження про видалений журнал")
+
+
+def _warn_audit_timeout(session_dir_or_id=None) -> None:
+    """Чесно попередити про втрачену подію через зайнятий журнал."""
+    session_key = Path(session_dir_or_id).name if session_dir_or_id else "unknown"
+    logging.warning(
+        "Подію журналу цілісності наради %s не дописано: журнал зайнятий",
+        session_key,
+    )
+    if session_key in _audit_timeout_warned_sessions:
+        return
+    _audit_timeout_warned_sessions.add(session_key)
+    notify = _audit_corrupt_notifier
+    if notify is not None:
+        try:
+            notify(tr("meeting_audit_timeout_warn"))
+        except Exception:
+            logging.exception(
+                "Не вдалося показати попередження про зайнятий журнал")
+
+
+def _warn_audit_unavailable(session_dir_or_id, error: OSError) -> None:
+    """Чесно попередити про втрачену подію через недоступний audit-файл."""
+    session_key = Path(session_dir_or_id).name if session_dir_or_id else "unknown"
+    logging.warning(
+        "Подію журналу цілісності наради %s не дописано: журнал недоступний: %s",
+        session_key,
+        error,
+        exc_info=True,
+    )
+    if session_key in _audit_unavailable_warned_sessions:
+        return
+    _audit_unavailable_warned_sessions.add(session_key)
+    notify = _audit_corrupt_notifier
+    if notify is not None:
+        try:
+            notify(tr("meeting_audit_unavailable_warn"))
+        except Exception:
+            logging.exception(
+                "Не вдалося показати попередження про недоступний журнал")
+
+
 def _cleanup_stale_tts_temps() -> int:
     """feature/tts-listen (§8.9): crash-recovery plaintext-аудіо озвучення на старті.
     На старті активної озвучки НЕМАЄ, тож прибираємо ВСІ balachky-tts-plain-* (age=0)
-    — не лишаємо свіжий crash-temp конфіденційного аудіо на годину (ревізія).
+    — не лишаємо свіжий crash-temp конфіденційного аудіо на годину (рецензія).
     ЄДИНЕ джерело логіки — plaintext_temp.cleanup_stale."""
     from whisper_core.tts import plaintext_temp
     return plaintext_temp.cleanup_stale(max_age_seconds=0)
@@ -538,9 +678,20 @@ def _audit_event(session_dir, event_type: str, **kwargs) -> None:
     зникають (блокер Т56). Показуємо чесне попередження раз на нараду."""
     try:
         from whisper_core.meeting import audit_log
-        audit_log.append_event(session_dir, event_type, **kwargs)
+        audit_log.append_event(
+            session_dir,
+            event_type,
+            lock_timeout=_AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS,
+            **kwargs,
+        )
+    except AuditLogDeleted:
+        _warn_audit_deleted(session_dir)
     except AuditLogCorrupt:
         _warn_audit_corrupt(session_dir)
+    except TimeoutError:
+        _warn_audit_timeout(session_dir)
+    except OSError as exc:
+        _warn_audit_unavailable(session_dir, exc)
     except Exception:
         logging.exception("Не вдалося дописати подію журналу цілісності: %s", event_type)
 
@@ -854,6 +1005,18 @@ REDACTED_TRANSCRIPT_STEM = "transcript-redacted"
 _PASTE_TARGET_UNSET = object()
 
 
+def _aggregate_screen_protection_state(results, *, supported: bool) -> str:
+    """Звести фактичні результати живих вікон до одного чесного UI-стану."""
+    results = tuple(results)
+    if not supported or any(
+            not getattr(result, "supported", False) for result in results):
+        return "unsupported"
+    if results and all(
+            getattr(result, "succeeded", False) for result in results):
+        return "active"
+    return "failed"
+
+
 class DesktopApp(QObject):
     finished = Signal()               # транскрипція завершена (робочий → GUI-потік)
     transcribed = Signal(str, str, object, object)  # (raw, final, words, ts) → стрічка у вікні
@@ -874,6 +1037,8 @@ class DesktopApp(QObject):
                                       # (чи знята "") комбінація Command Mode → Налаштування
     panic_lock_key_captured = Signal(str)  # feature/mil-hardening: нова (чи знята "")
                                       # комбінація panic-lock → напис у Налаштуваннях
+    screen_protection_state_changed = Signal(str)  # active|unsupported|failed|""
+                                      # фактичний результат, не cfg-намір
     rec_state = Signal(str)           # recording | busy | loading | idle → UI
                                       # (синхронно з треєм: і PTT, і кнопки вікна)
     model_lifecycle_state = Signal(str)  # loading | loaded | error (worker → GUI)
@@ -890,7 +1055,7 @@ class DesktopApp(QObject):
     live_error = Signal(str)                  # нефатальний toast
     live_disable_requested = Signal(object)   # worker → GUI: вимкнути конфіг і active live
                                        # ('good'|'quiet'|'silence'|'error') → Налаштування
-    dictation_audio_state = Signal(str)  # reconnecting | reconnected | failed
+    dictation_audio_state = Signal(str)  # reconnecting | reconnected | fallback | failed
     undo_requested = Signal()          # feature/qol-pack: хоткей «скасувати вставку»
                                        # (з keyboard-потоку → GUI, QueuedConnection)
     insert_requested = Signal()        # feature/qol-pack: хоткей «вставити ще раз»
@@ -917,7 +1082,7 @@ class DesktopApp(QObject):
     meeting_error = Signal(str, str)                # (session_id, message) → картка + tray
     meeting_audio_ready = Signal(str)               # (session_id) — WAV зібрано (диктофон-режим)
     meeting_vault_needed = Signal()                 # encrypted vault needs password/key-file
-    meeting_storage_warning = Signal(str, float)    # (session_id, sec) — ENOSPC, захоплення триває
+    meeting_storage_warning = Signal(str, float, str)  # session_id, sec, видимий текст
     meeting_plaintext_pending = Signal(int)         # незашифровані сесії після краху
     meeting_audio_state = Signal(str, str)          # (track, reconnecting|reconnected|failed)
     meeting_screen_error = Signal(str)              # нефатальна помилка відео → трей
@@ -938,7 +1103,7 @@ class DesktopApp(QObject):
                                                      # word_timings + старти речень
     tts_chunk = Signal(str, object, bool, object)    # СТРІМІНГ (§3.2 TTFS): готовий
                                                      # чанк (wav, timings, is_first, generation)
-    tts_synth_dropped = Signal(object)               # суд 5.3: playback-генерація впала/
+    tts_synth_dropped = Signal(object)               # рецензія 5.3: playback-генерація впала/
                                                      # скасована ДО першого чанка → disarm панелі
 
     def __init__(self, app: QApplication, engine, cfg=None,
@@ -950,6 +1115,12 @@ class DesktopApp(QObject):
         # вантажиться у _EngineLoadThread (поза GUI-потоком), сюди приходять уже
         # готові. Fallback Config.load() — лише страхувальний (напр. у тестах).
         self.cfg = cfg if cfg is not None else Config.load()
+        # Рушій уже завантажено у _EngineLoadThread (поза GUI-потоком) і, за
+        # потреби, відновлено через _recover_engine_on_gui — сюди приходить
+        # готовим. Це і є винос ~3 ГБ завантаження зі старту в потік.
+        self.engine = engine
+        self._stt_model_installed = bool(
+            engine and getattr(engine, "is_available", True))
         from whisper_core.win_hardening import (
             exclude_process_from_wer, set_capture_protection_enabled)
         exclude_process_from_wer()
@@ -1026,8 +1197,8 @@ class DesktopApp(QObject):
             on_paste_recent=self.paste_recent,      # feature/paste-safety
             on_help=self.open_help,          # довідка з трею
         )
-        # Блокер Т56: модульний _audit_event показує попередження про пошкоджений
-        # журнал цілісності через цей нотифікатор (self йому недоступний).
+        # Модульний _audit_event показує попередження про недописаний журнал
+        # цілісності через цей нотифікатор (self йому недоступний).
         _set_audit_corrupt_notifier(self.tray.notify)
         # feature/qol-pack: пам'ять останньої вставки (скасувати / вставити ще раз)
         self._undo = UndoBuffer()
@@ -1035,6 +1206,7 @@ class DesktopApp(QObject):
         self._paste_history = PasteHistory()
         self._paste_target = None       # (HWND, заголовок) цілі на старт диктування
         self.window = MainWindow(self)
+        self._clipboard_owner_hwnd = int(self.window.winId())
         # feature/ux-center: плаваючий індикатор диктування (drag + збережена
         # позиція). Створення не має валити старт — guard.
         self.pill = None
@@ -1059,10 +1231,6 @@ class DesktopApp(QObject):
         self.live_disable_requested.connect(self._disable_live_transcription_from_gui)
         self.transcription_error.connect(self.tray.notify)
         self.cpu_fallback.connect(self._apply_runtime_cpu_fallback)
-        # Рушій уже завантажено у _EngineLoadThread (поза GUI-потоком) і, за
-        # потреби, відновлено через _recover_engine_on_gui — сюди приходить
-        # готовим. Це і є винос ~3 ГБ завантаження зі старту в потік.
-        self.engine = engine
         # Модель/device у Settings позначені “після перезапуску”. Idle-reload не
         # повинен непомітно застосувати pending-вибір раніше; динамічні language/
         # VAD після побудови рушія все одно читаються зі спільного self.cfg.
@@ -1072,7 +1240,7 @@ class DesktopApp(QObject):
             on_audio_state=lambda state: self.dictation_audio_state.emit(state))
         self.dictation_audio_state.connect(self._on_dictation_audio_state)
         cfg_for_log = _diagnostic_attr(self, "cfg", None)
-        diagnostic_event("app_ready", version=__version__, config_path=str(paths.config_path()),
+        diagnostic_event("app_ready", version=DISPLAY_VERSION,
                          device=_diagnostic_attr(cfg_for_log, "input_device", "system") or "system",
                          model=_diagnostic_attr(cfg_for_log, "model_name"),
                          compute=_diagnostic_attr(cfg_for_log, "compute_type"))
@@ -1095,7 +1263,8 @@ class DesktopApp(QObject):
         self.action_hotkeys.apply(
             getattr(self.cfg, "undo_paste_key", "") or "",
             getattr(self.cfg, "insert_last_key", "") or "")
-        self.bookmark_requested.connect(self.add_meeting_bookmark)
+        self.bookmark_requested.connect(
+            lambda: self.add_meeting_bookmark(source="live_hotkey"))
         self.bookmark_hotkey = hotkeys_native.make_action_hotkeys(
             self.cfg, self.bookmark_requested.emit, lambda: None)
         self.bookmark_hotkey.apply(getattr(self.cfg, "meeting_bookmark_hotkey", "") or "", "")
@@ -1145,7 +1314,7 @@ class DesktopApp(QObject):
         # _command_dictating, як нотатку). _command_dialog — активний модальний діалог.
         self._command_dictating = False
         self._command_dialog = None
-        self._tts_panel_fix_active = False   # суд 5.2 Б2: діалог правки панелі відкритий
+        self._tts_panel_fix_active = False   # рецензія 5.2 Б2: діалог правки панелі відкритий
         self.command_edit_cmd.connect(self._on_command_cmd_ready)
         self.command_edit_cmd_error.connect(self._on_command_cmd_error)
         self.finished.connect(lambda: self.tray.set_state("idle"))
@@ -1198,6 +1367,8 @@ class DesktopApp(QObject):
         self._meeting_screen_recorder = None  # ScreenRecorder або None
         self._screen_recorder = None          # незалежний ScreenRecorder
         self._meeting_pending = {}         # session_id -> {session, dir, expected, tracks}
+        self._last_trashed_meeting = None  # шлях останньої видаленої наради в
+                                            # кошику — для «Повернути» у тості
         self._meeting_plaintext_count = 0  # стійкий fail-closed банер на вкладці
         # id від старту postprocess до фіналу: stopped у цей проміжок не є orphan.
         self._meeting_postprocessing = set()
@@ -1297,8 +1468,13 @@ class DesktopApp(QObject):
     # --- feature/no-model-state --------------------------------------------
     @property
     def has_model(self) -> bool:
-        """Чи є завантажений мовний пакет розпізнавання (не NullEngine)."""
-        return bool(self.engine and getattr(self.engine, "is_available", True))
+        """Чи встановлений мовний пакет розпізнавання (не NullEngine)."""
+        engine = getattr(self, "engine", None)
+        if engine is not None:
+            return bool(getattr(engine, "is_available", True))
+        lifecycle = getattr(self, "_model_lifecycle", None)
+        return bool(getattr(self, "_stt_model_installed", False)
+                    and getattr(lifecycle, "state", None) in (UNLOADED, LOADING))
 
     # --- feature/model-idle-unload ----------------------------------------
     def _models_busy(self) -> bool:
@@ -1332,7 +1508,7 @@ class DesktopApp(QObject):
                 on_playable=self.tts_playable.emit,
                 on_timings=self.tts_timings.emit,   # караоке Хв.2 → GUI-потік
                 on_chunk_playable=lambda tok, p, t, first: self.tts_chunk.emit(p, t, first, tok),
-                on_synth_dropped=self.tts_synth_dropped.emit,   # суд 5.3: disarm при обриві
+                on_synth_dropped=self.tts_synth_dropped.emit,   # рецензія 5.3: disarm при обриві
                 available_langs=self._tts_available_langs,
                 on_export_done=lambda p: self.tray.notify(
                     tr("tts_saved", name=os.path.basename(p))),
@@ -1347,15 +1523,17 @@ class DesktopApp(QObject):
     def listen_selection_from_hotkey(self) -> None:
         """GUI-слот хоткея/трею «Прослухати виділене»: читає системне виділення й
         запускає озвучення (latest-wins). Порожнє виділення → тост."""
-        # суд 5.2 БЛОКЕР 2: не перехоплювати панель, поки відкритий діалог правки її
+        # рецензія 5.2 БЛОКЕР 2: не перехоплювати панель, поки відкритий діалог правки її
         # ж тексту — інакше гонка підміни тексту під модальним exec().
         if getattr(self, "_tts_panel_fix_active", False):
             self.tray.notify(tr("tts_busy_editing"))
             return
         try:
             text = capture_selection() or ""     # з .paste (уже імпортовано)
-        except Exception:                        # noqa: BLE001
-            text = ""
+        except Exception:
+            logging.exception("Не вдалося захопити виділений текст для озвучення")
+            self.tray.notify(tr("tts_selection_capture_failed"))
+            return
         if not text.strip():
             self.tray.notify(tr("tts_cancelled"))
             return
@@ -1391,7 +1569,7 @@ class DesktopApp(QObject):
     def _on_tts_chunk(self, wav_path, chunk_timings, is_first, generation=None) -> None:
         """СТРІМІНГ (§3.2 TTFS, GUI-потік): готовий чанк → у чергу панелі; перший
         грає НЕГАЙНО (перший звук < 0.5 c, не чекаючи синтезу всього тексту).
-        generation (суд 5.3) — токен synth-запиту; панель відсіює чанки чужих генерацій."""
+        generation (рецензія 5.3) — токен synth-запиту; панель відсіює чанки чужих генерацій."""
         panel = getattr(self, "_tts_panel", None)
         if panel is not None:
             panel.enqueue_chunk(wav_path, chunk_timings, bool(is_first), generation)
@@ -1471,7 +1649,7 @@ class DesktopApp(QObject):
 
         def on_save(*, match, value, correction_type, match_mode, forms):
             # UPSERT + повертаємо статус (learned|updated) → діалог покаже коректний
-            # текст (суд хвилі 4 БЛОКЕР 1: раніше завжди «збережено» попри відкинуте нове)
+            # текст (рецензія хвилі 4 БЛОКЕР 1: раніше завжди «збережено» попри відкинуте нове)
             try:
                 res = _lex.learn(self.profile, match, value,
                                  match_mode=match_mode, correction_type=correction_type,
@@ -1500,7 +1678,7 @@ class DesktopApp(QObject):
         return idx if idx is not None and idx >= 0 else None
 
     def listen_panel_voice_fix(self):
-        """ЄДИНИЙ вхід reverse-звʼязки (§9.2, суд хвилі 5): виправити голосом слово в
+        """ЄДИНИЙ вхід reverse-звʼязки (§9.2, рецензія хвилі 5): виправити голосом слово в
         тексті САМОЇ панелі «Прослухати». Читає виділення з ВЛАСНОГО редактора панелі,
         ставить TTS на паузу з позицією, відкриває Command Mode; правку МАПИТЬ у повний
         текст панелі (замінює виділення в редакторі) і продовжує з того ж речення. Cancel
@@ -1514,7 +1692,7 @@ class DesktopApp(QObject):
             return
         cursor = editor.textCursor()
         selected = cursor.selectedText() or editor.toPlainText()
-        # суд 5.2 БЛОКЕР 2: зафіксувати ревізію тексту панелі на СТАРТІ правки. Модальний
+        # рецензія 5.2 БЛОКЕР 2: зафіксувати ревізію тексту панелі на СТАРТІ правки. Модальний
         # ex() крутить вкладений event loop, у якому глобальний TTS-хоткей міг би
         # підмінити текст панелі (open_listen_panel іншого тексту). Якщо ревізія при
         # застосуванні змінилась — правка стосується вже ЧУЖОГО тексту → скасувати.
@@ -1544,7 +1722,7 @@ class DesktopApp(QObject):
             idx = ctrl.consume_reverse_index() if paused else None
             self._tts_resume_panel(new_full, idx)
 
-        # суд 5.2 БЛОКЕР 2 (простіший запобіжник): поки відкритий діалог правки САМОЇ
+        # рецензія 5.2 БЛОКЕР 2 (простіший запобіжник): поки відкритий діалог правки САМОЇ
         # панелі, хоткей «Прослухати» не перехоплює її текст (listen_selection_from_hotkey).
         self._tts_panel_fix_active = True
         try:
@@ -1570,7 +1748,7 @@ class DesktopApp(QObject):
         if idx >= n_sentences:
             idx = 0
             self.tray.notify(tr("tts_text_changed"))
-        # суд 5.3: спершу СТАРТУВАТИ ресинтез, тоді прив'язати arm до ЙОГО generation-
+        # рецензія 5.3: спершу СТАРТУВАТИ ресинтез, тоді прив'язати arm до ЙОГО generation-
         # токена. play_text синхронно виділяє токен (GUI-потік); перший чанк цієї
         # генерації обробиться пізніше (черга Qt), уже побачивши armed-resume. Якщо той
         # потік упаде/скасується ДО чанка — on_synth_dropped зніме саме цей arm.
@@ -1596,15 +1774,49 @@ class DesktopApp(QObject):
         except Exception:                        # noqa: BLE001
             logging.exception("Не вдалося зберегти вибір голосу TTS")
 
-    def _tts_download_voice(self, voice_id: str) -> None:
+    def _tts_download_voice(self, voice_id: str, *, on_progress=None,
+                            on_done=None, on_failed=None) -> None:
+        """Завантажити голос (§7.3) через QThread-воркер (onboarding.
+        VoiceDownloadWorker, вже вживаний майстром першого запуску) — прогрес і
+        завершення йдуть Qt-сигналами, тож безпечно доходять у GUI-потік.
+
+        Суд (тиха відмова, живий тест 30.07): попередня версія — сирий
+        threading.Thread; на голосах без запінованих файлів (Хвиля 3, sherpa)
+        мовчала повністю, а на провалі кликала self.tray.notify() ПРЯМО з
+        фонового потоку — небезпечний крос-тредовий виклик Qt-віджета, який на
+        практиці ніяк не проявлявся (ні тосту, ні винятку). Тепер: клік лишає
+        запис у журналі ЗАВЖДИ (нижче), а прогрес/провал/скасування — воркер
+        сам логує (onboarding.VoiceDownloadWorker.run) і чергує Qt-сигнали
+        безпечно в GUI-потік."""
+        from .onboarding import VoiceDownloadWorker
         from whisper_core.tts import voices as _v
-        def work():
-            try:
-                _v.download_and_install(voice_id)
-            except _v.VoiceDownloadError as exc:
-                logging.warning("Завантаження голосу не вдалося: %s", exc)
-                self.tray.notify(tr("tts_voice_corrupt"))
-        threading.Thread(target=work, daemon=True).start()
+        logging.info("TTS: натиснуто «Завантажити» для голосу %s", voice_id)
+        workers = getattr(self, "_voice_download_workers", None)
+        if workers is None:
+            workers = {}
+            self._voice_download_workers = workers
+        old = workers.get(voice_id)
+        if old is not None and old.isRunning():
+            return                            # уже качається — не дублювати
+        worker = VoiceDownloadWorker(
+            voice_id, root=str(_v.paths.tts_voices_dir()), parent=self)
+        workers[voice_id] = worker
+        if on_progress:
+            worker.progress.connect(on_progress)
+        if on_done:
+            worker.finished_ok.connect(on_done)
+        if on_failed:
+            worker.failed.connect(on_failed)
+            worker.cancelled.connect(on_failed)
+        worker.failed.connect(self._on_voice_download_failed)
+        worker.finished.connect(lambda: workers.pop(voice_id, None))
+        worker.start()
+
+    def _on_voice_download_failed(self, _message: str) -> None:
+        """Тост про провал завантаження голосу. Bound-метод DesktopApp (QObject)
+        — Qt сам чергує виклик у GUI-потік, тож self.tray.notify() тут
+        безпечний (на відміну від прямого виклику з фонового потоку раніше)."""
+        self.tray.notify(tr("tts_voice_corrupt"))
 
     def _tts_delete_voice(self, voice_id: str) -> None:
         from whisper_core.tts import voices as _v
@@ -1763,10 +1975,16 @@ class DesktopApp(QObject):
     def _load_stt_model(self) -> None:
         started = time.perf_counter()
         load_cfg = copy(getattr(self, "_engine_load_cfg", self.cfg))
-        engine = Engine(load_cfg)
+        try:
+            engine = Engine(load_cfg)
+        except ModelRevisionUnavailable:
+            self._stt_model_installed = False
+            raise
         engine.cfg = self.cfg
         with self._engine_lock:
             self.engine = engine
+            self._stt_model_installed = bool(
+                getattr(engine, "is_available", True))
         diagnostic_event(
             "model_loaded", model=getattr(self.cfg, "model_name", None),
             device=getattr(self.cfg, "device", None),
@@ -2018,6 +2236,9 @@ class DesktopApp(QObject):
         self.window.show()
         self.window.raise_()
         self.window.activateWindow()
+        # Відкласти модалку до завершення show/activate: це також єдиний шлях
+        # першого видимого відкриття після тихого --autostart.
+        QTimer.singleShot(0, self.window.maybe_show_test_log_text_reminder)
 
     # === плаваюча нотатка (feature/scratchpad-note) ======================
     # Диктування у власне вікно як fallback до вставки в чужий застосунок.
@@ -2109,7 +2330,7 @@ class DesktopApp(QObject):
         from .pages.command_edit_ui import CommandEditDialog
         from whisper_core import paths, config as cfgmod
         preset_id = getattr(self.cfg, "protocol_model", "fast")
-        # УВАГА (суд хвилі 5): voice_edit_selection — СПІЛЬНА точка 4 незалежних фіч
+        # УВАГА (рецензія хвилі 5): voice_edit_selection — СПІЛЬНА точка 4 незалежних фіч
         # (глобальний Command Mode, AI-edit головного вікна, AI-edit наради, зворотне
         # диктування Історії). TTS-автопродовження тут НЕ чіпаємо — інакше правка
         # чужого тексту фантомно озвучувала б панель. Резюм-звʼязка — ЛИШЕ через
@@ -2323,12 +2544,14 @@ class DesktopApp(QObject):
         частотний словник) будуємо один раз і кешуємо; захищений набір слів
         профілю рахуємо на кожен виклик (профіль може змінюватись)."""
         from whisper_core import paths
+        from whisper_core.autocorrect_download import DICT_SHA256
         dict_path = paths.autocorrect_dict_path()
-        if not autocorrect.available(dict_path):
+        if not autocorrect.available(dict_path, DICT_SHA256):
             return final
         corrector = getattr(self, "_autocorrector", None)
         if corrector is None:
-            corrector = autocorrect.load_corrector(dict_path)
+            corrector = autocorrect.load_corrector(
+                dict_path, DICT_SHA256)
             self._autocorrector = corrector
             if corrector is None:
                 return final
@@ -2473,7 +2696,6 @@ class DesktopApp(QObject):
         QLocalServer (гілка --relaunch у main()) — тож два клавіатурні хуки
         одночасно не існують. Аргументи крос-режимно: frozen — сам exe; dev —
         `python -m fronts.desktop` з cwd кореня репо (як autostart.bat)."""
-        import subprocess
         if paths.FROZEN:
             args = [sys.executable, "--relaunch"]
             cwd = None
@@ -2495,6 +2717,7 @@ class DesktopApp(QObject):
 
     def _cleanup(self):
         """Вихід: запам'ятати геометрію, зняти клавіатурні хуки, звільнити мікрофон."""
+        cancel_clipboard_restore()
         self._clear_meeting_plain_cache()
         # feature/tts-listen (§8.9): завершити озвучення й ПРИБРАТИ plaintext-аудіо на
         # виході (інакше конфіденційне WAV лишилось би у %TEMP% після exit).
@@ -2592,7 +2815,9 @@ class DesktopApp(QObject):
         # більше не emit-ить сигнали в об'єкти, що руйнуються на виході
         try:
             if getattr(self, "mouse_hook", None) is not None:
-                self.mouse_hook.stop()
+                if not self.mouse_hook.stop():
+                    logging.warning("mouse-ptt: зупинку хука під час виходу "
+                                    "не підтверджено; посилання збережено")
         except Exception:
             pass
         try:
@@ -2728,7 +2953,10 @@ class DesktopApp(QObject):
         встановився → попередження + тост + скид налаштування в none (щоб не лишати
         ввімкнене, що не діє)."""
         if self.mouse_hook is not None:
-            self.mouse_hook.stop()
+            if not self.mouse_hook.stop():
+                logging.warning("mouse-ptt: зупинку чинного хука не підтверджено; "
+                                "посилання збережено")
+                return
             self.mouse_hook = None
         button = getattr(self.cfg, "ptt_mouse_button", "none")
         if button not in ("x1", "x2"):
@@ -2773,7 +3001,7 @@ class DesktopApp(QObject):
             snippets_path=paths.snippets_path(),
             context_profiles_path=paths.context_profiles_path(),
             profiles_root=paths.profiles_root(),
-            version=__version__)
+            version=DISPLAY_VERSION)
 
     def import_settings_from(self, zip_path, backup_path):
         """Розпакувати архів у теку користувача (бекап поточного стану — поруч).
@@ -2785,12 +3013,13 @@ class DesktopApp(QObject):
             user_dir=paths.user_dir(),
             profiles_root=paths.profiles_root(),
             backup_path=backup_path,
-            version=__version__)
+            version=DISPLAY_VERSION)
 
     def inspect_profile_archive(self, zip_path):
         """Отримати метадані про архів перед підтвердженням імпорту."""
         from whisper_core import settings_io
-        return settings_io.inspect_archive(zip_path, current_version=__version__)
+        return settings_io.inspect_archive(
+            zip_path, current_version=DISPLAY_VERSION)
 
     def import_profile_with_backup(self, zip_path):
         """Імпортувати архів з автоматичним створення теки бекапу у теці даних."""
@@ -2799,7 +3028,7 @@ class DesktopApp(QObject):
             zip_path,
             user_dir=paths.user_dir(),
             profiles_root=paths.profiles_root(),
-            version=__version__)
+            version=DISPLAY_VERSION)
 
     # --- feature/ux-center: позиція плаваючого індикатора диктування ---
     def set_pill_position(self, x, y):
@@ -2929,17 +3158,34 @@ class DesktopApp(QObject):
 
     def _insert_worker(self, text):
         restore = self.cfg.restore_clipboard
-        previous = snapshot_clipboard() if restore else ""
+        if restore:
+            previous = begin_clipboard_restore()
+        else:
+            cancel_clipboard_restore()
+            previous = ""
         typing = getattr(self.cfg, "paste_typing_fallback", False)
-        result = paste_text(text, typing_fallback=typing)
+        owner_hwnd = getattr(self, "_clipboard_owner_hwnd", None)
+        try:
+            if owner_hwnd:
+                result = paste_text(text, typing_fallback=typing, owner_hwnd=owner_hwnd)
+            else:
+                result = paste_text(text, typing_fallback=typing)
+        except BaseException:
+            if restore:
+                end_clipboard_restore()
+            raise
         if result == PASTE_BLOCKED:
+            if restore:
+                end_clipboard_restore()
             self.transcription_error.emit(tr("app_paste_blocked"))
         elif result is None:
+            if restore:
+                end_clipboard_restore()
             self.transcription_error.emit(tr("app_paste_failed"))
         else:
             diagnostic_event("dictation_delivered", destination="paste", chars=len(text))
             if restore:
-                restore_clipboard(previous)
+                restore_clipboard(previous, expected=text)
             self._undo.record(text)   # повторна вставка — теж скасовувана
             if getattr(self.cfg, "paste_history_enabled", True):
                 self._paste_history.record(text)   # feature/paste-safety (тумблер)
@@ -3150,7 +3396,7 @@ class DesktopApp(QObject):
             self._export_warned = False
         except OSError:
             logging.warning("Автозбереження розшифровки не вдалося (тека %s)",
-                            self.cfg.auto_export_dir, exc_info=True)
+                            paths.anonymize_path(self.cfg.auto_export_dir), exc_info=True)
             if not self._export_warned:
                 self.transcription_error.emit(tr("app_export_failed"))
                 self._export_warned = True
@@ -3176,13 +3422,14 @@ class DesktopApp(QObject):
             return
         d = self.cfg.watch_dir
         if not os.path.isdir(d):
-            logging.warning("Тека спостереження недоступна: %s", d)
+            logging.warning("Тека спостереження недоступна: %s", paths.anonymize_path(d))
             return
         try:
             for name in os.listdir(d):
                 self._watch_seen.add(os.path.join(d, name))
         except OSError:
-            logging.exception("Не вдалося прочитати теку спостереження: %s", d)
+            logging.exception("Не вдалося прочитати теку спостереження: %s",
+                               paths.anonymize_path(d))
             return
         self._watcher.addPath(d)
 
@@ -3211,7 +3458,8 @@ class DesktopApp(QObject):
         try:
             self.window.files.add_files([path])
         except Exception:
-            logging.exception("watch: не вдалося поставити файл у чергу: %s", path)
+            logging.exception("watch: не вдалося поставити файл у чергу: %s",
+                              anonymize_path(path))
             return
         self.tray.notify(tr("app_watch_queued", name=os.path.basename(path)))
 
@@ -3246,7 +3494,7 @@ class DesktopApp(QObject):
             return
         s = QSettings("Balachky", "Balachky")
         etag = s.value("update_etag", "", type=str) or None
-        self._update_thread = _UpdateThread(__version__, etag, self)
+        self._update_thread = _UpdateThread(PEP440_VERSION, etag, self)
         self._update_thread.result.connect(self._on_update_result)
         self._update_thread.start()
 
@@ -3285,14 +3533,14 @@ class DesktopApp(QObject):
         s = QSettings("Balachky", "Balachky")
         latest = s.value("update_latest", "", type=str) or None
         url = s.value("update_url", "", type=str) or None
-        if latest and (not updates.is_newer(latest, __version__)
+        if latest and (not updates.is_newer(latest, PEP440_VERSION)
                        or not updates.is_release_url(url)):
             # Неповний/тестовий кеш не показуємо як реальне оновлення.
             s.remove("update_latest")
             s.remove("update_url")
             latest, url = None, None
         checked = bool(s.value("update_last_check", 0, type=int))
-        return __version__, latest, url, checked
+        return DISPLAY_VERSION, latest, url, checked
 
     # --- feature/auto-update: доставка інсталятора (завантаження + запуск) ---
     def delivery_state(self):
@@ -3312,7 +3560,7 @@ class DesktopApp(QObject):
             installer_url, sha256, _ = self.delivery_state()
         if not installer_url or not sha256:
             return
-        ready = updater.installer_ready(installer_url)
+        ready = updater.installer_ready(installer_url, sha256)
         if ready is not None:
             self.update_downloaded.emit(str(ready))
             return
@@ -3329,7 +3577,20 @@ class DesktopApp(QObject):
         per-user Inno поверх, з майстром) і коректно завершити застосунок,
         щоб файли не були зайняті під час перевстановлення."""
         from PySide6.QtCore import QProcess
-        QProcess.startDetached(path)
+        from whisper_core import updater
+        installer_url, sha256, _ = self.delivery_state()
+        if not installer_url or not sha256:
+            return
+        ready = updater.installer_ready(
+            installer_url, sha256, rehash=True)
+        if ready is None:
+            return
+        try:
+            if Path(path).resolve() != ready.resolve():
+                return
+        except OSError:
+            return
+        QProcess.startDetached(str(ready))
         self.app.quit()
 
     def start_key_capture(self):
@@ -3674,6 +3935,8 @@ class DesktopApp(QObject):
             self.tray.notify(tr("app_mic_reconnecting"))
         elif state == "reconnected":
             self.tray.notify(tr("app_mic_reconnected"))
+        elif state == "fallback":
+            self.tray.notify(tr("app_mic_fallback"))
         elif state == "failed":
             self.tray.notify(tr("app_mic_recovery_failed"))
             if self.recorder.recording:
@@ -3816,14 +4079,21 @@ class DesktopApp(QObject):
     def _clear_meeting_plain_cache(self, session_id=None):
         cache = getattr(self, "_meeting_plain_cache", {})
         keys = list(cache) if session_id is None else [str(session_id)]
+        success = True
         for key in keys:
-            item = cache.pop(key, None)
+            item = cache.get(key)
             if item is not None:
                 try:
-                    item[0].cleanup()
+                    cleanup_result = item[0].cleanup()
+                    if cleanup_result is False or Path(item[1]).exists():
+                        success = False
+                    else:
+                        cache.pop(key, None)
                 except Exception:
                     logging.warning("Could not remove decrypted meeting temp for %s", key)
+                    success = False
         self._meeting_plain_cache = cache
+        return success
 
     def _materialized_meeting_dir(self, session_id) -> Path:
         """Path-only media bridge; temporary plaintext is owned and cleaned."""
@@ -3975,70 +4245,155 @@ class DesktopApp(QObject):
         self.panic_lock_key_captured.emit("")
 
     def trigger_panic_lock(self):
-        """Миттєвий panic-lock (хоткей чи кнопка) — СУВОРІШИЙ за meeting_vault_lock:
-        1. Знищити розшифровані temp-копії нарад (як vault-lock: _clear_meeting_plain_cache).
-        2. Вивантажити З ПАМʼЯТІ всі DEK нарад — не лише активного сейфу (lock_vault
+        """Panic-lock (хоткей чи кнопка) — СУВОРІШИЙ за meeting_vault_lock:
+        1. Знищити відкриті й залишкові plaintext temp-файли.
+        2. Вивантажити З ПАМ’ЯТІ всі DEK нарад — не лише активного сейфу (lock_vault
            чистить один корінь; .clear() чистить усі → суворіше).
         3. Очистити буфер обміну.
         4. Згорнути вікна застосунку.
         """
-        try:
-            # Крок 1: як meeting_vault_lock — знищуємо plaintext-копії з %TEMP%,
-            # інакше _materialized_meeting_dir і далі віддавав би їх БЕЗ пароля.
-            self._clear_meeting_plain_cache()
-        except Exception:
-            logging.exception("Збій знищення розшифрованих temp-нарад у panic_lock")
-
-        try:
+        def clear_keys():
             from whisper_core.meeting import storage_crypto
             storage_crypto._PASSWORD_CACHE.clear()
-        except Exception:
-            logging.exception("Збій очищення кешу ключів у panic_lock")
+            return True
 
-        try:
+        def clear_system_clipboard():
             from whisper_core.win_hardening import clear_clipboard
-            clear_clipboard()
-        except Exception:
-            logging.exception("Збій очищення буфера в panic_lock")
+            return panic_clear_clipboard(clear_clipboard)
 
-        try:
+        def minimize_window():
             if hasattr(self, "window") and self.window:
                 self.window.showMinimized()
-        except Exception:
-            logging.exception("Збій згортання головного вікна в panic_lock")
+            return True
 
-        self.tray.notify(tr("panic_toast_locked"))
+        steps = (
+            ("panic_step_meeting_cache", self._clear_meeting_plain_cache),
+            ("panic_step_temp_files", _cleanup_panic_plaintext_temps),
+            ("panic_step_keys", clear_keys),
+            ("panic_step_clipboard", clear_system_clipboard),
+            ("panic_step_window", minimize_window),
+        )
+        failures = []
+        for key, action in steps:
+            try:
+                if action() is False:
+                    failures.append(key)
+            except Exception:
+                logging.exception("Panic-lock step failed: %s", key)
+                failures.append(key)
+
+        result = tuple(failures)
+        if result:
+            items = ", ".join(tr(key) for key in result)
+            self.tray.notify(tr("panic_toast_partial", items=items))
+        else:
+            self.tray.notify(tr("panic_toast_locked"))
+        return result
 
     def set_screen_protection(self, enable: bool):
         from whisper_core.win_hardening import (
-            set_window_display_affinity, set_capture_protection_enabled)
+            is_display_affinity_supported, set_capture_protection_enabled)
         self.cfg.screen_protection = bool(enable)
         self.cfg.save()
-        # Живі вікна нарад (відеоплеєр запису) — накласти/зняти WDA через реєстр.
-        set_capture_protection_enabled(bool(enable))
-        if hasattr(self, "window") and self.window:
-            try:
-                hwnd = int(self.window.winId()) if hasattr(self.window, "winId") else 0
-                if hwnd:
-                    set_window_display_affinity(hwnd, bool(enable))
-            except Exception:
-                logging.exception("Збій встановлення display affinity")
+        # Реєстр містить головне вікно й живі вікна нарад. Не вгадуємо стан із
+        # cfg: агрегуємо тільки підтверджені результати кожного Win32-виклику.
+        results = set_capture_protection_enabled(bool(enable))
+        if enable:
+            state = _aggregate_screen_protection_state(
+                results, supported=is_display_affinity_supported())
+        elif results and any(
+                not getattr(result, "succeeded", False)
+                for result in results):
+            state = _aggregate_screen_protection_state(
+                results, supported=is_display_affinity_supported())
+        else:
+            state = ""
+        return DesktopApp._publish_screen_protection_state(self, state)
 
-    def add_meeting_bookmark(self, title: str = "") -> bool:
-        """Зберегти мітку від початку активної наради; поза нею — тихий no-op."""
+    def screen_protection_state(self) -> str:
+        """Фактичний стан; порожньо, коли вимкнення підтверджене або ще pending."""
+        from whisper_core.win_hardening import (
+            capture_protection_results, is_display_affinity_supported)
+        supported = is_display_affinity_supported()
+        if not supported:
+            return "unsupported"
+        results = capture_protection_results()
+        if not bool(getattr(self.cfg, "screen_protection", False)):
+            failed_removals = tuple(
+                result for result in results
+                if not getattr(result, "enabled", True)
+                and not getattr(result, "succeeded", False)
+            )
+            if failed_removals:
+                return _aggregate_screen_protection_state(
+                    failed_removals, supported=supported)
+            return ""
+        if not results:
+            return ""
+        return _aggregate_screen_protection_state(
+            results, supported=supported)
+
+    def _publish_screen_protection_state(
+            self, state: str | None = None, *, only_if_changed: bool = False
+    ) -> str:
+        if state is None:
+            state = DesktopApp.screen_protection_state(self)
+        previous = getattr(
+            self, "_screen_protection_last_emitted_state", None)
+        self._screen_protection_last_emitted_state = state
+        if not only_if_changed or state != previous:
+            self.screen_protection_state_changed.emit(state)
+        return state
+
+    def _on_screen_protection_result_removed(self) -> str:
+        return DesktopApp._publish_screen_protection_state(
+            self, only_if_changed=True)
+
+    def apply_screen_protection_to_window(self, widget):
+        """Зареєструвати живе вікно й оприлюднити фактичний результат."""
+        from whisper_core.win_hardening import protect_window
+        result = protect_window(
+            widget,
+            on_result_removed=lambda:
+                DesktopApp._on_screen_protection_result_removed(self))
+        DesktopApp._publish_screen_protection_state(self)
+        return result
+
+    def remove_screen_protection_from_window(self, widget) -> bool:
+        """Явно прибрати закрите вікно; GC-finalizer лишається страхувальником."""
+        from whisper_core.win_hardening import unprotect_window
+        return unprotect_window(widget)
+
+    def add_meeting_bookmark(self, title: str = "", source: str = "live_button") -> bool:
+        """Зберегти мітку від початку активної наради; поза нею — тихий no-op.
+
+        Викликається і з кнопки на сторінці, і з глобальної гарячої клавіші —
+        ЖОДЕН зі шляхів не має блокувати нараду діалогом: підпис можна додати
+        пізніше (Етап 2+ спеки). ``source`` лише позначає, звідки прийшла
+        мітка (``live_button``/``live_hotkey``) — для доказової події нижче.
+
+        Подія ``bookmark_added`` дописується у audit.jsonl тим самим шляхом
+        (``_audit_event``), що і created/stopped/finalized: збій журналу
+        (повний диск, тека лише для читання) не має зривати саму мітку."""
         sess = getattr(self, "_meeting_session", None)
         if not getattr(self, "_meeting_active", False) or sess is None:
             return False
         try:
             elapsed = max(0.0, time.monotonic() - getattr(self, "_meeting_started_at", time.monotonic()))
             add = getattr(sess, "add_bookmark", None)
+            sess_dir = getattr(sess, "dir", None) or getattr(sess, "_dir", None)
             if callable(add):
                 add(elapsed, title)
             else:  # сумісність із застарілим ядром/фейками UI
                 from whisper_core.meeting.session import add_bookmark
-                sdir = getattr(sess, "_dir", None)
-                if sdir is not None:
-                    add_bookmark(sdir, elapsed, title)
+                if sess_dir is not None:
+                    add_bookmark(sess_dir, elapsed, title)
+            if sess_dir is not None:
+                _audit_event(sess_dir, "bookmark_added", note={
+                    "timestamp": round(elapsed, 3),
+                    "title": (title or "").strip()[:120],
+                    "source": source,
+                })
             self.tray.notify(tr("meeting_bookmark_added"))
             return True
         except Exception:
@@ -4111,6 +4466,8 @@ class DesktopApp(QObject):
 
     def screen_record_start(self, source: dict, options: dict) -> bool:
         if self._screen_recorder and self._screen_recorder.is_running:
+            logging.warning("Запис екрана вже триває — повторний старт відхилено")
+            self.screen_record_error.emit(tr("screen_error_already_recording"))
             return False
         try:
             from whisper_core.screen.recorder import ScreenRecorder
@@ -4120,7 +4477,10 @@ class DesktopApp(QObject):
                 on_error=lambda exc: self.screen_record_error.emit(str(exc)),
                 on_finished=lambda out, ok: self.screen_record_finished.emit(str(out), ok))
             if not self._screen_recorder.start(source, options, path):
+                logging.warning("Запис екрана не стартував: рушій відхилив старт (%s)", source)
+                self.screen_record_error.emit(tr("screen_error_start_failed"))
                 return False
+            logging.info("Запис екрана розпочато: джерело=%s опції=%s", source, options)
             self.screen_record_state.emit("recording")
             return True
         except Exception as exc:
@@ -4142,6 +4502,64 @@ class DesktopApp(QObject):
 
     def open_screen_recordings_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._screen_recordings_root())))
+
+    # --- RecordActionBar: дії над одним
+    # записом екрана. Плоскі файли без журналу/шифрування (на відміну від
+    # Наради — meeting/audit_log.py), тож видалення файлу нічого осиротілого
+    # не лишає: журналу цілісності для запису екрана просто немає.
+    def rename_screen_recording(self, path, new_name: str):
+        """Перейменувати відеозапис (нова БАЗОВА назва, без розширення) у межах
+        теки записів екрана. Відмова (None) — небезпечне ім'я, файл поза
+        текою/відсутній, або колізія з наявним файлом."""
+        from .record_action_bar import is_safe_display_name
+        path = Path(path)
+        root = self._screen_recordings_root()
+        if not is_safe_display_name(new_name):
+            return None
+        if not path.is_file() or not _within_root(path, root):
+            return None
+        new_path = path.with_name(new_name.strip() + path.suffix)
+        if new_path.exists():
+            return None
+        try:
+            path.rename(new_path)
+        except OSError:
+            logging.exception("Не вдалося перейменувати запис екрана %s",
+                              anonymize_path(path))
+            return None
+        return new_path
+
+    def delete_screen_recording(self, path) -> bool:
+        """Видалити файл запису екрана. False — файл поза текою/уже відсутній
+        або помилка диска; True — видалено (або вже не існував після traversal-
+        перевірки — повторний виклик безпечний)."""
+        path = Path(path)
+        root = self._screen_recordings_root()
+        if not _within_root(path, root):
+            return False
+        if not path.exists():
+            return True
+        try:
+            path.unlink()
+        except OSError:
+            logging.exception("Не вдалося видалити запис екрана %s",
+                              anonymize_path(path))
+            return False
+        return True
+
+    def show_screen_recording_in_folder(self, path) -> None:
+        """Відкрити Провідник із виділеним файлом (Windows); поза Windows або
+        при збої — просто відкрити теку записів (як «Відкрити папку»)."""
+        path = Path(path)
+        if sys.platform.startswith("win") and path.is_file():
+            try:
+                subprocess.Popen(["explorer", "/select,", str(path)])
+                return
+            except OSError:
+                logging.exception("Не вдалося відкрити провідник із виділенням %s",
+                                  anonymize_path(path))
+        self.open_screen_recordings_folder()
+
     # --- команди вкладки (контракт розділу 3.1) ---
     def meeting_start(self, preset: str) -> bool:
         """Створити сесію за пресетом, відкрити 1-2 потоки, старт. Гейт: диктування/
@@ -4278,11 +4696,17 @@ class DesktopApp(QObject):
         if not getattr(self, "_before_microphone_start", lambda *_a, **_k: True)("meeting"):
             self.tray.notify(tr("meeting_error_generic"))
             return False
+        # Аудит чесності (31.07, знахідка 1): котрий потік упав — мік чи
+        # системний звук — визначаємо за доріжкою, на якій стались збій, а
+        # НЕ вигадуємо це з того, що впало останнім want_sys-гілка. Інакше
+        # людина зі зіпсованим мікрофоном читає пораду про колонки.
+        failing_track = None
         try:
             # Спершу створюємо всі потоки, тоді стартуємо щільним циклом. Кожен
             # CaptureStream веде власну wall-clock шкалу й заповнює reconnect-gap
             # тишею, тому N WAV не дрейфують у часі.
             for track, dev, configured_name in zip(mic_tracks, mic_devs, mic_names):
+                failing_track = track
                 streams[track] = mcapture.CaptureStream(
                     kind=track, device_index=dev["index"],
                     channels=mcapture.NATIVE_CHANNELS, rate=mcapture.NATIVE_RATE,
@@ -4294,6 +4718,7 @@ class DesktopApp(QObject):
                 configure_recovery(streams[track], track,
                                    lambda name=configured_name: resolve_selected(name))
             if want_sys:
+                failing_track = "sys"
                 streams["sys"] = mcapture.CaptureStream(
                     kind="sys", device_index=sys_dev["index"],
                     channels=mcapture.NATIVE_CHANNELS, rate=mcapture.NATIVE_RATE,
@@ -4301,18 +4726,27 @@ class DesktopApp(QObject):
                     on_stall=lambda: sess.close_segment("sys"),
                     on_device_lost=lambda exc: self._on_meeting_device_lost("sys", exc),
                     on_sink_error=lambda exc, elapsed: self._on_meeting_storage_error(
-                        sess, "sys", exc, elapsed))
+                        sess, "sys", exc, elapsed),
+                    # Ризик 5 (аудит 30.07): вартовий тиші лише для системної
+                    # доріжки — саме її Teams/Meet можуть грати повз нас.
+                    on_silence=lambda: self.meeting_audio_state.emit("sys", "silence"),
+                    # Суддівське зауваження 30.07: коли звук зрештою
+                    # з'являється, попередження мусить зникнути — інакше банер
+                    # бреше, що проблема триває, коли її вже нема.
+                    on_silence_resolved=lambda: self.meeting_audio_state.emit(
+                        "sys", "silence_resolved"))
                 configure_recovery(streams["sys"], "sys", mcapture.default_loopback)
             # Послідовне PyAudio.open для N пристроїв може тривати помітно
             # довше за один блок. Даємо всім CaptureStream одну часову опору:
             # затримка старту конкретного пристрою стане тишею на його доріжці.
             clock_origin = time.monotonic()
-            for stream in streams.values():
+            for track, stream in streams.items():
+                failing_track = track
                 set_clock_origin = getattr(stream, "set_clock_origin", None)
                 if callable(set_clock_origin):
                     set_clock_origin(clock_origin)
                 stream.start()
-        except Exception:
+        except Exception as exc:
             self._stop_live_meeting()
             logging.exception("Не вдалося відкрити аудіо-потік наради")
             for s in streams.values():
@@ -4324,7 +4758,18 @@ class DesktopApp(QObject):
                 self._discard_meeting_session(sess, msession.STATUS_ERROR)
             except Exception:
                 logging.exception("Не вдалося прибрати сесію після збою аудіо-потоку")
-            self.tray.notify(tr("meeting_no_loopback"))
+            # Ризик 6 (аудит 30.07) + аудит чесності (31.07, знахідка 1):
+            # окреме зрозуміле повідомлення для кожної причини/доріжки замість
+            # одного загального тексту про системний звук, який брехав людям
+            # зі зіпсованим мікрофоном.
+            is_sys = failing_track == "sys" or failing_track is None
+            if mcapture.is_device_busy_error(exc):
+                self.tray.notify(tr("meeting_device_busy") if is_sys
+                                  else tr("meeting_mic_device_busy"))
+            elif is_sys:
+                self.tray.notify(tr("meeting_no_loopback"))
+            else:
+                self.tray.notify(tr("meeting_mic_start_failed"))
             return False
         self._meeting_session = sess
         self._meeting_streams = streams
@@ -4447,11 +4892,12 @@ class DesktopApp(QObject):
 
     def _discard_meeting_session(self, sess, status):
         """Close and remove a cancelled or never-started plaintext session."""
-        from whisper_core.meeting import session as msession
+        from whisper_core.meeting import audit_log, session as msession
         try:
             sess.finalize(status)
         finally:
-            msession.delete_session(sess.dir, self._meetings_root())
+            with audit_log.deletion_barrier(sess.dir):
+                msession.delete_session(sess.dir, self._meetings_root())
 
     def set_meeting_encryption(self, enabled: bool) -> bool:
         """Enable encryption and migrate completed legacy sessions before saving."""
@@ -4873,22 +5319,87 @@ class DesktopApp(QObject):
         return freed
 
     def delete_meeting(self, session_id):
-        """Повне незворотне видалення сесії (аудіо + транскрипт + meeting.json)."""
+        """Best-effort м'яке видалення наради: тека переїжджає в кошик
+        (``sessions/.trash/``) замість негайного rmtree — «Повернути» у тості
+        (``restore_meeting``) відновлює її на місці. Фізично зникає лише
+        застарілий вміст кошика (``list_meetings`` прибирає його при
+        відкритті сторінки)."""
+        failures = []
+        session_dir = None
+        self._last_trashed_meeting = None
         try:
             from whisper_core.meeting import session as msession
             if not msession.is_safe_session_id(session_id):
                 logging.warning("delete_meeting: небезпечний id %r — відмова", session_id)
-                return
+                return ("meeting_delete_step_files",)
             root = self._meetings_root()
-            msession.delete_session(root / session_id, root)
-            # прибрати pending-центроїди цієї наради (біометрія не лишається сиротою)
-            try:
-                from whisper_core.meeting import voice_memory
-                voice_memory.delete_pending_centroids(self.profile, str(session_id))
-            except Exception:
-                logging.exception("Не вдалося прибрати voice_pending наради %s", session_id)
+            session_dir = root / session_id
+            from whisper_core import trash as mtrash
+            from whisper_core.meeting import audit_log
+            # Той самий барʼєр, що й раніше перед rmtree (_discard_meeting_session):
+            # tombstone + lock серіалізує з паралельним append_event, інакше
+            # straggler-writer, що допише подію ПІСЛЯ переносу в кошик, мовчки
+            # відроджує фантомну теку через mkdir(parents=True) в append_event.
+            with audit_log.deletion_barrier(session_dir):
+                self._last_trashed_meeting = mtrash.soft_delete(session_dir, root)
         except Exception:
             logging.exception("Не вдалося видалити нараду %s", session_id)
+        if session_dir is None:
+            failures.append("meeting_delete_step_files")
+        else:
+            try:
+                session_dir.lstat()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                failures.append("meeting_delete_step_files")
+            else:
+                failures.append("meeting_delete_step_files")
+
+        # Прибираємо pending-центроїди незалежно від результату файлів, але не
+        # приховуємо частковий збій: UI покаже кожну невдалу частину.
+        try:
+            from whisper_core.meeting import voice_memory
+            if not voice_memory.delete_pending_centroids(
+                    self.profile, str(session_id)):
+                failures.append("meeting_delete_step_voice_memory")
+        except Exception:
+            logging.exception("Не вдалося прибрати voice_pending наради %s", session_id)
+            failures.append("meeting_delete_step_voice_memory")
+        return tuple(failures)
+
+    def restore_meeting(self, trashed_dir=None):
+        """Повернути нараду з кошика («Повернути» у тості після видалення).
+
+        Без аргументу — відновлює останню видалену цим сеансом (стан тосту).
+        Конфлікт імені на місці — не затираємо, ``trash.restore`` додає суфікс.
+        Повертає новий шлях сесії або None, якщо повертати нічого/не вдалось.
+        """
+        trashed_dir = trashed_dir or self._last_trashed_meeting
+        if trashed_dir is None:
+            return None
+        try:
+            from whisper_core import trash as mtrash
+            from whisper_core.meeting import audit_log
+            # Оригінальна назва — до restore(), бо той прибирає trash_info.json.
+            original = mtrash.original_name(trashed_dir)
+            restored = mtrash.restore(trashed_dir, self._meetings_root())
+            # Тека фізично на місці — знімаємо tombstone, інакше журнал
+            # відновленої наради більше НІКОЛИ не прийме append_event.
+            audit_log.clear_deletion_barrier(restored)
+            if restored.name != original:
+                # Конфлікт імені: відновлено як "X (2)", а .X.audit.deleted
+                # лишився б осиротілим назавжди — новоживу "X" він не блокує
+                # (identity-перевірка рятує), але то сміття. root/original тут
+                # фізично існує — саме він і викликав конфлікт _unique_dir.
+                audit_log.clear_deletion_barrier(
+                    self._meetings_root() / original)
+        except Exception:
+            logging.exception("Не вдалося повернути нараду з кошика %s", trashed_dir)
+            return None
+        if trashed_dir == self._last_trashed_meeting:
+            self._last_trashed_meeting = None
+        return restored
 
     def recover_meeting(self, session_id):
         """Осиротілий capture → відновити лише WAV-файли, без автоматичної ASR."""
@@ -5001,6 +5512,28 @@ class DesktopApp(QObject):
         self._bundle_audit_log(session_dir, output)
         return result
 
+    def save_meeting_mix(self, session_id, output, track_volumes: dict) -> Path:
+        """feature/save-mix-balance: зберегти зведення наради з ПОТОЧНИМ балансом
+        мікшера плеєра (гучність/mute/соло на доріжку) в окремий WAV поруч.
+
+        Рішення власника про монтаж проти доказовості: оригінальні mic.wav/sys.wav
+        НІКОЛИ не чіпаються (лише читаються), зведення — новий похідний файл за
+        шляхом, який обрав користувач. Подія exported у журналі цілісності фіксує
+        коефіцієнти балансу — журнал і далі посилається на оригінали, не на мікс."""
+        from whisper_core.meeting.media import export_balanced_wav
+        tracks = self.meeting_audio_paths(session_id)
+        order = list(tracks)
+        weights = [float(track_volumes.get(key, 0.0)) for key in order]
+        result = export_balanced_wav(
+            [tracks[key] for key in order], output, weights)
+        session_dir = self._meeting_session_dir(session_id)
+        _audit_event(session_dir, "exported",
+                     note={"kind": "audio_mix_balanced",
+                           "volumes": {key: weights[i] for i, key in enumerate(order)},
+                           "name": Path(output).name})
+        self._bundle_audit_log(session_dir, output)
+        return result
+
     def log_meeting_export(self, session_id, kind: str, output) -> None:
         """feature/chain-of-custody: зафіксувати експорт транскрипту (.txt/.md) у
         журналі й покласти копію журналу поряд із файлом."""
@@ -5051,7 +5584,8 @@ class DesktopApp(QObject):
         експорту фіксуємо в журналі окремою подією ПІСЛЯ складання."""
         from whisper_core.meeting import evidence
         session_dir = self._meeting_session_dir(session_id)
-        pkg = evidence.export_evidence(session_dir, out_zip, app_version=__version__)
+        pkg = evidence.export_evidence(
+            session_dir, out_zip, app_version=DISPLAY_VERSION)
         _audit_event(session_dir, "exported",
                      note={"kind": "evidence", "name": Path(out_zip).name})
         return pkg
@@ -5191,6 +5725,11 @@ class DesktopApp(QObject):
         except Exception:
             return []
         root = self._meetings_root()
+        try:
+            from whisper_core import trash as mtrash
+            mtrash.purge_expired(root)
+        except Exception:
+            logging.exception("Не вдалося прибрати застарілий кошик нарад")
         try:
             live_ids = self._live_meeting_ids()
             for orphan in msession.find_orphans(root):
@@ -5570,18 +6109,23 @@ class DesktopApp(QObject):
         self.meeting_state.emit("idle")
 
     def _on_meeting_storage_error(self, sess, track, exc, elapsed):
-        """Callback capture-потоку для ENOSPC: не зупиняємо читач, але одразу
-        лишаємо стійку позначку в session meta та гучний сигнал у GUI."""
-        logging.error("Закінчилось місце під час наради (%s): %s", track, exc)
-        try:
-            sess.mark_storage_error(track, elapsed)
-        except Exception:
-            # Запис meta теж може не вдатись на повному диску; попередження в UI
-            # однаково мусить дійти, а audio capture лишається керованим.
-            logging.exception("Не вдалося позначити ENOSPC у meeting.json")
-        self.meeting_storage_warning.emit(sess.id, float(elapsed))
-        minute = max(1, int(float(elapsed) // 60) + 1)
-        self.transcription_error.emit(tr("meeting_storage_full", minute=minute))
+        """Стійкий збій sink: capture триває, а банер і тост чесно показують втрату."""
+        disk_full = isinstance(exc, OSError) and exc.errno == errno.ENOSPC
+        if disk_full:
+            logging.error("Закінчилось місце під час наради (%s): %s", track, exc)
+            try:
+                sess.mark_storage_error(track, elapsed)
+            except Exception:
+                # Запис meta теж може не вдатись на повному диску; попередження в
+                # UI однаково мусить дійти, а audio capture лишається керованим.
+                logging.exception("Не вдалося позначити ENOSPC у meeting.json")
+            minute = max(1, int(float(elapsed) // 60) + 1)
+            message = tr("meeting_storage_full", minute=minute)
+        else:
+            logging.error("Запис доріжки наради не вдався (%s): %s", track, exc)
+            message = tr("meeting_storage_write_failed")
+        self.meeting_storage_warning.emit(sess.id, float(elapsed), message)
+        self.transcription_error.emit(message)
 
     def _on_meeting_audio_state(self, track: str, state: str):
         diagnostic_event("meeting_audio_state", track=track, state=state)
@@ -5592,6 +6136,15 @@ class DesktopApp(QObject):
             return
         if state == "reconnected":
             self.tray.notify(tr("meeting_mic_reconnected", track=track))
+            return
+        if state == "silence":
+            # Ризик 5: capture триває, це лише попередження — нараду НЕ зупиняємо.
+            self.tray.notify(tr("meeting_sys_silence_warning"))
+            return
+        if state == "silence_resolved":
+            # Звук з'явився після попередження — картка сама ховає банер
+            # (meeting.py._on_audio_state); тут лише слід у журналі через
+            # diagnostic_event на початку методу, без окремого тосту.
             return
         if state != "failed" or not self._meeting_active:
             return
@@ -5751,7 +6304,8 @@ class DesktopApp(QObject):
         try:
             self.window.files.add_files([str(path)])
         except Exception:
-            logging.exception("Не вдалося поставити запис у чергу: %s", path)
+            logging.exception("Не вдалося поставити запис у чергу: %s",
+                              anonymize_path(path))
 
     def transcribe_audio_range(self, path, start_s: float, end_s: float):
         """Експортувати виділення окремим WAV і віддати спільній черзі «Файли».
@@ -5767,7 +6321,8 @@ class DesktopApp(QObject):
                 path, out, start_s, end_s,
                 lambda clip: self.window.files.add_files([clip]))
         except Exception:
-            logging.exception("Не вдалося поставити виділення в чергу: %s", path)
+            logging.exception("Не вдалося поставити виділення в чергу: %s",
+                              anonymize_path(path))
             return None
 
     def redact_transcript(self, audio_path, start_s: float, end_s: float, *, marker: str, note: str,
@@ -6101,7 +6656,7 @@ class DesktopApp(QObject):
                 self.file_done.emit(jid, tr("files_no_model_banner"),
                                     FileStatus.ERROR, [], [])
             except Exception as e:
-                logging.exception("Помилка транскрипції файлу %s", path)
+                logging.exception("Помилка транскрипції файлу %s", anonymize_path(path))
                 if is_cuda_runtime_error(e):
                     body = tr("app_cuda_error")
                 else:
@@ -6429,6 +6984,16 @@ def _install_qt_translation(app):
         logging.debug("Переклад Qt не підключено", exc_info=True)
 
 
+def _instance_channel_name() -> str:
+    """Ім'я каналу single-instance. Продуктовий процес — завжди "balachky-single"
+    (літерал, не змінювати: оновлення поверх старої версії покладається на
+    незмінність цього імені). Тестові/offscreen процеси додають суфікс з
+    BALACHKY_INSTANCE_SUFFIX (виставляє tests/_isolation.py), щоб не займати
+    робочий канал — інакше живий unittest-гейт відбиває реальний запуск
+    власника (кейс 31.07)."""
+    return "balachky-single" + os.environ.get("BALACHKY_INSTANCE_SUFFIX", "")
+
+
 def main():
     from .crash import setup_logging, install_excepthooks
     setup_logging()          # найпершим: жоден стартовий збій — без сліду в лозі
@@ -6436,15 +7001,22 @@ def main():
     # DPI: без PassThrough масштаби 125/150% округлюються → розмиття
     if sys.platform == "win32":
         import ctypes as _ct
+        from ctypes import wintypes as _wt
         try:
-            _ct.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor DPI
+            shcore = _ct.windll.shcore
+            shcore.SetProcessDpiAwareness.argtypes = (_ct.c_int,)
+            shcore.SetProcessDpiAwareness.restype = _ct.c_long
+            shcore.SetProcessDpiAwareness(2)  # per-monitor DPI
         except Exception:
             pass
         try:
             # власна ідентичність у таскбарі (інакше вікно групується як python.exe);
             # обов'язково ДО створення QApplication
-            _ct.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "Zhukovets.Balachky")
+            shell32 = _ct.windll.shell32
+            shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = (
+                _wt.LPCWSTR,)
+            shell32.SetCurrentProcessExplicitAppUserModelID.restype = _ct.c_long
+            shell32.SetCurrentProcessExplicitAppUserModelID("Zhukovets.Balachky")
         except Exception:
             pass
     from PySide6.QtCore import Qt
@@ -6466,9 +7038,10 @@ def main():
     # і лише тоді слухаємо самі. Так DesktopApp (а з ним і PTT-хук) створюється
     # ЛИШЕ після смерті старого — двох клавіатурних хуків одночасно не існує.
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
+    channel = _instance_channel_name()
     relaunch = "--relaunch" in sys.argv
     probe = QLocalSocket()
-    probe.connectToServer("balachky-single")
+    probe.connectToServer(channel)
     if probe.waitForConnected(300):
         if not relaunch:
             probe.write(b"show")
@@ -6488,22 +7061,22 @@ def main():
             QTimer.singleShot(100, loop.quit)
             loop.exec()
             again = QLocalSocket()
-            again.connectToServer("balachky-single")
+            again.connectToServer(channel)
             alive = again.waitForConnected(100)
             again.abort()
             if not alive:
                 break        # старий вивільнив сервер — можна слухати
         # вичерпаний дедлайн (старий завис) → форсуємо нижче через removeServer
-    QLocalServer.removeServer("balachky-single")  # мертвий канал після краху / форс
+    QLocalServer.removeServer(channel)  # мертвий канал після краху / форс
     server = QLocalServer(app)
-    server.listen("balachky-single")
+    server.listen(channel)
 
     # Перший запуск → майстер налаштування (модель/мова/докачка).
     # Три сигнали (баг «чистої деінсталяції» + скарга власника 25.07):
     #   • реєстровий прапорець onboarded МІГ пережити видалення, тож майстер
     #     показуємо і коли нема config.toml;
     #   • версія, на якій майстер востаннє пройдено, відрізняється від
-    #     поточної whisper_core.__version__ — оновлення додало новий крок
+    #     поточної DISPLAY_VERSION — оновлення додало новий крок
     #     («Додаткові можливості»), інакше людина його ніколи не побачить.
     # Дев-кейс: env WHISPER_TYPER_MODELS означає «моделі вже є у дев-кеші» —
     # вважаємо onboarded і майстер не показуємо. Логіка — _should_show_onboarding.
@@ -6514,16 +7087,16 @@ def main():
     config_exists_at_start = paths.config_path().exists()
     if _should_show_onboarding(settings, config_exists_at_start,
                                os.environ.get("WHISPER_TYPER_MODELS"),
-                               current_version=__version__):
+                               current_version=DISPLAY_VERSION):
         is_repeat = _is_onboarding_repeat(settings, config_exists_at_start)
         wizard = _build_onboarding_wizard(
             is_repeat, Config.load() if is_repeat else None)
         if wizard.exec():
             cfg = Config.load()
             model_skipped = _apply_onboarding_result(
-                cfg, wizard, settings, current_version=__version__)
+                cfg, wizard, settings, current_version=DISPLAY_VERSION)
             logging.info("Перше налаштування завершено: модель=%s, тека=%s, мова=%s",
-                         cfg.model_name, cfg.model_dir, cfg.language)
+                         cfg.model_name, anonymize_path(cfg.model_dir), cfg.language)
             if model_skipped:
                 # Слабкий інтернет: людина натиснула «Пропустити». Налаштування вже
                 # збережені вище, тож наступний запуск не починає майстер з нуля.
@@ -6551,7 +7124,8 @@ def main():
             # завантажити її нижче впаде у _recover_engine_on_gui, де відмова
             # від докачки дає NullEngine — застосунок стартує чесно без
             # мовного пакета). «Більше не показувати» — окремо нижче.
-            _handle_onboarding_dismissed(wizard, settings, __version__)
+            _handle_onboarding_dismissed(
+                wizard, settings, DISPLAY_VERSION)
             logging.info("Перше налаштування скасовано — старт без мовного пакета")
 
     # Splash «Прокидання» + винос завантаження рушія у потік: показуємо заставку,
@@ -6655,7 +7229,7 @@ def main():
             _min_loop.exec()
 
     dapp = DesktopApp(app, engine, cfg, cuda_fallback)
-    diagnostic_event("application_started", version=__version__, config_path=str(paths.config_path()),
+    diagnostic_event("application_started", version=DISPLAY_VERSION,
                      model=_diagnostic_attr(cfg, "model_name"),
                      device=_diagnostic_attr(cfg, "device"),
                      compute=_diagnostic_attr(cfg, "compute_type"))
@@ -6674,10 +7248,10 @@ def main():
         if splash is not None:
             splash.finish_to(dapp.window)    # crossfade заставки у головне вікно
         dapp.show_window()
-        # картка у стрічку через сигнал; «тест» непевний (<0.5) → перевірка підсвітки,
-        # «санетів» замінено терміном → у final збігу нема, підсвітки не буде
-        dapp.transcribed.emit("тест санетів", "тест Sonnet",
-                              [("тест", 0.42), ("санетів", 0.31)], None)
+        # картка у стрічку через сигнал; «проба» непевна (<0.5) → перевірка підсвітки,
+        # «звуку» замінено на «слова» → у final збігу нема, підсвітки не буде
+        dapp.transcribed.emit("проба звуку", "проба слова",
+                              [("проба", 0.42), ("звуку", 0.31)], None)
         QTimer.singleShot(3000, app.quit)
         mem = "on" if dapp.profile.memory_enabled else "off"
         cards = dapp.window.dictation._feedbox.count() - 1  # мінус stretch

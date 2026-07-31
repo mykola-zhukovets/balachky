@@ -88,10 +88,18 @@ class DictationQueueTest(unittest.TestCase):
 
         q = DictationQueue(proc, max_items=100, max_seconds=50.0)
         try:
-            self.assertIsNotNone(q.enqueue("a", None, None, duration_s=30.0))
+            self.assertIsNotNone(q.enqueue("a", None, None, duration_s=25.0))
             self.assertTrue(started.wait(2.0))          # job1 active → не в очікуванні
-            self.assertIsNotNone(q.enqueue("b", None, None, duration_s=30.0))  # очікує 30с
-            self.assertIsNotNone(q.enqueue("c", None, None, duration_s=30.0))  # очікує 60с (≥50)
+            self.assertIsNotNone(q.enqueue("b", None, None, duration_s=20.0))
+            self.assertIsNotNone(q.enqueue("c", None, None, duration_s=35.0))
+            with q._cv:
+                waiting = [
+                    (job.chunks, job.duration_s) for job in q._q]
+                waiting_seconds = q._waiting_seconds
+            self.assertEqual(waiting, [("b", 20.0), ("c", 35.0)])
+            self.assertEqual(waiting_seconds, 55.0)
+            self.assertEqual(
+                waiting_seconds, sum(duration for _, duration in waiting))
             self.assertTrue(q.is_full())
             self.assertIsNone(q.enqueue("d", None, None, duration_s=30.0))     # понад ліміт
             release.set()

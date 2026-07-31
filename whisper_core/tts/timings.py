@@ -26,7 +26,7 @@ def absolute_codepoint(source_start_cp: int, raw_offset: int) -> int:
 
 def codepoint_to_utf16(text: str, cp_offset: int) -> int:
     """code-point-offset → UTF-16-offset за ПОВНИМ snapshot тексту редактора
-    (умова). Один astral-символ перед словом інакше зсунув би підсвічування."""
+    (за умовою рецензії). Один astral-символ перед словом інакше зсунув би підсвічування."""
     text = text or ""
     cp_offset = max(0, min(int(cp_offset), len(text)))
     return len(text[:cp_offset].encode("utf-16-le")) // 2

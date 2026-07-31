@@ -15,6 +15,7 @@ import os
 import re
 import stat
 import tempfile
+import threading
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,8 @@ _SAFE_ID_RE = re.compile(r"^[a-z0-9_]+$")
 _READY = "READY"
 MANIFEST_NAME = "voice.json"
 _REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+_INTEGRITY_CACHE = {}
+_INTEGRITY_CACHE_LOCK = threading.Lock()
 
 
 class VoiceDownloadError(RuntimeError):
@@ -55,6 +58,8 @@ class VoicePreset:
 #   • radtts — модель у ./models/... (tts_uk качає CWD-відносно), а вокодер у
 #     HF-кеш-структурі hf/models--…/snapshots/<commit>/… (hf_hub_download офлайн).
 # Розмір/SHA беруться лише з пресета — виправлення точкове.
+_STYLETTS2_COMMIT = "2646553e1f9a8c832480e3ad5ccb6839245af584"
+_RADTTS_COMMIT = "b7c22bcc80f90cd7a13f7f6ca649a991bbe73ca3"
 _VOCOS_COMMIT = "e7d50512f731887429abfa9ba1e82d1a76f2360d"
 _VOCOS_SNAP = ("hf/models--patriotyk--vocos-mel-hifigan-compat-44100khz/"
                "snapshots/" + _VOCOS_COMMIT)
@@ -63,13 +68,14 @@ VOICE_PRESETS: "dict[str, VoicePreset]" = {
         id="styletts2_ua", engine_kind="styletts2", languages=("uk",),
         files=(
             ("https://huggingface.co/patriotyk/styletts2_ukrainian_single/"
-             "resolve/main/config.yml", "config.yml", 1_000,
+             f"resolve/{_STYLETTS2_COMMIT}/config.yml", "config.yml", 1_000,
              "5c426957b2d5578e00869330c1949003092933cac2c42a2dcbbbea84c6774463"),
             ("https://huggingface.co/patriotyk/styletts2_ukrainian_single/"
-             "resolve/main/pytorch_model.bin", "pytorch_model.bin", 700_000_000,
+             f"resolve/{_STYLETTS2_COMMIT}/pytorch_model.bin",
+             "pytorch_model.bin", 700_000_000,
              "25e78d882ec4ee5a8a361749004edf6914137760f2be33a71ea24ce22da1a24a"),
             ("https://huggingface.co/patriotyk/styletts2_ukrainian_single/"
-             "resolve/main/style.pt", "style.pt", 1_500,
+             f"resolve/{_STYLETTS2_COMMIT}/style.pt", "style.pt", 1_500,
              "f181646626df52fdcf749e93a311686ffb2eaeae8112be0005a8d6efa7dc5cc9"),
         ),
         approx_size_bytes=748_852_000,
@@ -80,15 +86,18 @@ VOICE_PRESETS: "dict[str, VoicePreset]" = {
     "radtts_uk": VoicePreset(
         id="radtts_uk", engine_kind="radtts", languages=("uk",),
         files=(
-            ("https://huggingface.co/Yehor/radtts-uk/resolve/main/"
-             "radtts-pp-dap-model/model_dap_84000_state.pt",
+            ("https://huggingface.co/Yehor/radtts-uk/"
+             f"resolve/{_RADTTS_COMMIT}/radtts-pp-dap-model/"
+             "model_dap_84000_state.pt",
              "models/radtts-pp-dap-model/model_dap_84000_state.pt", 900_000_000,
              "affc1a3f4f59b864c7e19711a802a0a613955f7fe411046c48e08235fa45ead2"),
             ("https://huggingface.co/patriotyk/vocos-mel-hifigan-compat-44100khz/"
-             "resolve/main/config.yaml", _VOCOS_SNAP + "/config.yaml", 400,
+             f"resolve/{_VOCOS_COMMIT}/config.yaml",
+             _VOCOS_SNAP + "/config.yaml", 400,
              "0d970f5cdc1913730c417b49e476bb09bb8b874583d113f71a7f10c8bb3a4b7d"),
             ("https://huggingface.co/patriotyk/vocos-mel-hifigan-compat-44100khz/"
-             "resolve/main/pytorch_model.bin", _VOCOS_SNAP + "/pytorch_model.bin",
+             f"resolve/{_VOCOS_COMMIT}/pytorch_model.bin",
+             _VOCOS_SNAP + "/pytorch_model.bin",
              50_000_000,
              "310df58f31cd77e56c494df8389f7ebd57bf7b594c585d9221eb9fe888785572"),
         ),
@@ -160,6 +169,18 @@ class ResolvedVoice:
         from pathlib import Path
         return Path(self.manifest_path).exists()
 
+    def integrity_available(self) -> bool:
+        """Повна pre-use перевірка голосу безпосередньо перед передачею sidecar-у."""
+        voice_dir = Path(self.manifest_path)
+        if self.downloadable:
+            return voice_available(self.id, root=voice_dir.parent)
+        try:
+            from .security import validate_voice_pack
+            manifest = validate_voice_pack(voice_dir)
+            return manifest.kind == self.engine_kind
+        except (OSError, ValueError):
+            return False
+
 
 def resolve(active_voice_id, lang, root=None, custom_list=None):
     """active_voice_id + мова тексту → ResolvedVoice | None | LANGUAGE_MISMATCH.
@@ -225,6 +246,60 @@ def _verify_file(path: Path, min_bytes: int, sha256) -> bool:
         return False
 
 
+def _integrity_fingerprint(vdir: Path, preset: VoicePreset):
+    """Метадані всіх asset-ів: кеш вважає файл незмінним, доки між перевірками
+    збігаються size і mtime_ns. Атакер із правом запису в теку голосу може зберегти
+    ці значення після підміни; повний захист вимагав би свідомо відкинутого заради
+    швидкості робочого шляху повторного SHA-хешування на кожне використання."""
+    fingerprint = []
+    for (_url, filename, min_bytes, sha256) in preset.files:
+        path = vdir / filename
+        if _is_reparse(path):
+            return None
+        try:
+            stat_result = path.stat()
+            if not path.is_file() or stat_result.st_size < int(min_bytes or 0):
+                return None
+        except OSError:
+            return None
+        fingerprint.append((
+            filename, int(min_bytes or 0), sha256,
+            stat_result.st_size, stat_result.st_mtime_ns))
+    return tuple(fingerprint)
+
+
+def _preset_integrity_available(vdir: Path, preset: VoicePreset) -> bool:
+    if not preset.files:
+        return False
+    try:
+        if not (vdir / _READY).is_file():
+            return False
+    except OSError:
+        return False
+    scope = (os.path.abspath(os.fspath(vdir)), preset.id)
+    with _INTEGRITY_CACHE_LOCK:
+        fingerprint = _integrity_fingerprint(vdir, preset)
+        if fingerprint is None:
+            _INTEGRITY_CACHE.pop(scope, None)
+            return False
+        cached = _INTEGRITY_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        valid = all(
+            _verify_file(vdir / filename, min_bytes, sha256)
+            for (_url, filename, min_bytes, sha256) in preset.files)
+        if _integrity_fingerprint(vdir, preset) != fingerprint:
+            return False
+        _INTEGRITY_CACHE[scope] = (fingerprint, valid)
+        return valid
+
+
+def _forget_integrity_cache(vdir: Path, voice_id: str) -> None:
+    scope = (os.path.abspath(os.fspath(vdir)), voice_id)
+    with _INTEGRITY_CACHE_LOCK:
+        _INTEGRITY_CACHE.pop(scope, None)
+
+
 def voice_manifest_dict(preset: "VoicePreset") -> dict:
     """voice.json для встановленого голосу-пресета (читають адаптери, зокрема sherpa)."""
     return {
@@ -234,23 +309,28 @@ def voice_manifest_dict(preset: "VoicePreset") -> dict:
     }
 
 
+def voice_downloadable(voice_id) -> bool:
+    """Чи можна реально завантажити цей пресет у цій збірці (файли вже запіновано
+    URL+SHA). Порожній ``files`` (sherpa-пресети Хвилі 3 без живої звірки) → False:
+    кнопка «Завантажити» має бути неактивною з чесним поясненням, а не мовчки
+    падати з VoiceDownloadError на кожен клік (рецензія: тиха відмова)."""
+    vid = safe_voice_id(voice_id)
+    if vid is None or vid not in VOICE_PRESETS:
+        return False
+    return bool(VOICE_PRESETS[vid].files)
+
+
 def voice_available(voice_id, root=None) -> bool:
-    """Голос готовий: є READY-маркер і всі файли пресета проходять розмір-звірку
-    (SHA звіряється РАЗ при встановленні — наявність READY це свідчить)."""
+    """Голос готовий до використання: READY + min_bytes + SHA всіх asset-ів.
+
+    SHA рахується один раз на процес і повторно лише після зміни size/mtime файла.
+    """
     vid = safe_voice_id(voice_id)
     if vid is None or vid not in VOICE_PRESETS:
         return False
     root = paths.tts_voices_dir() if root is None else root
     vdir = Path(root) / vid
-    try:
-        if not (vdir / _READY).is_file():
-            return False
-    except OSError:
-        return False
-    for (_url, filename, min_bytes, _sha) in VOICE_PRESETS[vid].files:
-        if not _verify_file(vdir / filename, min_bytes, None):
-            return False
-    return True
+    return _preset_integrity_available(vdir, VOICE_PRESETS[vid])
 
 
 def _download_file(url: str, dest: Path, progress_cb=None, cancel_check=None) -> None:
@@ -322,6 +402,7 @@ def download_and_install(voice_id, root=None, progress_cb=None, cancel_check=Non
                 os.replace(backup, target)
             raise
         stage = None
+        _forget_integrity_cache(target, vid)
         if backup is not None:
             import shutil
             shutil.rmtree(backup, ignore_errors=True)
@@ -342,6 +423,7 @@ def delete_voice(voice_id, root=None) -> bool:
         return False
     import shutil
     shutil.rmtree(vdir, ignore_errors=True)
+    _forget_integrity_cache(vdir, vid)
     return not vdir.exists()
 
 
@@ -375,7 +457,7 @@ _CUSTOM_PREFIX = "custom_"
 # ВЛАСНІ голоси (voice-pack) дозволені ЛИШЕ безпечних рушіїв: sherpa вантажить ONNX
 # через валідований combat-path (єдиний вхід). styletts2/radtts делегують tensor-load
 # сторонній бібліотеці БЕЗ гарантованого weights_only=True — для власних паків заборонено
-# (§4.4, суд хвилі 3). Пресетні styletts2/radtts (SHA-довірений перелік) — як є.
+# (§4.4, рецензія хвилі 3). Пресетні styletts2/radtts (SHA-довірений перелік) — як є.
 SAFE_CUSTOM_KINDS = frozenset({"sherpa"})
 
 
@@ -401,7 +483,7 @@ class CustomVoice:
         if not _SAFE_ID_RE.match(self.id) or self.id in VOICE_PRESETS:
             return False
         # ВЛАСНІ голоси — лише безпечні рушії (не довільний ENGINE_REGISTRY): styletts2/
-        # radtts обходять weights_only через бібліотеку (суд хвилі 3).
+        # radtts обходять weights_only через бібліотеку (рецензія хвилі 3).
         if self.kind not in SAFE_CUSTOM_KINDS:
             return False
         if self.source == CUSTOM_KIND_LOCAL:
@@ -466,7 +548,7 @@ def custom_voice_from_pack(pack_dir, *, label="") -> "CustomVoice":
     manifest = validate_voice_pack(pack_dir)      # безпекова перевірка (weights_only/YAML/шляхи)
     if manifest.kind not in SAFE_CUSTOM_KINDS:
         # styletts2/radtts власним паком → відхилити на ДОДАВАННІ (не на пізнішому
-        # load), чесний текст (§4.4, суд хвилі 3)
+        # load), чесний текст (§4.4, рецензія хвилі 3)
         raise VoicePackError("tts_voice_custom_engine",
                              f"тип {manifest.kind!r} не дозволений для власних голосів")
     return CustomVoice(

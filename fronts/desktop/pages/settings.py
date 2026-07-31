@@ -9,6 +9,7 @@ import html
 import json
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -25,7 +26,12 @@ from PySide6.QtWidgets import (
 
 import qtawesome as qta
 
-from whisper_core import __version__, updates, cuda_runtime, profiles as wc_profiles
+from whisper_core import (
+    DISPLAY_VERSION,
+    updates,
+    cuda_runtime,
+    profiles as wc_profiles,
+)
 from whisper_core import paths as wc_paths
 from whisper_core import netlog   # доказова офлайновість: журнал вихідних з'єднань
 from whisper_core.config import (            # feature/audio-qol + audio-center: дефолти
@@ -41,10 +47,10 @@ from .. import motion
 from .. import links
 from ..chip_popover import make_slider
 from ..autostart import is_enabled, enable, disable
-from ..crash import open_log_dir, copy_diagnostics
+from ..crash import open_log_dir, copy_diagnostics, anonymize_path
 from ..glass import GlassButton, TipToolButton, sync_status_animations
 from ..hotkey import normalize_name, pretty
-from ..i18n import tr, current_language, human_size
+from ..i18n import tr, current_language, human_size, format_decimal
 from ..onboarding import GpuDownloadWorker, _reap_worker
 from ..recorder import list_input_devices, list_output_devices
 from .. import theme   # нічний режим: ⓘ-іконки читають палітру
@@ -99,6 +105,12 @@ _MIC_VERDICT_KEYS = {
     "error": "set_mic_error",
 }
 
+_SCREEN_PROTECTION_STATE_KEYS = {
+    "active": "set_screen_protection_state_active",
+    "unsupported": "set_screen_protection_state_unsupported",
+    "failed": "set_screen_protection_state_failed",
+}
+
 
 class InfoButton(TipToolButton):
     """ⓘ-кнопка з ГАРАНТОВАНИМ показом підказки при наведенні — тонкий підклас
@@ -115,7 +127,7 @@ def info_hint(text_key: str, clickable: bool = False,
     """
     text = tr(text_key)
     btn = InfoButton(text)
-    btn.setFixedSize(22, 22)
+    btn.setFixedSize(24, 24)   # мін. 24×24 для клікабельних цілей (WCAG 2.5.8)
     btn.setAutoRaise(True)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setFocusPolicy(Qt.StrongFocus)
@@ -474,7 +486,7 @@ class NetworkLogDialog(QDialog):
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionMode(QAbstractItemView.NoSelection)
-        table.setFocusPolicy(Qt.NoFocus)
+        table.setFocusPolicy(Qt.StrongFocus)
         hh = table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -542,11 +554,15 @@ class KeyCaptureDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
         cancel = QPushButton(tr("common_cancel"))
-        # NoFocus: інакше Space/Enter із комбінації «клікнув» би фокусну кнопку
-        cancel.setFocusPolicy(Qt.NoFocus)
+        # StrongFocus: безпечно, бо grabKeyboard() (нижче) перехоплює РЕАЛЬНІ
+        # клавіші на рівні вікна незалежно від того, хто у фокусі — вони йдуть
+        # у keyPressEvent діалогу, а не в кнопку, тож Space/Enter із комбінації
+        # кнопку не «клікають». StrongFocus лише робить кнопку видимою для
+        # accessibility-дерева/скрінрідера (30.07 a11y-batch).
+        cancel.setFocusPolicy(Qt.StrongFocus)
         cancel.clicked.connect(self.reject)
         self._save = QPushButton(tr("keycap_save"))
-        self._save.setFocusPolicy(Qt.NoFocus)
+        self._save.setFocusPolicy(Qt.StrongFocus)
         self._save.setEnabled(False)
         self._save.clicked.connect(self._accept)
         btns.addWidget(cancel)
@@ -583,6 +599,13 @@ class KeyCaptureDialog(QDialog):
         down = event_type == "down"
         if down and name == "esc":
             self.reject()
+            return
+        # гола Enter (без модифікатора) підтверджує вже captured комбінацію —
+        # клавіатурний шлях до Save без миші, той самий патерн, що esc→Cancel.
+        # Безпечно: гола Enter і так невалідна як хоткей (need_mod), тож нічого
+        # бажаного не забирає; Ctrl/Shift/Alt+Enter лишаються captur'абельними.
+        if down and name == "enter" and not self._mods and self._pending:
+            self._accept()
             return
         if name in self._MODS or name == "windows":
             (self._mods.add if down else self._mods.discard)(name)
@@ -685,7 +708,7 @@ class ContextProfileDialog(QDialog):
         self._apps.setPlaceholderText(tr("ctx_dlg_apps_hint"))
         lay.addWidget(self._apps)
         self._take = QPushButton(tr("ctx_take_active"))
-        self._take.setFocusPolicy(Qt.NoFocus)
+        self._take.setFocusPolicy(Qt.StrongFocus)
         self._take.clicked.connect(self._start_take)
         lay.addWidget(self._take)
         apps_hint = QLabel(tr("ctx_dlg_apps_hint"))
@@ -798,7 +821,7 @@ class AutoProfileRuleDialog(QDialog):
         lay.addWidget(self._title)
 
         self._take = QPushButton(tr("auto_take_active"))
-        self._take.setFocusPolicy(Qt.NoFocus)
+        self._take.setFocusPolicy(Qt.StrongFocus)
         self._take.clicked.connect(self._start_take)
         lay.addWidget(self._take)
 
@@ -1296,7 +1319,7 @@ class ProfileImportConfirmDialog(QDialog):
         if info.get("is_newer_version"):
             warn_ver = QLabel(tr("set_backup_warn_newer", archive_ver=info.get("app_version", "")))
             # WARN-акцент: у theme.py немає окремого токена — GOLD_PRESSED уже
-            # застосовується як warn-акцент (glass.py::_tag_accent, суд-3 п.7).
+            # застосовується як warn-акцент (glass.py::_tag_accent, рецензія-3 п.7).
             warn_ver.setStyleSheet(f"color: {theme.GOLD_PRESSED}; font-weight: bold;")
             warn_ver.setWordWrap(True)
             lay.addWidget(warn_ver)
@@ -1368,11 +1391,28 @@ def cleanup_custom_bg_file(cfg) -> None:
 
 
 class SettingsPage(QWidget):
+    _installer_ready_checked = Signal(int, object, object, object)
+
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self._restart_pending = False
+        self._installer_ready_generation = 0
+        self._installer_ready_alive = True
+        self._installer_ready_checked.connect(
+            self._on_installer_ready_checked)
+        self.destroyed.connect(self._on_settings_destroyed)
         cfg = controller.cfg
+
+        # E-бекграунд-докачка (аудит 31.07.2026): картка «AI-протокол» у
+        # ModelsHub реактивно показує «завантажується», навіть коли якісне
+        # качання почалось з іншої сторінки (Нарада / Command Mode).
+        from ..download_manager import DownloadManager
+        _dlmgr = DownloadManager.instance()
+        _dlmgr.started.connect(self._on_download_manager_event)
+        _dlmgr.finished_ok.connect(self._on_download_manager_event)
+        _dlmgr.failed.connect(self._on_download_manager_event)
+        _dlmgr.cancelled.connect(self._on_download_manager_event)
 
         self._tabs = QTabWidget()
         self._tabs.addTab(self._tab_scroll(self._models_hub_group(cfg)),
@@ -1381,7 +1421,10 @@ class SettingsPage(QWidget):
                                            self._corpus_group()),
                           tr("set_tab_recognition"))
         self._tabs.addTab(self._tab_scroll(
-            self._record_group(cfg), self._sound_group(cfg), self._hotkeys_group(cfg)),
+            self._group_dictation_behavior(cfg), self._hotkeys_group(cfg),
+            self._group_text_processing(cfg), self._group_audio_devices(cfg),
+            self._group_audio_processing(cfg), self._group_notifications(cfg),
+            self._group_playback(cfg)),
             tr("set_tab_recording"))
         self._tabs.addTab(self._tab_scroll(
             self._output_group(), self._note_group(cfg), self._context_group(),
@@ -1391,10 +1434,14 @@ class SettingsPage(QWidget):
                                            self._obsidian_group(cfg)),
                           tr("set_tab_meeting"))
         self._tabs.addTab(self._tab_scroll(
-            self._author_group(),
             self._watch_group(cfg), self._backup_group(), self._system_group(cfg),
-            self._protection_group(cfg),
-            self._about_group()), tr("set_tab_system"))
+            self._protection_group(cfg)), tr("set_tab_system"))
+        # «Про програму» — поруч із «Система», без модального вікна (власник:
+        # клік по значку має вести напряму сюди, не спливати окремим вікном).
+        self._tabs.addTab(self._tab_scroll(
+            self._about_hero_group(), self._about_whatsnew_group(),
+            self._about_author_group(), self._about_help_group(),
+            self._about_license_group()), tr("set_tab_about"))
         self._tabs.currentChanged.connect(self._on_tab_changed)
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 26, 20, 0)
@@ -1413,7 +1460,7 @@ class SettingsPage(QWidget):
         content = QWidget()
         col = QVBoxLayout(content)
         col.setContentsMargins(0, 16, 12, 24)
-        col.setSpacing(20)
+        col.setSpacing(theme.GROUP_GAP)   # 32px — повітря між групами (§2 поради)
         for card in cards:
             col.addWidget(card)
         col.addStretch()
@@ -1455,52 +1502,12 @@ class SettingsPage(QWidget):
         self._restart_pending = True
         motion.slide_fade_in(self._restart_host)   # ТЗ п.9
 
-    # --- ПРО АВТОРА ---
-    def _author_group(self):
-        """Компактна картка автора вгорі вкладки «Система» (фідбек Миколи 22.07):
-        підпис «Зробив Микола Жуковець» + два значки-посилання (GitHub і
-        «Підтримати») у тон muted-тексту, тими самими, що в майстрі першого
-        запуску. URL — з єдиного джерела fronts/desktop/links.py."""
-        frame, lay = _card(tr("set_author_eyebrow"))
-        frame.setObjectName("authorCard")
-
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        author = QLabel(tr("onb_author"))
-        author.setWordWrap(True)
-        row.addWidget(author)
-        row.addStretch(1)
-        gh = round_social("fa6b.github", links.GITHUB_URL,
-                          name=tr("author_github_name"),
-                          tooltip=tr("author_github_hint"))
-        gh.setObjectName("authorGithubLink")
-        support = round_social("fa6s.heart", links.SUPPORT_URL,
-                               name=tr("about_support_link"),
-                               tooltip=tr("author_support_hint"))
-        support.setObjectName("authorSupportLink")
-        row.addWidget(gh)
-        row.addWidget(support)
-        lay.addLayout(row)
-
-        note = QLabel(tr("author_support_short"))
-        note.setProperty("muted", True)
-        note.setWordWrap(True)
-        lay.addWidget(note)
-        return frame
-
-    # --- ПРО ПРОГРАМУ ---
-    def _about_group(self):
-        # URL соцмереж (усі 4 задані → усі значки показуються).
-        # Порожнє значення → відповідний значок не малюється.
-        X_URL = "https://x.com/zukovec20653"
-        GITHUB_URL = links.GITHUB_URL           # єдине джерело (fronts/desktop/links.py)
-        FACEBOOK_URL = "https://www.facebook.com/nikolia.zhukowets"
-        INSTAGRAM_URL = "https://www.instagram.com/nikolia.zhukowets/"
-        # підтримати автора: monobank (₴) для України + PrivatBank-конверти ($/€) для іноземців
-        DONATE_UAH = links.SUPPORT_URL          # єдине джерело (fronts/desktop/links.py)
-        DONATE_USD = links.SUPPORT_PRIVAT_USD
-        DONATE_EUR = links.SUPPORT_PRIVAT_EUR
-
+    # --- вкладка «Про програму»: hero (назва, слоган, версія й збірка) ---
+    def _about_hero_group(self):
+        """Верхня картка вкладки «Про програму»: призначення + версія/збірка.
+        Раніше цей текст жив у картці «ПРО ПРОГРАМУ» вкладки «Система» —
+        перенесено сюди без змін формулювань (власник: «навіщо двічі
+        дублювати про автора» — переносимо, не копіюємо)."""
         frame, lay = _card(tr("set_about_eyebrow"))
         lead = QLabel(tr("set_about_lead"))
         lead.setProperty("strong", True)
@@ -1511,9 +1518,72 @@ class SettingsPage(QWidget):
         spaced(body, rich=True)      # опис із <b>/<br> — просторіші рядки, HTML зберегти
         lay.addWidget(body)
 
-        version = QLabel(tr("set_version", ver=__version__))
+        from whisper_core._buildinfo import build_commit
+        version = QLabel(tr("about_version_line", ver=DISPLAY_VERSION,
+                            build=build_commit()))
         version.setProperty("muted", True)
+        version.setWordWrap(True)
         lay.addWidget(version)
+        return frame
+
+    # --- вкладка «Про програму»: що нового в останніх версіях ---
+    def _about_whatsnew_group(self):
+        """Кілька останніх версій із CHANGELOG.md (не весь файл — лише
+        поточна й попередні, людяною мовою обраної мови інтерфейсу)."""
+        from whisper_core import changelog as wc_changelog
+
+        frame, lay = _card(tr("about_whatsnew_eyebrow"))
+        path = wc_paths.bundled_doc("CHANGELOG.md")
+        entries = (wc_changelog.latest_entries(path, lang=current_language(),
+                                               max_versions=2)
+                   if path is not None else [])
+        if not entries:
+            empty = QLabel(tr("about_whatsnew_empty"))
+            empty.setProperty("muted", True)
+            empty.setWordWrap(True)
+            lay.addWidget(empty)
+        for entry in entries:
+            title = QLabel(tr("about_whatsnew_version_date",
+                              ver=entry["version"], date=entry["date"]))
+            title.setProperty("strong", True)
+            lay.addWidget(title)
+            for item in entry["items"]:
+                bullet = QLabel("• " + item)
+                bullet.setWordWrap(True)
+                bullet.setTextFormat(Qt.RichText)
+                lay.addWidget(bullet)
+
+        full_row = QHBoxLayout()
+        full_btn = QPushButton(tr("about_whatsnew_view_full"))
+        full_btn.setAccessibleName(tr("about_whatsnew_view_full"))
+        full_btn.clicked.connect(self._open_changelog)
+        full_row.addWidget(full_btn)
+        full_row.addStretch()
+        lay.addLayout(full_row)
+        return frame
+
+    def _open_changelog(self, _checked=False):
+        """Відкрити повний CHANGELOG.md у системному переглядачі."""
+        p = wc_paths.bundled_doc("CHANGELOG.md")
+        if p is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+
+    # --- вкладка «Про програму»: автор і підтримка ---
+    def _about_author_group(self):
+        """Автор, контакти й реквізити підтримки — об'єднана картка (раніше
+        розпорошена між картками «ПРО АВТОРА» і «ПРО ПРОГРАМУ» вкладки
+        «Система»)."""
+        X_URL = links.X_URL                     # єдине джерело (fronts/desktop/links.py)
+        GITHUB_URL = links.GITHUB_URL           # єдине джерело (fronts/desktop/links.py)
+        FACEBOOK_URL = "https://www.facebook.com/nikolia.zhukowets"
+        INSTAGRAM_URL = "https://www.instagram.com/nikolia.zhukowets/"
+        # підтримати автора: monobank (₴) для України + PrivatBank-конверти ($/€) для іноземців
+        DONATE_UAH = links.SUPPORT_URL          # єдине джерело (fronts/desktop/links.py)
+        DONATE_USD = links.SUPPORT_PRIVAT_USD
+        DONATE_EUR = links.SUPPORT_PRIVAT_EUR
+
+        frame, lay = _card(tr("set_author_eyebrow"))
+        frame.setObjectName("authorCard")
 
         author = QLabel(tr("set_author"))
         author.setWordWrap(True)
@@ -1521,14 +1591,19 @@ class SettingsPage(QWidget):
 
         socials = QHBoxLayout()
         socials.setSpacing(10)
-        for icon_name, url in (
-            ("fa6b.x-twitter", X_URL),
-            ("fa6b.github", GITHUB_URL),
-            ("fa6b.facebook", FACEBOOK_URL),
-            ("fa6b.instagram", INSTAGRAM_URL),
+        for icon_name, url, object_name, name, tooltip in (
+            ("fa6b.x-twitter", X_URL, "authorXLink",
+             tr("about_x"), tr("about_x")),
+            ("fa6b.github", GITHUB_URL, "authorGithubLink",
+             tr("author_github_name"), tr("author_github_hint")),
+            ("fa6b.facebook", FACEBOOK_URL, None, None, None),
+            ("fa6b.instagram", INSTAGRAM_URL, None, None, None),
         ):
             if url:
-                socials.addWidget(round_social(icon_name, url))
+                btn = round_social(icon_name, url, name=name, tooltip=tooltip)
+                if object_name:
+                    btn.setObjectName(object_name)
+                socials.addWidget(btn)
         socials.addStretch()
         lay.addLayout(socials)
 
@@ -1593,7 +1668,31 @@ class SettingsPage(QWidget):
             support_row.addWidget(support, stretch=1)
             support_row.addWidget(more, alignment=Qt.AlignTop)
             lay.addLayout(support_row)
+        return frame
 
+    # --- вкладка «Про програму»: довідка й повідомити про проблему ---
+    def _about_help_group(self):
+        """Швидкий доступ до довідки й звіту про проблему — ті самі дії, що
+        й у діагностиці вкладки «Система» (_on_open_help / _report_problem),
+        просто ще одна точка входу під рукою «як у нормальних програмах»."""
+        frame, lay = _card(tr("about_help_eyebrow"))
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        help_btn = QPushButton(tr("set_help"))
+        help_btn.setAccessibleName(tr("set_help"))
+        help_btn.clicked.connect(self._on_open_help)
+        row.addWidget(help_btn)
+        report_btn = QPushButton(tr("set_report_problem"))
+        report_btn.setAccessibleName(tr("set_report_problem"))
+        report_btn.clicked.connect(self._report_problem)
+        row.addWidget(report_btn)
+        row.addStretch()
+        lay.addLayout(row)
+        return frame
+
+    # --- вкладка «Про програму»: ліцензія та сторонні компоненти ---
+    def _about_license_group(self):
+        frame, lay = _card(tr("about_license_eyebrow"))
         license_lbl = QLabel(tr("set_license"))
         license_lbl.setOpenExternalLinks(True)
         license_lbl.setWordWrap(True)
@@ -1611,6 +1710,11 @@ class SettingsPage(QWidget):
         tp_row.addStretch()
         lay.addLayout(tp_row)
         return frame
+
+    def select_about_tab(self):
+        """Перемкнути на вкладку «Про програму» (виклик ззовні — напр. клік
+        по шапці сайдбара в main_window.MainWindow._open_about)."""
+        self._tabs.setCurrentIndex(self._tabs.count() - 1)
 
     def _open_third_party(self, _checked=False):
         """Відкрити THIRD-PARTY-NOTICES.txt (ліцензії сторонніх компонентів) у
@@ -1673,11 +1777,14 @@ class SettingsPage(QWidget):
 
             top_row.addStretch(1)
 
-            status_text = (
-                tr("models_hub_status_downloaded", size=self._format_size(item.size_bytes))
-                if item.is_downloaded
-                else tr("models_hub_status_missing")
-            )
+            if item.component_id == "protocol" and not item.is_downloaded and self._protocol_is_downloading(cfg):
+                status_text = tr("protocol_model_downloading_status")
+            else:
+                status_text = (
+                    tr("models_hub_status_downloaded", size=self._format_size(item.size_bytes))
+                    if item.is_downloaded
+                    else tr("models_hub_status_missing")
+                )
             status_lbl = QLabel(status_text)
             status_lbl.setProperty("muted", True)
             top_row.addWidget(status_lbl)
@@ -1718,7 +1825,14 @@ class SettingsPage(QWidget):
             if not engine_absent:      # нема рушія — активувати нічого
                 btn_rec = GlassButton(tr("models_hub_btn_recommended"))
                 btn_rec.setAccessibleName(tr(rec_acc_key))
-                btn_rec.setToolTip(tr(rec_acc_key))
+                if item.is_downloaded:
+                    btn_rec.setToolTip(tr(rec_acc_key))
+                else:
+                    # Компонент ще не завантажено: кнопка "Рекомендовано" не вміє
+                    # завантажувати сама, тож НЕ обіцяє дію тут — вимикаємо її
+                    # й пояснюємо, куди йти («Докладніше» поруч робить перехід).
+                    btn_rec.setEnabled(False)
+                    btn_rec.setToolTip(tr(self._models_hub_hint_key(cid)))
                 btn_rec.clicked.connect(lambda _checked=False, c=cid: self._on_models_hub_recommended(c))
 
             btn_adv = GlassButton(tr("models_hub_btn_advanced"))
@@ -1845,13 +1959,37 @@ class SettingsPage(QWidget):
         if not src_dir:
             return
 
+        from whisper_core.offline_package import OfflinePackageError
         try:
             dlg = OfflineImportDialog(src_dir, self.controller.cfg, parent=self)
+        except OfflinePackageError:
+            # Причину вже показано користувачу всередині діалогу (QMessageBox.warning
+            # у read_manifest) — тут лише журналюємо, щоб подія лишилась у логах.
+            logging.warning("Імпорт офлайн-пакета відхилено: %s", anonymize_path(src_dir))
+            return
         except Exception:
+            logging.exception("Не вдалося відкрити діалог імпорту офлайн-пакета: %s",
+                              anonymize_path(src_dir))
+            QMessageBox.critical(
+                self,
+                tr("offline_pkg_import_title"),
+                tr("offline_pkg_import_unexpected_error"),
+            )
             return
 
         if dlg.exec() == QDialog.Accepted:
             self._refresh_models_hub()
+
+    @staticmethod
+    def _models_hub_hint_key(component_id: str) -> str:
+        hint_keys = {
+            "stt": "models_hub_download_stt_hint",
+            "diarization": "models_hub_download_diar_hint",
+            "protocol": "models_hub_download_proto_hint",
+            "tts": "models_hub_download_tts_hint",
+            "punctuator": "models_hub_download_punc_hint",
+        }
+        return hint_keys.get(component_id, "models_hub_status_missing")
 
     def _on_models_hub_recommended(self, component_id: str):
         from whisper_core.models_hub import get_models_hub_status
@@ -1859,19 +1997,17 @@ class SettingsPage(QWidget):
         statuses = {item.component_id: item for item in get_models_hub_status(cfg)}
         item = statuses.get(component_id)
         if item and not item.is_downloaded:
-            hint_keys = {
-                "stt": "models_hub_download_stt_hint",
-                "diarization": "models_hub_download_diar_hint",
-                "protocol": "models_hub_download_proto_hint",
-                "tts": "models_hub_download_tts_hint",
-                "punctuator": "models_hub_download_punc_hint",
-            }
+            # Кнопка має бути вимкнена саме для цього стану (_models_hub_group /
+            # _refresh_models_hub). Якщо сюди все ж дійшли — стан устиг застаріти
+            # між рендером і кліком; не мовчати й не підміняти дію переходом.
+            logging.warning(
+                "Кнопка 'Рекомендовано' натиснута для незавантаженого компонента %s", component_id)
             QMessageBox.information(
                 self,
                 tr("models_hub_title"),
-                tr(hint_keys.get(component_id, "models_hub_status_missing"))
+                tr(self._models_hub_hint_key(component_id)),
             )
-            self._on_models_hub_advanced(component_id)
+            self._refresh_models_hub()
             return
 
         if component_id == "stt":
@@ -1915,7 +2051,7 @@ class SettingsPage(QWidget):
         Розділено свідомо: тест, який патчив QMenu.exec через mock, у PySide6
         не перехоплював Shiboken-метод — меню реально відкривалось і в
         offscreen чекало вічно, тобто `unittest discover` не завершувався
-        ніколи (суд 24.07 відтворив тричі). Тепер тест перевіряє побудоване
+        ніколи (рецензія 24.07 відтворила тричі). Тепер тест перевіряє побудоване
         меню і exec не кличе взагалі."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtCore import QUrl
@@ -2041,6 +2177,20 @@ class SettingsPage(QWidget):
 
         self._refresh_models_hub()
 
+    def _on_download_manager_event(self, *_args):
+        self._refresh_models_hub()
+
+    @staticmethod
+    def _protocol_is_downloading(cfg) -> bool:
+        """Чи качається зараз саме АКТИВНА модель ШІ-протоколу (ModelsHub
+        показує стан активної, не всіх пресетів одразу)."""
+        from ..download_manager import DownloadManager
+        from whisper_core.protocol import model_manager as mm
+        from whisper_core import paths
+        preset_id = mm.safe_preset_id(getattr(cfg, "protocol_model", "fast"))
+        target = paths.protocol_models_dir() / preset_id
+        return DownloadManager.instance().is_downloading(target)
+
     def _refresh_models_hub(self):
         if not hasattr(self, "_models_hub_rows"):
             return
@@ -2053,12 +2203,22 @@ class SettingsPage(QWidget):
             cid = item.component_id
             if cid in self._models_hub_rows:
                 row = self._models_hub_rows[cid]
-                status_text = (
-                    tr("models_hub_status_downloaded", size=self._format_size(item.size_bytes))
-                    if item.is_downloaded
-                    else tr("models_hub_status_missing")
-                )
+                if cid == "protocol" and not item.is_downloaded and self._protocol_is_downloading(cfg):
+                    status_text = tr("protocol_model_downloading_status")
+                else:
+                    status_text = (
+                        tr("models_hub_status_downloaded", size=self._format_size(item.size_bytes))
+                        if item.is_downloaded
+                        else tr("models_hub_status_missing")
+                    )
                 row["status_lbl"].setText(status_text)
+                if row.get("btn_rec") is not None:
+                    btn_rec = row["btn_rec"]
+                    btn_rec.setEnabled(item.is_downloaded)
+                    rec_acc_key = f"models_hub_{cid}_rec_acc"
+                    btn_rec.setToolTip(
+                        tr(rec_acc_key) if item.is_downloaded
+                        else tr(self._models_hub_hint_key(cid)))
                 if cid == "tts" and getattr(self, "_tts_engine_absent", False):
                     row["active_lbl"].setText(tr("models_hub_tts_engine_absent"))
                     continue
@@ -2549,7 +2709,7 @@ class SettingsPage(QWidget):
         try:
             freed = delete_model(cfg.model_dir, target)
         except Exception:
-            logging.exception("Не вдалося видалити модель %s", target)
+            logging.exception("Не вдалося видалити модель %s", anonymize_path(target))
             QMessageBox.warning(self, tr("set_model_delete_title"),
                                 tr("set_model_delete_fail"))
             self._refresh_delete_button()
@@ -2581,11 +2741,104 @@ class SettingsPage(QWidget):
         motion.slide_fade_in(self._dev_note)
         self._mark_restart_pending()
 
-    # --- ГАРЯЧІ КЛАВІШІ (feature/ux-center: усі комбінації на одній сторінці) ---
+    # --- допоміжне: рядок «чекбокс + коротке видиме пояснення (+ ⓘ повне)» ---
+    # спека вигляду налаштувань 30.07 §4: розрив рівня 3→4 — назва параметра
+    # лишається нативним текстом чекбокса, пояснення переходить на рівень 4
+    # (12px/400, тьмяніший колір) з відступом theme.LABEL_HELPER_GAP (4px).
+    # Довге пояснення (CPU, розмір словника тощо) ховається за ⓘ — критичне
+    # для рішення лишається у видимому короткому реченні, не за іконкою.
+    @staticmethod
+    def _opt_row(checkbox: QCheckBox, hint_text: str, hint_full_key: str = None):
+        box = QVBoxLayout()
+        box.setSpacing(theme.LABEL_HELPER_GAP)
+        if hint_full_key:
+            head = QHBoxLayout()
+            head.setSpacing(6)
+            head.addWidget(checkbox)
+            head.addWidget(info_hint(hint_full_key))
+            head.addStretch()
+            box.addLayout(head)
+        else:
+            box.addWidget(checkbox)
+        box.addWidget(theme.make_helper_label(hint_text))
+        return box
+
+    # --- ПОВЕДІНКА ДИКТУВАННЯ (картка 1/5 — спека вигляду налаштувань 30.07 §3.1) ---
+    def _group_dictation_behavior(self, cfg):
+        """Що відбувається під час самого диктування: черга фраз, живий показ
+        тексту, підсвітка непевних слів, автостоп і ліміт тривалості. Раніше
+        це були перші 3 тумблери величезної картки _record_group — виділено в
+        окрему картку-групу «за задачею людини» (порада §2)."""
+        frame, lay = _card(tr("set_rec_eyebrow"))
+        lay.setSpacing(theme.ROW_GAP)
+
+        self._dictation_queue = QCheckBox(tr("set_dictation_queue"))
+        self._dictation_queue.setChecked(
+            bool(getattr(cfg, "dictation_queue_enabled", True)))
+        self._dictation_queue.setAccessibleName(tr("set_dictation_queue"))
+        self._dictation_queue.toggled.connect(self._on_dictation_queue)
+        lay.addLayout(self._opt_row(self._dictation_queue, tr("set_dictation_queue_hint")))
+
+        # feature/live-transcription (перенесено з Наради, аудит Миколи 22.07): на
+        # вкладці Нарада цей тумблер був чужим — він керує показом тексту під час
+        # ДИКТУВАННЯ. Config-ключ live_transcription збережено, тож значення
+        # користувачів не губиться.
+        self._live_transcription = QCheckBox(tr("meeting_live_dictation_label"))
+        self._live_transcription.setChecked(bool(getattr(cfg, "live_transcription", False)))
+        self._live_transcription.setAccessibleName(tr("meeting_live_dictation_label"))
+        self._live_transcription.toggled.connect(self.controller.set_live_transcription)
+        lay.addLayout(self._opt_row(self._live_transcription, tr("meeting_live_dictation_hint")))
+
+        # feature/model-bottlenecks (під-хвиля 2): підсвітка непевних слів у стрічці.
+        self._highlight_uncertain = QCheckBox(tr("set_highlight_uncertain"))
+        self._highlight_uncertain.setChecked(
+            bool(getattr(cfg, "highlight_uncertain_words", True)))
+        self._highlight_uncertain.setAccessibleName(tr("set_highlight_uncertain"))
+        self._highlight_uncertain.toggled.connect(self._on_highlight_uncertain)
+        lay.addLayout(self._opt_row(self._highlight_uncertain,
+                                    tr("set_highlight_uncertain_hint"),
+                                    "set_highlight_uncertain_hint_full"))
+
+        g = _grid()
+        # feature/qol-pack: автостоп по тиші (0..30 с; 0 = вимкнено) — діє одразу
+        self._autostop = make_slider()
+        self._autostop.setRange(0, 30)
+        self._autostop.setSingleStep(1)
+        self._autostop.setPageStep(1)
+        self._autostop.setValue(int(getattr(cfg, "dictation_autostop_silence_s", 0) or 0))
+        self._autostop.setMaximumWidth(_CTRL_MAX)
+        self._autostop.valueChanged.connect(self._on_autostop_changed)
+        self._autostop.sliderReleased.connect(self._on_autostop_released)
+        self._autostop_val = QLabel()
+        self._autostop_val.setProperty("level", "caption")
+        g.addWidget(_labeled_hint(tr("set_autostop_label"), "set_autostop_hint"), 0, 0)
+        g.addLayout(self._slider_row(self._autostop, self._autostop_val), 0, 1)
+
+        # feature/qol-pack: ліміт тривалості (0..60 хв; 0 = без ліміту) — діє одразу
+        self._maxdur = make_slider()
+        self._maxdur.setRange(0, 60)
+        self._maxdur.setSingleStep(1)
+        self._maxdur.setPageStep(5)
+        self._maxdur.setValue(int((getattr(cfg, "dictation_max_duration_s", 0) or 0) // 60))
+        self._maxdur.setMaximumWidth(_CTRL_MAX)
+        self._maxdur.valueChanged.connect(self._on_maxdur_changed)
+        self._maxdur.sliderReleased.connect(self._on_maxdur_released)
+        self._maxdur_val = QLabel()
+        self._maxdur_val.setProperty("level", "caption")
+        g.addWidget(_labeled_hint(tr("set_maxdur_label"), "set_maxdur_hint"), 1, 0)
+        g.addLayout(self._slider_row(self._maxdur, self._maxdur_val), 1, 1)
+        self._sync_qol_slider_labels()
+        lay.addLayout(g)
+        return frame
+
+    # --- ГАРЯЧІ КЛАВІШІ ТА КЕРУВАННЯ (картка 2/5) --- (feature/ux-center: усі
+    # комбінації на одній сторінці) ---
     def _hotkeys_group(self, cfg):
         """Централізована картка: усі активні гарячі клавіші застосунку в одному
-        місці (диктування-клавіатура, режим, бічна кнопка миші PTT). Захоплення
-        нової комбінації — наявний Discord-діалог (controller.start_key_capture)."""
+        місці (диктування-клавіатура, режим, бічна кнопка миші PTT, швидкі
+        клавіші дій). Захоплення нової комбінації — наявний Discord-діалог
+        (controller.start_key_capture). 30.07: сюди ж перенесено «Скасувати/
+        Вставити ще раз» з _record_group — вони й так про клавіші, не диктування."""
         frame, lay = _card(tr("set_hotkeys_eyebrow"))
         intro = QLabel(tr("hotkeys_intro"))
         intro.setProperty("muted", True)
@@ -2651,70 +2904,53 @@ class SettingsPage(QWidget):
         mouse_hint.setWordWrap(True)
         g.addWidget(mouse_hint, 5, 1)
 
+        # feature/qol-pack: опційні глобальні хоткеї дій (перенесено з
+        # _record_group 30.07 — це теж клавіші, а не поведінка диктування)
+        g.addWidget(self._action_key_row("undo", tr("set_undo_key_label"), cfg), 6, 0, 1, 2)
+        g.addWidget(self._action_key_row("insert", tr("set_insert_key_label"), cfg),
+                    7, 0, 1, 2)
+        qol_keys_hint = theme.make_helper_label(tr("set_qol_keys_hint"))
+        g.addWidget(qol_keys_hint, 8, 1)
+
         lay.addLayout(g)
         return frame
 
-    # --- КЕРУВАННЯ ЗАПИСОМ ---
-    def _record_group(self, cfg):
-        frame, lay = _card(tr("set_rec_eyebrow"))
+    # --- ПОСТОБРОБКА ТА ПОКРАЩЕННЯ ТЕКСТУ (картка 3/5) ---
+    def _group_text_processing(self, cfg):
+        """Майстер-тумблер «Не виправляйте мою мову», автокорекція, пунктуатор,
+        огляд змін, голосова навігація. Раніше друга половина _record_group —
+        виділено в окрему картку (спека §3.1, порада §2: групи «за задачею»).
+        «(експериментально)» винесено з назви в окремий бейдж поруч (спека §5,
+        theme.make_badge) — заголовок картки читається чисто."""
+        frame = QFrame()
+        frame.setProperty("card", True)
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(22, 18, 22, 20)
+        lay.setSpacing(theme.ROW_GAP)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        title = QLabel(tr("set_textproc_head"))
+        title.setProperty("level", "block")
+        head.addWidget(title)
+        head.addWidget(theme.make_badge(tr("set_experimental_badge")))
+        head.addStretch()
+        lay.addLayout(head)
 
-        # feature/dictation-queue (запит Миколи №10): видимий тумблер угорі картки.
-        # Типово увімкнено; діє одразу для наступного диктування (читається з cfg).
-        qbox = QVBoxLayout()
-        qbox.setSpacing(2)
-        self._dictation_queue = QCheckBox(tr("set_dictation_queue"))
-        self._dictation_queue.setChecked(
-            bool(getattr(cfg, "dictation_queue_enabled", True)))
-        self._dictation_queue.setAccessibleName(tr("set_dictation_queue"))
-        self._dictation_queue.toggled.connect(self._on_dictation_queue)
-        qbox.addWidget(self._dictation_queue)
-        queue_hint = QLabel(tr("set_dictation_queue_hint"))
-        queue_hint.setProperty("muted", True)
-        queue_hint.setWordWrap(True)
-        qbox.addWidget(queue_hint)
-        # feature/live-transcription (перенесено з Наради, аудит Миколи 22.07): на
-        # вкладці Нарада цей тумблер був чужим — він керує показом тексту під час
-        # ДИКТУВАННЯ. Config-ключ live_transcription збережено, тож значення
-        # користувачів не губиться. sync_live_transcription() тримає його синхронним,
-        # коли фон програмно вимикає живий режим (старт наради тощо).
-        qbox.addSpacing(8)
-        self._live_transcription = QCheckBox(tr("meeting_live_dictation_label"))
-        self._live_transcription.setChecked(bool(getattr(cfg, "live_transcription", False)))
-        self._live_transcription.setAccessibleName(tr("meeting_live_dictation_label"))
-        self._live_transcription.toggled.connect(self.controller.set_live_transcription)
-        qbox.addWidget(self._live_transcription)
-        live_hint = QLabel(tr("meeting_live_dictation_hint"))
-        live_hint.setProperty("muted", True)
-        live_hint.setWordWrap(True)
-        qbox.addWidget(live_hint)
-        # feature/model-bottlenecks (під-хвиля 2): підсвітка непевних слів у стрічці.
-        # Керований, бо word_timestamps додає DTW-прохід (трохи повільніше на слабкому
-        # CPU). Дефолт — увімкнено (рекомендовано; Т72 «прозорість + контроль»).
-        qbox.addSpacing(8)
-        self._highlight_uncertain = QCheckBox(tr("set_highlight_uncertain"))
-        self._highlight_uncertain.setChecked(
-            bool(getattr(cfg, "highlight_uncertain_words", True)))
-        self._highlight_uncertain.setAccessibleName(tr("set_highlight_uncertain"))
-        self._highlight_uncertain.toggled.connect(self._on_highlight_uncertain)
-        qbox.addWidget(self._highlight_uncertain)
-        hl_hint = QLabel(tr("set_highlight_uncertain_hint"))
-        hl_hint.setProperty("muted", True)
-        hl_hint.setWordWrap(True)
-        qbox.addWidget(hl_hint)
-        lay.addLayout(qbox)
+        # feature/edit-pack: «Не виправляй мою мову» — майстер-тумблер над
+        # текстовою постобробкою. Коли увімкнено — обходить автокорекцію й
+        # пунктуатор (не чіпає суржик/діалект); словники профілю лишаються.
+        self._preserve_speech = QCheckBox(tr("set_preserve_speech"))
+        self._preserve_speech.setChecked(bool(getattr(cfg, "preserve_speech", False)))
+        self._preserve_speech.setAccessibleName(tr("set_preserve_speech"))
+        self._preserve_speech.toggled.connect(self._on_preserve_speech)
+        lay.addLayout(self._opt_row(self._preserve_speech, tr("set_preserve_speech_hint")))
 
-        g = _grid()
-
-        # feature/voice-punctuation: opt-in, діє одразу для наступного диктування;
-        # свій ⓘ-хінт поруч (що саме робить), як у решти пунктів картки
+        # feature/voice-punctuation: opt-in, діє одразу для наступного диктування
         self._voice_punct = QCheckBox(tr("set_voice_punct"))
         self._voice_punct.setChecked(bool(getattr(cfg, "voice_punctuation", False)))
         self._voice_punct.toggled.connect(self._on_voice_punct)
-        g.addWidget(self._voice_punct, 6, 0, 1, 2)
-        punct_hint = QLabel(tr("set_voice_punct_hint"))
-        punct_hint.setProperty("muted", True)
-        punct_hint.setWordWrap(True)
-        g.addWidget(punct_hint, 7, 1)
+        lay.addLayout(self._opt_row(self._voice_punct, tr("set_voice_punct_hint"),
+                                    "set_voice_punct_hint_full"))
 
         # feature/processing-slider: колишній комбо «Автоочистка тексту» ПРИБРАНО —
         # рівень обробки тепер задає пер-профільний повзунок на вкладках Диктування
@@ -2722,159 +2958,76 @@ class SettingsPage(QWidget):
         # без двох конкурентних (спека §5). Стара глобальна cleanup_level лишається
         # у config.toml лише для сумісності/міграції та шляху ручної розшифровки файлів.
 
-        # feature/punctuation-plus: підсекція постобробки тексту — два opt-in
-        # ЕКСПЕРИМЕНТАЛЬНІ кроки із завантажуваними компонентами (за зразком
-        # діаризації в Нараді: чекбокс вимкнено, поки компонент не завантажено)
-        # feature/edit-pack: «Не виправляй мою мову» — майстер-тумблер над
-        # текстовою постобробкою. Коли увімкнено — обходить автокорекцію й
-        # пунктуатор (не чіпає суржик/діалект); словники профілю лишаються.
-        # Кладемо разом із підзаголовком в один VBox, щоб не перенумеровувати сітку.
-        tp_head = QVBoxLayout()
-        tp_head.setSpacing(2)
-        tp_head.addWidget(self._subhead(tr("set_textproc_head")))
-        self._preserve_speech = QCheckBox(tr("set_preserve_speech"))
-        self._preserve_speech.setChecked(bool(getattr(cfg, "preserve_speech", False)))
-        self._preserve_speech.setAccessibleName(tr("set_preserve_speech"))
-        self._preserve_speech.toggled.connect(self._on_preserve_speech)
-        tp_head.addWidget(self._preserve_speech)
-        ps_hint = QLabel(tr("set_preserve_speech_hint"))
-        ps_hint.setProperty("muted", True)
-        ps_hint.setWordWrap(True)
-        tp_head.addWidget(ps_hint)
-        g.addLayout(tp_head, 10, 0, 1, 2)
+        # feature/punctuation-plus: два opt-in ЕКСПЕРИМЕНТАЛЬНІ кроки із
+        # завантажуваними компонентами (за зразком діаризації в Нараді: чекбокс
+        # вимкнено, поки компонент не завантажено). Кнопка завантаження — це ДІЯ,
+        # не налаштування (порада §4 п.4): вона живе у вкладеній мікрокартці
+        # (theme.wrap_nested), не «зсунута вправо без зв'язку».
 
         # (1) автокорекція одруків
         self._autocorrect = QCheckBox(tr("set_autocorrect"))
         self._autocorrect.setChecked(bool(getattr(cfg, "autocorrect_enabled", False)))
         self._autocorrect.toggled.connect(self._on_autocorrect)
-        g.addWidget(self._autocorrect, 11, 0, 1, 2)
-        ac_hint = QLabel(tr("set_autocorrect_hint"))
-        ac_hint.setProperty("muted", True)
-        ac_hint.setWordWrap(True)
-        g.addWidget(ac_hint, 12, 1)
+        lay.addLayout(self._opt_row(self._autocorrect, tr("set_autocorrect_hint"),
+                                    "set_autocorrect_hint_full"))
         self._autocorrect_dl = GlassButton(tr("set_autocorrect_download"))
         self._autocorrect_dl.clicked.connect(self._download_autocorrect)
-        self._autocorrect_status = QLabel()
-        self._autocorrect_status.setProperty("muted", True)
-        self._autocorrect_status.setWordWrap(True)
+        self._autocorrect_status = theme.make_helper_label("")
         ac_row = QHBoxLayout()
         ac_row.addWidget(self._autocorrect_dl)
         # stretch=1 замість трейлінг-addStretch: інакше wordWrap-підпис у HBox не
         # отримує ширини й довгий статус («Спочатку завантажте компонент») обрізається.
         ac_row.addWidget(self._autocorrect_status, 1)
-        g.addLayout(ac_row, 13, 1)
+        ac_nested = theme.wrap_nested(ac_row)
+        lay.addLayout(theme.indent_row(ac_nested))
 
         # (2) пунктуатор/ITN
         self._punctuator = QCheckBox(tr("set_punctuator"))
         self._punctuator.setChecked(bool(getattr(cfg, "punctuator_enabled", False)))
         self._punctuator.toggled.connect(self._on_punctuator)
-        g.addWidget(self._punctuator, 14, 0, 1, 2)
-        pn_hint = QLabel(tr("set_punctuator_hint"))
-        pn_hint.setProperty("muted", True)
-        pn_hint.setWordWrap(True)
-        g.addWidget(pn_hint, 15, 1)
+        lay.addLayout(self._opt_row(self._punctuator, tr("set_punctuator_hint")))
         self._punctuator_dl = GlassButton(tr("set_punctuator_download"))
         self._punctuator_dl.clicked.connect(self._download_punctuator)
-        self._punctuator_status = QLabel()
-        self._punctuator_status.setProperty("muted", True)
-        self._punctuator_status.setWordWrap(True)
+        self._punctuator_status = theme.make_helper_label("")
         pn_row = QHBoxLayout()
         pn_row.addWidget(self._punctuator_dl)
         # stretch=1: див. коментар до ac_row — wordWrap-статус має отримати ширину.
         pn_row.addWidget(self._punctuator_status, 1)
-        g.addLayout(pn_row, 16, 1)
+        pn_nested = theme.wrap_nested(pn_row)
+        lay.addLayout(theme.indent_row(pn_nested))
+        self._refresh_textproc_controls()
 
         # feature/player-pack: «Огляд перед дією» — opt-in, вимкнено за замовч.;
         # діє одразу для наступної РУЧНОЇ розшифровки файлу (диктування ігнорує).
-        # Чекбокс + хінт в одну комірку (рядок 17 вільний, 18+ зайняті) — щоб не
-        # перенумеровувати решту сітки.
         self._review_changes = QCheckBox(tr("set_review_changes"))
         self._review_changes.setChecked(bool(getattr(cfg, "review_text_changes", False)))
         self._review_changes.toggled.connect(self._on_review_changes)
-        rc_hint = QLabel(tr("set_review_changes_hint"))
-        rc_hint.setProperty("muted", True)
-        rc_hint.setWordWrap(True)
-        rc_box = QVBoxLayout()
-        rc_box.setSpacing(2)
-        rc_box.addWidget(self._review_changes)
-        rc_box.addWidget(rc_hint)
-        g.addLayout(rc_box, 17, 0, 1, 2)
-        self._refresh_textproc_controls()
-
-        # feature/qol-pack: автостоп по тиші (0..30 с; 0 = вимкнено) — діє одразу
-        self._autostop = make_slider()
-        self._autostop.setRange(0, 30)
-        self._autostop.setSingleStep(1)
-        self._autostop.setPageStep(1)
-        self._autostop.setValue(int(getattr(cfg, "dictation_autostop_silence_s", 0) or 0))
-        self._autostop.setMaximumWidth(_CTRL_MAX)
-        self._autostop.valueChanged.connect(self._on_autostop_changed)
-        self._autostop.sliderReleased.connect(self._on_autostop_released)
-        self._autostop_val = QLabel()
-        self._autostop_val.setProperty("muted", True)
-        g.addWidget(_labeled_hint(tr("set_autostop_label"), "set_autostop_hint"), 18, 0)
-        g.addLayout(self._slider_row(self._autostop, self._autostop_val), 18, 1)
-
-        # feature/qol-pack: ліміт тривалості (0..60 хв; 0 = без ліміту) — діє одразу
-        self._maxdur = make_slider()
-        self._maxdur.setRange(0, 60)
-        self._maxdur.setSingleStep(1)
-        self._maxdur.setPageStep(5)
-        self._maxdur.setValue(int((getattr(cfg, "dictation_max_duration_s", 0) or 0) // 60))
-        self._maxdur.setMaximumWidth(_CTRL_MAX)
-        self._maxdur.valueChanged.connect(self._on_maxdur_changed)
-        self._maxdur.sliderReleased.connect(self._on_maxdur_released)
-        self._maxdur_val = QLabel()
-        self._maxdur_val.setProperty("muted", True)
-        g.addWidget(_labeled_hint(tr("set_maxdur_label"), "set_maxdur_hint"), 19, 0)
-        g.addLayout(self._slider_row(self._maxdur, self._maxdur_val), 19, 1)
-        self._sync_qol_slider_labels()
-
-        # feature/qol-pack: опційні глобальні хоткеї дій (за замовч. вимкнені)
-        g.addWidget(self._action_key_row("undo", tr("set_undo_key_label"), cfg), 20, 0, 1, 2)
-        g.addWidget(self._action_key_row("insert", tr("set_insert_key_label"), cfg),
-                    21, 0, 1, 2)
-        qol_keys_hint = QLabel(tr("set_qol_keys_hint"))
-        qol_keys_hint.setProperty("muted", True)
-        qol_keys_hint.setWordWrap(True)
-        g.addWidget(qol_keys_hint, 22, 1)
+        lay.addLayout(self._opt_row(self._review_changes, tr("set_review_changes_hint")))
 
         # feature/office-voice-nav: голосова навігація полями зовнішніх документів
-        # (Word/Excel). Opt-in, діє одразу для наступного диктування. Чекбокс +
-        # хінт + кнопка «Список команд» одним VBox (рядок 23 вільний) — щоб не
-        # перенумеровувати решту сітки.
+        # (Word/Excel). Opt-in, діє одразу для наступного диктування.
         self._voice_nav = QCheckBox(tr("set_voice_nav"))
         self._voice_nav.setChecked(bool(getattr(cfg, "voice_nav_enabled", False)))
         self._voice_nav.setAccessibleName(tr("set_voice_nav"))
         self._voice_nav.toggled.connect(self._on_voice_nav)
-        nav_hint = QLabel(tr("set_voice_nav_hint"))
-        nav_hint.setProperty("muted", True)
-        nav_hint.setWordWrap(True)
+        nav_box = self._opt_row(self._voice_nav, tr("set_voice_nav_hint"))
         self._nav_cmds_btn = GlassButton(tr("nav_cmds_open"))
         self._nav_cmds_btn.setAccessibleName(tr("nav_cmds_open"))
         self._nav_cmds_btn.clicked.connect(self._open_nav_commands)
         nav_btn_row = QHBoxLayout()
         nav_btn_row.addWidget(self._nav_cmds_btn)
         nav_btn_row.addStretch()
-        nav_box = QVBoxLayout()
-        nav_box.setSpacing(2)
-        nav_box.addWidget(self._voice_nav)
-        nav_box.addWidget(nav_hint)
         nav_box.addLayout(nav_btn_row)
-        g.addLayout(nav_box, 23, 0, 1, 2)
+        lay.addLayout(nav_box)
 
-        lay.addLayout(g)
         return frame
 
-    # --- ЗВУК (feature/audio-center): пристрої / чутливість (VAD) / обробка ---
-    def _sound_group(self, cfg):
-        """Аудіо-центр рівня Teams/Discord: вибір пристроїв вводу+виводу з
-        оновленням списку, розширена чутливість VAD і опційна обробка (gate/AGC).
-        Три підсекції в одній картці; тест мікрофона — поруч із пристроями."""
-        frame, lay = _card(tr("set_sound_eyebrow"))
-
-        # ── Підсекція «Пристрої» ──────────────────────────────────────────
-        lay.addWidget(self._subhead(tr("set_sound_devices")))
+    # --- АУДІОПРИСТРОЇ ТА ПЕРЕВІРКА (картка 4/5) ---
+    def _group_audio_devices(self, cfg):
+        """Мікрофон вводу, пристрій виводу, оновлення списку, тест мікрофона.
+        Раніше підсекція «Пристрої» в _sound_group — тепер окрема картка
+        (спека §3.1, картка 4/5)."""
+        frame, lay = _card(tr("set_group_audio_devices_title"))
         g = _grid()
 
         # мікрофон: перший пункт = системний дефолт (None); далі — читабельні імена
@@ -2927,9 +3080,19 @@ class SettingsPage(QWidget):
         self.controller.mic_test_result.connect(self._on_mic_test_result)
         self.controller.rec_state.connect(self._on_rec_state)
         lay.addLayout(g)
+        return frame
 
-        # ── Підсекція «Чутливість (VAD)» ──────────────────────────────────
-        lay.addWidget(self._subhead(tr("set_sound_sensitivity")))
+    # --- ЧУТЛИВІСТЬ VAD ТА ОБРОБКА ЗВУКУ (картка 5/5) ---
+    def _group_audio_processing(self, cfg):
+        """Поріг чутливості VAD, мін. тривалість мовлення/тиші, шумовий
+        затвор, автопідсилення. Раніше підсекції «Чутливість»+«Обробка» в
+        _sound_group — об'єднано в одну картку (спека §3.1, картка 5/5): обидві
+        про ту саму задачу «як застосунок реагує на звук», лише 2 group_title
+        всередині розділяють їх (порада §2 — рівний КОЛІР/кегль групи, а не
+        новий рівень 16/600, що й зливалось раніше)."""
+        frame, lay = _card(tr("set_group_audio_processing_title"))
+
+        lay.addWidget(theme.make_group_title(tr("set_sound_sensitivity")))
         vg = _grid()
         vad_intro = QLabel(tr("set_vad_intro"))
         vad_intro.setProperty("muted", True)
@@ -2947,7 +3110,7 @@ class SettingsPage(QWidget):
         self._vad_thr.valueChanged.connect(self._on_vad_changed)
         self._vad_thr.sliderReleased.connect(self._on_vad_released)
         self._vad_thr_val = QLabel()
-        self._vad_thr_val.setProperty("muted", True)
+        self._vad_thr_val.setProperty("level", "caption")
         vg.addWidget(_form_label(tr("set_vad_threshold")), 1, 0)
         vg.addLayout(self._slider_row(self._vad_thr, self._vad_thr_val), 1, 1)
 
@@ -2963,7 +3126,7 @@ class SettingsPage(QWidget):
         self._vad_speech.valueChanged.connect(self._on_vad_changed)
         self._vad_speech.sliderReleased.connect(self._on_vad_released)
         self._vad_speech_val = QLabel()
-        self._vad_speech_val.setProperty("muted", True)
+        self._vad_speech_val.setProperty("level", "caption")
         vg.addWidget(_form_label(tr("set_vad_speech")), 2, 0)
         vg.addLayout(self._slider_row(self._vad_speech, self._vad_speech_val), 2, 1)
 
@@ -2977,7 +3140,7 @@ class SettingsPage(QWidget):
         self._vad_ms.valueChanged.connect(self._on_vad_changed)
         self._vad_ms.sliderReleased.connect(self._on_vad_released)
         self._vad_ms_val = QLabel()
-        self._vad_ms_val.setProperty("muted", True)
+        self._vad_ms_val.setProperty("level", "caption")
         vg.addWidget(_form_label(tr("set_vad_silence")), 3, 0)
         vg.addLayout(self._slider_row(self._vad_ms, self._vad_ms_val), 3, 1)
 
@@ -2992,7 +3155,7 @@ class SettingsPage(QWidget):
         lay.addLayout(vg)
 
         # ── Підсекція «Обробка» (gate/AGC — opt-in, вимкнено за замовчуванням) ──
-        lay.addWidget(self._subhead(tr("set_sound_processing")))
+        lay.addWidget(theme.make_group_title(tr("set_sound_processing")))
         pg = _grid()
 
         self._gate = QCheckBox(tr("set_gate"))
@@ -3015,7 +3178,7 @@ class SettingsPage(QWidget):
         self._gate_db.valueChanged.connect(self._on_gate_changed)
         self._gate_db.sliderReleased.connect(self._on_gate_released)
         self._gate_db_val = QLabel()
-        self._gate_db_val.setProperty("muted", True)
+        self._gate_db_val.setProperty("level", "caption")
         pg.addWidget(_form_label(tr("set_gate_threshold")), 2, 0)
         pg.addLayout(self._slider_row(self._gate_db, self._gate_db_val), 2, 1)
 
@@ -3029,17 +3192,17 @@ class SettingsPage(QWidget):
         pg.addWidget(agc_hint, 4, 1)
         self._sync_processing_labels()
         lay.addLayout(pg)
-        # ── Підсекція «Звук» (усі звукові тумблери в одному аудіо-центрі) ──
-        lay.addWidget(self._subhead(tr("set_system_sound")))
+        return frame
+
+    # --- СПОВІЩЕННЯ І ТИША (звукові тумблери, що лишились поза 5 картками
+    # спеки — мають власну задачу «коли і як застосунок озивається звуком») ---
+    def _group_notifications(self, cfg):
+        frame, lay = _card(tr("set_group_notifications_title"))
 
         self._paste_sound = QCheckBox(tr("set_paste_sound"))
         self._paste_sound.setChecked(bool(getattr(cfg, "paste_confirm_sound", True)))
         self._paste_sound.toggled.connect(self._on_paste_sound)
-        lay.addWidget(self._paste_sound)
-        paste_sound_hint = QLabel(tr("set_paste_sound_hint"))
-        paste_sound_hint.setProperty("muted", True)
-        paste_sound_hint.setWordWrap(True)
-        lay.addWidget(paste_sound_hint)
+        lay.addLayout(self._opt_row(self._paste_sound, tr("set_paste_sound_hint")))
 
         self._quiet_enabled = QCheckBox(tr("set_quiet_enable"))
         self._quiet_enabled.setChecked(bool(getattr(cfg, "quiet_hours_enabled", False)))
@@ -3059,14 +3222,13 @@ class SettingsPage(QWidget):
         qrow.addWidget(self._quiet_to)
         qrow.addStretch()
         lay.addLayout(qrow)
-        quiet_hint = QLabel(tr("set_quiet_hint"))
-        quiet_hint.setProperty("muted", True)
-        quiet_hint.setWordWrap(True)
-        lay.addWidget(quiet_hint)
+        lay.addWidget(theme.make_helper_label(tr("set_quiet_hint")))
         self._sync_quiet_enabled()
+        return frame
 
-        # ── Підсекція «Плеєр»: авто-відкат після паузи ──
-        lay.addWidget(self._subhead(tr("set_player_head")))
+    # --- ВІДТВОРЕННЯ: авто-відкат плеєра після паузи ---
+    def _group_playback(self, cfg):
+        frame, lay = _card(tr("set_group_playback_title"))
         self._backstep = QComboBox()
         self._backstep.addItem(tr("set_backstep_off"), 0.0)
         self._backstep.addItem(tr("set_backstep_05"), 0.5)
@@ -3078,14 +3240,11 @@ class SettingsPage(QWidget):
         self._backstep.setMaximumWidth(_CTRL_MAX)
         brow = QHBoxLayout()
         brow.setSpacing(8)
-        brow.addWidget(QLabel(tr("set_backstep")))
+        brow.addWidget(theme.make_option_label(tr("set_backstep")))
         brow.addWidget(self._backstep)
         brow.addStretch()
         lay.addLayout(brow)
-        backstep_hint = QLabel(tr("set_backstep_hint"))
-        backstep_hint.setProperty("muted", True)
-        backstep_hint.setWordWrap(True)
-        lay.addWidget(backstep_hint)
+        lay.addWidget(theme.make_helper_label(tr("set_backstep_hint")))
         return frame
 
 
@@ -3295,7 +3454,7 @@ class SettingsPage(QWidget):
 
     # --- feature/audio-qol + audio-center: чутливість VAD (три параметри) ---
     def _sync_vad_labels(self):
-        self._vad_thr_val.setText(f"{self._vad_thr.value() / 100:.2f}")
+        self._vad_thr_val.setText(format_decimal(self._vad_thr.value() / 100, 2))
         self._vad_speech_val.setText(tr("set_vad_ms_value", ms=self._vad_speech.value()))
         self._vad_ms_val.setText(tr("set_vad_ms_value", ms=self._vad_ms.value()))
 
@@ -3400,7 +3559,9 @@ class SettingsPage(QWidget):
     # --- feature/punctuation-plus: постобробка тексту ------------------------
     def _autocorrect_ready(self) -> bool:
         from whisper_core import autocorrect, paths as wc_paths
-        return autocorrect.available(wc_paths.autocorrect_dict_path())
+        from whisper_core.autocorrect_download import DICT_SHA256
+        return autocorrect.available(
+            wc_paths.autocorrect_dict_path(), DICT_SHA256)
 
     def _punctuator_ready(self) -> bool:
         from whisper_core import punctuator, paths as wc_paths
@@ -4297,6 +4458,11 @@ class SettingsPage(QWidget):
             self._refresh_vault_ui()
         if hasattr(self, "_vmem_table"):
             self._refresh_voice_memory_list()
+        if hasattr(self, "_screen_protection_status"):
+            state_getter = getattr(
+                self.controller, "screen_protection_state", None)
+            if callable(state_getter):
+                self._set_screen_protection_state(state_getter())
 
     # --- АВТОЗБЕРЕЖЕННЯ НОТАТОК (feature/auto-export) ---
     def _export_group(self, cfg):
@@ -4943,11 +5109,20 @@ class SettingsPage(QWidget):
         sp_row.addStretch()
         lay.addLayout(sp_row)
 
-        if not supported:
-            unsupp_lbl = QLabel(tr("set_screen_protection_unsupported"))
-            unsupp_lbl.setProperty("muted", True)
-            unsupp_lbl.setWordWrap(True)
-            lay.addWidget(unsupp_lbl)
+        self._screen_protection_status = QLabel()
+        self._screen_protection_status.setProperty("muted", True)
+        self._screen_protection_status.setWordWrap(True)
+        lay.addWidget(self._screen_protection_status)
+        state_signal = getattr(
+            self.controller, "screen_protection_state_changed", None)
+        if state_signal is not None:
+            state_signal.connect(self._set_screen_protection_state)
+        state_getter = getattr(
+            self.controller, "screen_protection_state", None)
+        initial_state = (
+            "unsupported" if not supported
+            else state_getter() if callable(state_getter) else "")
+        self._set_screen_protection_state(initial_state)
 
         g = _grid()
         combo = getattr(cfg, "panic_lock_hotkey", "") or ""
@@ -4983,14 +5158,39 @@ class SettingsPage(QWidget):
         return frame
 
     def _on_screen_protection(self, checked: bool):
-        self.controller.set_screen_protection(checked)
+        state = self.controller.set_screen_protection(checked)
+        if isinstance(state, str):
+            self._set_screen_protection_state(state)
+
+    def _set_screen_protection_state(self, state: str):
+        checked = self._screen_protection.isChecked()
+        key = (
+            "set_screen_protection_state_disable_failed"
+            if state == "failed" and not checked
+            else _SCREEN_PROTECTION_STATE_KEYS.get(state)
+        )
+        show = bool(key) and (
+            state in ("unsupported", "failed") or checked)
+        text = tr(key) if show else ""
+        self._screen_protection_status.setText(text)
+        self._screen_protection_status.setAccessibleName(text)
+        self._screen_protection_status.setVisible(show)
 
     def _on_panic_key(self, combo: str):
         self._panic_key_label.setText(pretty(combo) if combo else tr("set_note_none"))
         self._panic_clear_btn.setEnabled(bool(combo))
 
     # --- оновлення: стан і дії ---
+    def _invalidate_installer_ready_check(self) -> int:
+        self._installer_ready_generation += 1
+        return self._installer_ready_generation
+
+    def _on_settings_destroyed(self, _obj=None):
+        self._installer_ready_alive = False
+        self._invalidate_installer_ready_check()
+
     def _hide_update_buttons(self):
+        self._invalidate_installer_ready_check()
         for b in (self._upd_get, self._upd_install, self._upd_notes_btn,
                   self._upd_download):
             b.hide()
@@ -4998,14 +5198,39 @@ class SettingsPage(QWidget):
     def _show_available_buttons(self):
         """Кнопки для стану «є нова версія»: Завантажити / Оновити зараз /
         Що нового / Сторінка релізу — залежно від наявних даних доставки."""
-        from whisper_core import updater
         self._upd_download.setVisible(bool(self._upd_url))
         self._upd_notes_btn.setVisible(bool(self._upd_notes))
         installable = bool(self._upd_installer_url and self._upd_sha)
-        ready = installable and updater.installer_ready(self._upd_installer_url)
-        self._upd_ready_path = str(ready) if ready else None
-        self._upd_install.setVisible(bool(ready))
-        self._upd_get.setVisible(installable and not ready)
+        self._upd_ready_path = None
+        self._upd_install.hide()
+        self._upd_get.setVisible(installable)
+        if installable:
+            generation = self._invalidate_installer_ready_check()
+            url, sha256 = self._upd_installer_url, self._upd_sha
+            threading.Thread(
+                target=self._check_installer_ready_worker,
+                args=(generation, url, sha256), daemon=True).start()
+
+    def _check_installer_ready_worker(self, generation, url, sha256):
+        from whisper_core import updater
+        ready = updater.installer_ready(url, sha256)
+        if not self._installer_ready_alive:
+            return
+        try:
+            self._installer_ready_checked.emit(
+                generation, url, sha256, str(ready) if ready else None)
+        except RuntimeError:
+            pass
+
+    def _on_installer_ready_checked(
+            self, generation, url, sha256, ready_path):
+        if (generation != self._installer_ready_generation
+                or (url, sha256) != (
+                    self._upd_installer_url, self._upd_sha)):
+            return
+        self._upd_ready_path = ready_path
+        self._upd_install.setVisible(bool(ready_path))
+        self._upd_get.setVisible(bool(url and sha256 and not ready_path))
 
     def _refresh_update_row(self):
         """Намалювати збережений стан оновлень (без мережі)."""
@@ -5047,6 +5272,7 @@ class SettingsPage(QWidget):
 
     def _on_get_update(self):
         """«Завантажити»: старт фонового завантаження інсталятора з прогресом."""
+        self._invalidate_installer_ready_check()
         self._upd_get.setEnabled(False)
         self._set_update_text(tr("set_upd_downloading", pct=0), gold=True)
         self.controller.start_installer_download(
@@ -5060,6 +5286,7 @@ class SettingsPage(QWidget):
 
     def _on_downloaded(self, path: str):
         """Інсталятор завантажено й перевірено → показати «Оновити зараз»."""
+        self._invalidate_installer_ready_check()
         self._upd_ready_path = path
         self._upd_get.setEnabled(True)
         self._upd_get.hide()
@@ -5067,6 +5294,7 @@ class SettingsPage(QWidget):
         self._set_update_text(tr("set_upd_ready"), gold=True)
 
     def _on_download_failed(self, _msg: str):
+        self._invalidate_installer_ready_check()
         self._upd_get.setEnabled(True)
         self._set_update_text(tr("set_upd_dl_failed"), gold=False)
         # лишаємо кнопку «Завантажити» видимою — можна повторити (докачає .part)
@@ -5179,18 +5407,45 @@ class SettingsPage(QWidget):
                 self._test_include_text.setChecked(False)
                 self._test_include_text.blockSignals(False)
                 return
+            # Ручне opt-in уже є свідомою згодою: після оновлення не просимо
+            # підтвердити те саме вдруге.
+            self.controller.cfg.test_mode_text_notice_shown = True
         self.controller.set_test_mode(self._test_mode.isChecked(), on)
 
     def _copy_diagnostics(self):
         QApplication.clipboard().setText(copy_diagnostics(self.controller.cfg))
 
-    def _report_problem(self, toast_target=None):
-        """Зібрати zip-звіт на Робочому столі й показати toast зі шляхом.
-        toast_target — видимий віджет для toast (напр. головне вікно, коли звіт
-        викликано з хабу «Про програму», а сторінка Налаштувань прихована)."""
+    def _report_problem(self, _checked=False):
+        """Показати діалог із чесним описом вмісту звіту, і лише після
+        підтвердження — зібрати zip на Робочому столі й показати toast зі
+        шляхом (кнопка доступна лише поки Налаштування — видима сторінка,
+        тож toast тут завжди видимий).
+
+        ПРИВАТНІСТЬ: людина мусить знати, що йде в архів, ПЕРЕД тим як він
+        з'явиться на диску — особливо коли режим тестування з текстом
+        увімкнено (тоді журнал містить продиктований текст, див. crash.py)."""
+        body = tr("set_report_confirm_body")
+        if getattr(self.controller.cfg, "test_mode", False) and \
+                getattr(self.controller.cfg, "test_mode_include_text", False):
+            body = body + "\n\n" + tr("set_report_confirm_test_mode_warn")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("set_report_confirm_title"))
+        box.setText(body)
+        ok_btn = box.addButton(tr("set_report_confirm_ok"), QMessageBox.AcceptRole)
+        box.addButton(tr("set_report_confirm_cancel"), QMessageBox.RejectRole)
+        box.setDefaultButton(ok_btn)
+        box.exec()
+        if box.clickedButton() is not ok_btn:
+            return
+        self._build_and_save_report()
+
+    def _build_and_save_report(self):
+        """Фактичне збирання zip-звіту — окремо від діалогу підтвердження,
+        щоб тест міг перевірити вміст архіву без керування Qt-діалогом."""
         from ..report import build_report_zip
         from ..crash import LOG_DIR
-        target = toast_target if toast_target is not None else self
+        target = self
         desktop = Path(os.environ.get("USERPROFILE") or Path.home()) / "Desktop"
         dpi = None
         try:
@@ -5201,7 +5456,7 @@ class SettingsPage(QWidget):
             dpi = None
         try:
             zip_path = build_report_zip(
-                desktop, app_version=__version__, cfg=self.controller.cfg,
+                desktop, app_version=DISPLAY_VERSION, cfg=self.controller.cfg,
                 log_dir=LOG_DIR, extra_info={"DPI": dpi} if dpi else None)
         except Exception as e:
             logging.error("Звіт про проблему не створено: %s", e)
@@ -5455,7 +5710,8 @@ class SettingsPage(QWidget):
             self._notify_bg_update()
             return True
         except Exception as e:
-            logging.exception("Failed to copy custom background file: %s", e)
+            logging.exception("Failed to copy custom background file: %s",
+                              anonymize_path(e))
             QMessageBox.warning(
                 self,
                 tr("set_workspace_bg_err_title"),

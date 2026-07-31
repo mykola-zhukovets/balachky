@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from fronts.desktop.onboarding import FirstRunWizard
 
@@ -119,12 +119,24 @@ class OnboardingVoiceStepTests(unittest.TestCase):
         # а от model_snapshot_usable відкриває реальні файли на диску — на машині
         # без моделі він поверне False й майстер піде на сторінку «модель пошкоджено»
         # замість _finish_or_gpu → accept не кличе.
+        #
+        # Дефект 1 аудиту 30.07: раніше готова модель вела ПРЯМО на accept(),
+        # і крок «Додаткові можливості» людина взагалі не бачила. Тепер він
+        # завжди показується — accept() кличеться лише з нього, коли там
+        # нічого не обрано.
+        with patch("fronts.desktop.onboarding.model_present", return_value=True), \
+                patch("fronts.desktop.onboarding.model_snapshot_usable",
+                      return_value=True):
+            wiz._voice_skip_btn.click()
+        self.assertEqual(wiz._stack.currentIndex(), 4,
+                         "готова модель усе одно веде на «Додаткові можливості»")
+
         with patch("fronts.desktop.onboarding.model_present", return_value=True), \
                 patch("fronts.desktop.onboarding.model_snapshot_usable",
                       return_value=True), \
                 patch("whisper_core.cuda_runtime.gpu_present", return_value=False), \
                 patch.object(wiz, "accept") as mock_accept:
-            wiz._voice_skip_btn.click()
+            wiz._extra_skip_btn.click()
             mock_accept.assert_called_once()
 
     def test_wizard_not_blocked_model_absent(self):
@@ -141,7 +153,7 @@ class OnboardingVoiceStepTests(unittest.TestCase):
             self.assertEqual(wiz._stack.currentIndex(), 4)
 
     def test_voice_step_go_back_restores_buttons(self):
-        # РЕАЛЬНИЙ сценарій глухого кута (суд-2): завантаження успішне ->
+        # РЕАЛЬНИЙ сценарій глухого кута (рецензія-2): завантаження успішне ->
         # авто-перехід на крок 4 -> «Назад». Стрибок setCurrentIndex(4) на
         # свіжому майстрі багу не відтворює (кнопки ще в дефолтному стані).
         wiz = self._wizard(gpu_possible=False)
@@ -162,12 +174,17 @@ class OnboardingVoiceStepTests(unittest.TestCase):
         self.assertTrue(
             visible, "глухий кут: після Назад з кроку 4 жодної видимої кнопки")
 
-    def test_go_back_no_tts_engine_no_voice_buttons(self):
+    def test_go_back_no_tts_engine_shows_honest_message(self):
         # полегшена збірка без рушія озвучення: «Назад» зі сторінки моделі
         # (крок 4) на крок голосу (3) НЕ мусить знову пропонувати завантажити
         # непридатний голос. Раніше _go_back сліпо кликав _update_voice_page_state,
         # яке показувало кнопку завантаження 714 МБ голосу без змоги його
-        # відтворити (суд-3, знахідка 24.07).
+        # відтворити (рецензія-3, знахідка 24.07).
+        #
+        # Рішення власника 31.07 (варіант а): тепер сторінка не порожня і не
+        # ховається — вона чесно каже, що озвучення недоступне в цій збірці,
+        # і дає ЄДИНУ кнопку «Далі» (не «Пропустити» — нема чого пропускати,
+        # якщо озвучення взагалі не пропонувалось).
         wiz = self._wizard(gpu_possible=False)
         wiz._stack.setCurrentIndex(4)
         with patch("fronts.desktop.onboarding._tts_engine_available",
@@ -180,10 +197,18 @@ class OnboardingVoiceStepTests(unittest.TestCase):
         self.assertTrue(
             wiz._voice_retry_btn.isHidden(),
             "без рушія озвучення Назад не показує кнопку повтору голосу")
-        # «Пропустити» лишається — не глухий кут, користувач може піти далі.
-        self.assertFalse(
+        self.assertTrue(
             wiz._voice_skip_btn.isHidden(),
-            "без рушія озвучення «Пропустити» лишається видимою (не глухий кут)")
+            "без рушія озвучення «Пропустити» не показуємо — є чесне «Далі»")
+        self.assertFalse(
+            wiz._voice_next_btn.isHidden(),
+            "без рушія озвучення лишається ЄДИНА кнопка «Далі» (не глухий кут)")
+        # Літерал, не tr(ключ): інакше тест зелений навіть при зміні чи
+        # видаленні тексту (вартовий тавтологій, 31.07).
+        self.assertIn("немає рушія озвучення", wiz._voice_status.text(),
+                      "сторінка мусить чесно пояснити, чому озвучення недоступне")
+        self.assertIn("встановіть повну збірку", wiz._voice_status.text(),
+                      "текст мусить казати, ДЕ взяти озвучення")
 
 
 
@@ -191,7 +216,7 @@ class OnboardingVoiceStepTests(unittest.TestCase):
 class OnboardingTrayTests(unittest.TestCase):
     """Трей має жити вже під час майстра (п.1 фідбеку 24.07). Вартовий проти
     мертвого коду: хибний імпорт у блоці трея мовчки ковтався except-ом і
-    self._tray лишався None назавжди (вердикт повторного суду 24.07)."""
+    self._tray лишався None назавжди (вердикт повторної рецензії 24.07)."""
 
     @classmethod
     def setUpClass(cls):
@@ -215,7 +240,7 @@ class OnboardingTrayTests(unittest.TestCase):
 class FocusVisibilityPixelTests(unittest.TestCase):
     """Фокус має бути ВИДИМИМ на всіх 4 класах кнопок в обох темах.
     Піксельний вартовий: рендер до/після setFocus мусить відрізнятись
-    (суд-3 24.07: accent-фокус у денній темі був невидимий, бо FOCUS==GOLD;
+    (рецензія-3 24.07: accent-фокус у денній темі був невидимий, бо FOCUS==GOLD;
     visual_gate фокус-стани не сканує взагалі)."""
 
     @classmethod
@@ -324,14 +349,35 @@ class OnboardingPresenceChecksTests(unittest.TestCase):
         self.assertFalse(wiz._voice_skip_btn.isHidden())
         self.assertTrue(wiz._voice_next_btn.isHidden())
 
-    def test_stt_model_present_and_usable_skips_download(self):
+    def test_stt_model_present_and_usable_still_shows_extra_step(self):
+        """Дефект 1 аудиту 30.07: раніше готова модель вела ПРЯМО на
+        _finish_or_gpu(), і крок «Додаткові можливості» ніколи не
+        показувався — людина не дізнавалась про розрізнення голосів,
+        протокол, пунктуацію чи озвучення тексту. Тепер крок завжди
+        показується; фініш можливий лише З НЬОГО (якщо там нічого не обрано)."""
         wiz = self._wizard(gpu_possible=False)
         wiz._stack.setCurrentIndex(3)
         with patch("fronts.desktop.onboarding.model_present", return_value=True), \
                 patch("fronts.desktop.onboarding.model_snapshot_usable", return_value=True), \
                 patch.object(wiz, "_finish_or_gpu") as mock_finish:
             wiz._advance_from_voice()
+            mock_finish.assert_not_called()
+        self.assertEqual(wiz._stack.currentIndex(), 4,
+                         "готова модель усе одно веде на «Додаткові можливості», не одразу на фініш")
+
+    def test_extra_step_nothing_needed_reaches_finish(self):
+        """Симетрична половина фіксу: якщо на кроці «Додаткові можливості»
+        нічого не обрано (і базову модель качати не треба), фініш таки
+        настає — просто ПІСЛЯ того, як людина побачила цей крок."""
+        wiz = self._wizard(gpu_possible=False)
+        wiz._stack.setCurrentIndex(4)
+        with patch("fronts.desktop.onboarding.model_present", return_value=True), \
+                patch("fronts.desktop.onboarding.model_snapshot_usable", return_value=True), \
+                patch.object(wiz, "_finish_or_gpu") as mock_finish:
+            wiz._advance_from_extra()
             mock_finish.assert_called_once()
+        self.assertFalse(wiz._download_shown,
+                         "нічого не качали — сторінку завантаження показано не було")
 
     def test_stt_model_corrupted_shows_corrupted_status(self):
         wiz = self._wizard(gpu_possible=False)
@@ -365,3 +411,113 @@ class OnboardingPresenceChecksTests(unittest.TestCase):
         self.assertFalse(wiz._gpu_yes.isHidden())
         self.assertFalse(wiz._gpu_no.isHidden())
         self.assertTrue(wiz._gpu_next_btn.isHidden())
+
+
+class OnboardingHonestStepsTests(unittest.TestCase):
+    """Рішення власника 31.07 (варіант а+б поверх аудиту 30.07): жоден крок не
+    зникає мовчки, а «Крок N з M» не обіцяє екран, якого людина не побачила."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._app = QApplication.instance() or QApplication([])
+
+    def _wizard(self, gpu_possible=False):
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible):
+            wiz = FirstRunWizard()
+        def _cleanup():
+            wiz._detach_worker()
+            wiz._detach_gpu_worker()
+            wiz._detach_voice_worker()
+            wiz.done(0)
+            if getattr(wiz, "_tray", None) and getattr(wiz._tray, "icon", None):
+                try:
+                    wiz._tray.icon.hide()
+                    wiz._tray.icon.deleteLater()
+                except Exception:
+                    pass
+            wiz.deleteLater()
+        self.addCleanup(_cleanup)
+        return wiz
+
+    def test_voice_step_always_shown_even_without_engine(self):
+        """Варіант а: без рушія озвучення сторінка «Озвучення» БІЛЬШЕ не
+        блимає і не зникає — _go_next() з кроку «Мова» реально на неї
+        переходить, і людина бачить чесне пояснення."""
+        wiz = self._wizard(gpu_possible=False)
+        wiz._stack.setCurrentIndex(2)   # крок «Мова»
+        wiz._rb_uk.setChecked(True)
+        with patch("fronts.desktop.onboarding._tts_engine_available",
+                   return_value=False):
+            wiz._go_next()
+        self.assertEqual(wiz._stack.currentIndex(), 3,
+                         "крок «Озвучення» мусить лишитись видимим, не проскочити")
+        # Літерал замість tr(ключ) — вимога вартового тавтологій.
+        self.assertIn("немає рушія озвучення", wiz._voice_status.text())
+        self.assertFalse(wiz._voice_next_btn.isHidden())
+        self.assertTrue(wiz._voice_dl_btn.isHidden())
+        self.assertTrue(wiz._voice_skip_btn.isHidden())
+
+    def test_total_steps_honest_when_download_skipped(self):
+        """Варіант б: якщо крок «Завантаження» так і не показано (модель вже
+        готова, жодного додаткового компонента не обрано), total на кроці
+        GPU чесно зменшується — «Крок N з M» не бреше про пропущений екран
+        (МУТАЦІЯ: якщо прибрати коригування total_steps у _finish_or_gpu,
+        цей тест червоніє на «7/7» замість «6/6»)."""
+        wiz = self._wizard(gpu_possible=True)
+        self.assertEqual(wiz._total_steps, 7)
+        wiz._stack.setCurrentIndex(4)  # _page_extra, нічого не обрано
+        with patch("fronts.desktop.onboarding.model_present", return_value=True), \
+                patch("fronts.desktop.onboarding.model_snapshot_usable", return_value=True), \
+                patch("whisper_core.cuda_runtime.gpu_present", return_value=True), \
+                patch("whisper_core.cuda_runtime.runtime_ready", return_value=False):
+            wiz._advance_from_extra()
+
+        self.assertEqual(wiz._stack.currentIndex(), wiz._gpu_index,
+                         "нема ані завантаження, ані додаткових компонентів — одразу на GPU")
+        self.assertFalse(wiz._download_shown)
+        self.assertEqual(wiz._total_steps, 6,
+                         "крок «Завантаження» не показано — total чесно зменшено з 7 до 6")
+        self.assertIn("6/6", wiz._gpu_eyebrow_lab.text())
+        self.assertNotIn("7/7", wiz._gpu_eyebrow_lab.text())
+
+    def test_total_steps_unchanged_when_download_actually_shown(self):
+        """Контроль: якщо крок «Завантаження» ДІЙСНО показаний (модель
+        відсутня), total на кроці GPU не чіпаємо — обіцянка була правдива."""
+        wiz = self._wizard(gpu_possible=True)
+        wiz._stack.setCurrentIndex(4)
+        with patch("fronts.desktop.onboarding.model_present", return_value=False), \
+                patch("fronts.desktop.onboarding.DownloadWorker.start"):
+            wiz._advance_from_extra()
+        self.assertTrue(wiz._download_shown)
+        self.assertEqual(wiz._stack.currentIndex(), 5)  # _page_download
+
+        with patch("whisper_core.cuda_runtime.gpu_present", return_value=True), \
+                patch("whisper_core.cuda_runtime.runtime_ready", return_value=False):
+            wiz._finish_or_gpu()
+
+        self.assertEqual(wiz._total_steps, 7, "крок було показано — total не зменшуємо")
+        self.assertIn("7/7", wiz._gpu_eyebrow_lab.text())
+
+    def test_finish_shows_honest_summary_before_closing(self):
+        """Пункт 3 завдання власника 31.07: у фіналі майстра — чесний
+        підсумок (що ввімкнено/пропущено), а не тихе закриття вікна."""
+        wiz = self._wizard(gpu_possible=False)
+        with patch("fronts.desktop.onboarding.model_present", return_value=False), \
+                patch("whisper_core.cuda_runtime.gpu_present", return_value=False), \
+                patch.object(QMessageBox, "information") as mock_box:
+            wiz.accept()
+        mock_box.assert_called_once()
+        title, body = mock_box.call_args[0][1], mock_box.call_args[0][2]
+        # Літерали замість tr(ключ) — вимога вартового тавтологій.
+        self.assertEqual(title, "Підсумок налаштування")
+        self.assertIn("Налаштування → Додаткові можливості", body)
+
+    def test_finish_summary_shown_only_once(self):
+        wiz = self._wizard(gpu_possible=False)
+        with patch("fronts.desktop.onboarding.model_present", return_value=False), \
+                patch("whisper_core.cuda_runtime.gpu_present", return_value=False), \
+                patch.object(QMessageBox, "information") as mock_box:
+            wiz.accept()
+            wiz.accept()
+        self.assertEqual(mock_box.call_count, 1,
+                         "підсумок показуємо один раз, навіть якщо accept() кличуть кілька разів")

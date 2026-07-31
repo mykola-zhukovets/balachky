@@ -74,7 +74,7 @@ class ModelLifecycleTests(unittest.TestCase):
         self.assertEqual(self.lifecycle.state, "loaded")
 
     def test_unload_exception_leaves_state_consistent_not_loaded(self):
-        # Відтворення дефекту суду: unload частково відпускає ресурси (engine=None),
+        # Відтворення дефекту рецензії: unload частково відпускає ресурси (engine=None),
         # а потім падає на завершенні sidecar. Стан НЕ має лишитись "loaded",
         # інакше наступний ensure_loaded поверне без reload → transcribe по None.
         def failing_unload():

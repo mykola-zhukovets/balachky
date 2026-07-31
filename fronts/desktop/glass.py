@@ -9,14 +9,16 @@
 QPushButton сюди не потрапляє, лишаються тільки його метрики sizeHint).
 """
 from PySide6.QtCore import (
-    QAbstractAnimation, QEasingCurve, QElapsedTimer, QObject, QPointF, QRect,
-    QRectF, QSize, Qt, QTimer, QVariantAnimation,
+    QAbstractAnimation, QEasingCurve, QElapsedTimer, QEvent, QObject, QPoint,
+    QPointF, QRect, QRectF, QSize, Qt, QTimer, QVariantAnimation,
 )
 from PySide6.QtGui import (
     QAccessible, QAccessibleEvent, QBrush, QColor, QFont, QFontMetrics, QIcon,
     QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient,
 )
-from PySide6.QtWidgets import QPushButton, QToolButton, QToolTip, QWidget
+from PySide6.QtWidgets import (
+    QLayout, QPushButton, QToolButton, QToolTip, QWidget,
+)
 
 import math
 
@@ -30,6 +32,137 @@ from . import theme
 
 _RADIUS = 12        # радіус скляної кнопки (канон макета 22.07: контроли 12px)
 _ICON = 18          # розмір іконки nav-пункту (dp; масштабує Qt)
+
+
+class FlowLayout(QLayout):
+    """Layout, що переносить дочірні віджети на новий рядок, коли вони не
+    влазять по ширині — стандартний Qt-рецепт (flow layout example).
+
+    Чіп-ряди зі змінною кількістю кнопок (часові мітки наради, розділи,
+    мітки — до 12 штук) не мають наперед відомої ширини; звичайний
+    QHBoxLayout ставить їх в один рядок і виштовхує картку за межі вікна
+    (горизонтальна прокрутка — діагноз 2026-07-30 №1). FlowLayout — ОДИН
+    спільний контейнер для всіх трьох рядів (chaprow/markrow/segrow)."""
+
+    def __init__(self, parent=None, margin=0, spacing=8):
+        super().__init__(parent)
+        if parent is not None:
+            self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+        self._items = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        x, y = rect.x(), rect.y()
+        line_height = 0
+        spacing = self.spacing()
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + spacing
+            if next_x - spacing > rect.right() and line_height > 0:
+                x = rect.x()
+                y = y + line_height + spacing
+                next_x = x + hint.width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y()
+
+
+def _tooltip_size(text: str) -> QSize:
+    """Оцінка розміру, який займе QToolTip для ``text`` (шрифт підказки +
+    запас під QSS-рамку/padding — theme.py `QToolTip{}`)."""
+    fm = QFontMetrics(QToolTip.font())
+    lines = text.splitlines() or [text]
+    w = min(520, max((fm.horizontalAdvance(ln) for ln in lines), default=0) + 20)
+    h = fm.height() * len(lines) + 12
+    return QSize(w, h)
+
+
+def _tooltip_overlap_band(anchor: QPoint, text: str) -> QRect:
+    """Перевірочна смуга навколо ``anchor`` — ЩЕДРІША за сам тултип (удвічі
+    ширша, центрована на anchor.x), бо штатний Qt сам ще підправляє позицію
+    підказки біля межі екрана (може зсунути її вліво чи вгору відносно точки,
+    яку ми передали). Прямокутник рівно з ``anchor`` як top-left пропустив би
+    саме той зсув, що й спричиняв реальне перекриття (діагноз 2026-07-30 №3) —
+    тож тут МИ самі рахуємо ризик, а не довіряємо один прямокутник вправо-вниз."""
+    size = _tooltip_size(text)
+    return QRect(anchor.x() - size.width(), anchor.y(), 2 * size.width(), size.height())
+
+
+def _sibling_rects(widget) -> list:
+    """Глобальні прямокутники видимих сусідів ``widget`` у тому самому
+    layout — контроли, яких підказка НЕ повинна перекривати."""
+    parent = widget.parentWidget()
+    layout = parent.layout() if parent is not None else None
+    if layout is None:
+        return []
+    rects = []
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        w = item.widget() if item is not None else None
+        if w is None or w is widget or not w.isVisible():
+            continue
+        rects.append(QRect(w.mapToGlobal(QPoint(0, 0)), w.size()))
+    return rects
+
+
+def show_tooltip_avoiding_siblings(widget, text: str) -> None:
+    """Показати підказку ``text`` для ``widget`` так, щоб вона НІКОЛИ не
+    перекривала сусідній контрол у тому самому layout (Правило збереження
+    контролів — діагноз 2026-07-30 №3). За замовч. — під лівим краєм кнопки
+    (як штатний QToolTip); якщо це перекриє сусіда — показуємо НАД кнопкою
+    замість цього. ОДИН спільний хелпер для GlassButton і TipToolButton."""
+    if not text:
+        return
+    siblings = _sibling_rects(widget)
+    below = widget.mapToGlobal(widget.rect().bottomLeft())
+    if siblings and any(_tooltip_overlap_band(below, text).intersects(r)
+                         for r in siblings):
+        size = _tooltip_size(text)
+        above = widget.mapToGlobal(widget.rect().topLeft())
+        above = QPoint(above.x(), above.y() - size.height())
+        if not any(_tooltip_overlap_band(above, text).intersects(r)
+                   for r in siblings):
+            below = above
+    QToolTip.showText(below, text, widget)
 
 
 class TipToolButton(QToolButton):
@@ -64,8 +197,7 @@ class TipToolButton(QToolButton):
 
     def enterEvent(self, event):
         if self._tip:
-            QToolTip.showText(
-                self.mapToGlobal(self.rect().bottomLeft()), self._tip, self)
+            show_tooltip_avoiding_siblings(self, self._tip)
         super().enterEvent(event)
 
 
@@ -125,6 +257,18 @@ class GlassButton(QPushButton):
         if event.button() == Qt.LeftButton and self.isEnabled():
             motion.press(self)
         super().mousePressEvent(event)
+
+    def event(self, e):
+        # Перехопити штатний QEvent.ToolTip: замінюємо позицію Qt-за-замовчуванням
+        # (яка нічого не знає про сусідні контроли) на розрахунок, що НЕ перекриє
+        # сусіда в тому самому layout (діагноз 2026-07-30 №3, той самий хелпер,
+        # що й TipToolButton — один спосіб на обидва класи кнопок).
+        if e.type() == QEvent.ToolTip:
+            tip = self.toolTip()
+            if tip:
+                show_tooltip_avoiding_siblings(self, tip)
+            return True
+        return super().event(e)
 
     def _content_color(self) -> QColor:
         """Колір іконки+тексту за станом. Disabled — тьмяний (≈45% альфи, як QSS
@@ -366,7 +510,7 @@ def _tag_accent(kind: str) -> str:
     # читаємо з ПОТОЧНОЇ палітри (нічний режим свопає її на льоту)
     # _WARN — теплий бурштиновий (GOLD_PRESSED), а НЕ DANGER_MUTED: той теракот
     # удень (#CF7B62) і червоний уночі (#E06A6A) лишав попередження червонуватим
-    # (суд-3, п.7). Токен існуючий — нового hex не вводимо.
+    # (рецензія-3, п.7). Токен існуючий — нового hex не вводимо.
     return {_QUEUED: theme.IDLE, _BUSY: theme.GOLD, _DONE: theme.SUCCESS,
             _ERROR: theme.ALERT, _WARN: theme.GOLD_PRESSED}[kind]
 

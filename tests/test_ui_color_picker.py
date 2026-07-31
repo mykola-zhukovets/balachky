@@ -5,7 +5,7 @@ from PySide6.QtGui import QColor
 
 from whisper_core.config import Config
 from fronts.desktop import theme, i18n
-from fronts.desktop.i18n import tr, STRINGS
+from fronts.desktop.i18n import STRINGS
 from fronts.desktop.pages.settings import SettingsPage, _color_swatch_icon
 
 
@@ -15,6 +15,14 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
+
+
+@pytest.fixture
+def uk_language():
+    language = i18n.current_language()
+    i18n.set_language("uk")
+    yield
+    i18n.set_language(language)
 
 
 @pytest.fixture(autouse=True)
@@ -71,15 +79,17 @@ def test_i18n_language_parity_and_cleanup():
     assert ui_color_keys_uk == ui_color_keys_en, "Паритет ключів set_ui_color_* між uk та en"
 
 
-def test_ui_color_controls_accessibility(qapp):
+def test_ui_color_controls_accessibility(qapp, uk_language):
     """Кожен новий контрол має accessibleName та toolTip."""
     ctrl = DummyController()
     page = SettingsPage(ctrl)
 
     choice = page._ui_color_choice
-    assert choice.accessibleName() == tr("set_ui_color_title")
-    assert choice.toolTip() == tr("set_ui_color_title")
-    assert page._ui_color_hint.text() == tr("set_ui_color_hint")
+    assert choice.accessibleName() == "Колір інтерфейсу"
+    assert choice.toolTip() == "Колір інтерфейсу"
+    assert page._ui_color_hint.text() == (
+        "Для роботи в темряві вибирайте червоний — решту кольорів видно збоку."
+    )
 
 
 def test_preset_selection_changes_palette_and_config(qapp):

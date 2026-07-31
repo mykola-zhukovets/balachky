@@ -2,15 +2,16 @@
 ===========================================================
 
 Цей файл перелічує сторонні компоненти, що постачаються разом із застосунком.
-Сам застосунок поширюється за ліцензією PolyForm Noncommercial License 1.0.0 —
-повний текст у файлі LICENSE, додаткові дозволи — у COMMERCIAL-LICENSE.md. Повні
-тексти сторонніх ліцензій — у теці licenses\.
+Сам застосунок поширюється за ліцензією PolyForm Noncommercial License 1.0.0.
+У PyInstaller onedir-збірці повний текст LICENSE і додаткові дозволи
+COMMERCIAL-LICENSE.md лежать поруч із цим файлом у теці _internal; повні тексти
+сторонніх ліцензій — у _internal\licenses\.
 
 The application "Balachky" itself is licensed under the PolyForm
-Noncommercial License 1.0.0 (full text: LICENSE file in this directory;
-additional permissions: COMMERCIAL-LICENSE.md). The distribution bundles the
-third-party components listed below. Full license texts are provided in the
-licenses\ directory.
+Noncommercial License 1.0.0. In the PyInstaller onedir build, LICENSE and
+COMMERCIAL-LICENSE.md are stored beside this notice in the _internal directory.
+The distribution bundles the third-party components listed below. Full license
+texts are provided in the _internal\licenses\ directory.
 
 Format of each entry:
   Component (version) — SPDX license id
@@ -22,14 +23,14 @@ Format of each entry:
 1. FFmpeg (LGPL build inside PyAV) — no GPL codecs
 --------------------------------------------------------------------------
 FFmpeg (LGPL shared-library build linked into the PyAV 18.0.0 wheel, av\)
-  — SPDX: LGPL-2.1-or-later (built with --enable-version3, no --enable-gpl)
+  — SPDX: LGPL-3.0-or-later (built with --enable-version3, no --enable-gpl)
   Upstream: https://ffmpeg.org
   Build: BtbN FFmpeg-Builds, win64-lgpl-shared (FFmpeg 8.x,
          N-125716-g1b1f602699-20260722), configured WITHOUT --enable-gpl and
          with --disable-libx264 --disable-libx265. The PyAV Python bindings
          (av==18.0.0) are compiled from source against this LGPL build and the
          seven FFmpeg DLLs are placed next to the av *.pyd files.
-  License texts: LGPL-2.1 — licenses\LGPL-3.0.txt
+  License text: LGPL-3.0 — licenses\LGPL-3.0.txt
 
   This build contains NO GPL-only encoders: libx264 and libx265 are absent
   (verified — av.codec.Codec("libx264","w") / ("libx265","w") raise
@@ -37,7 +38,7 @@ FFmpeg (LGPL shared-library build linked into the PyAV 18.0.0 wheel, av\)
   audio export uses AAC (native) and MP3 (LAME, LGPL). Notable libraries in av\:
 
     avcodec-63, avdevice-63, avfilter-12, avformat-63, avutil-61,
-    swresample-7, swscale-10   FFmpeg           LGPL-2.1-or-later
+    swresample-7, swscale-10   FFmpeg           LGPL-3.0-or-later
     libvpx                     libvpx           BSD-3-Clause  (VP8/VP9)
     libopus                    Opus             BSD-3-Clause
     libmp3lame                 LAME             LGPL-2.0-or-later
@@ -93,6 +94,12 @@ Qt6Svg.dll and other Qt6*.dll files), bundled via the PySide6 packages:
   - Source code of PySide6/shiboken6:
     https://code.qt.io/cgit/pyside/pyside-setup.git/
     https://pypi.org/project/PySide6/ (sdist)
+
+  Qt Multimedia also bundles five FFmpeg 7.1.3 shared libraries
+  (avcodec-61.dll, avformat-61.dll, avutil-59.dll, swresample-5.dll,
+  swscale-8.dll). Their embedded license string is "LGPL version 2.1 or
+  later" (SPDX: LGPL-2.1-or-later); applicable text:
+  licenses\LGPL-2.1.txt.
 
 
 --------------------------------------------------------------------------
@@ -305,7 +312,15 @@ shared text file is referenced (Apache-2.0.txt, MPL-2.0.txt, PSF-2.0.txt).
   typing_extensions  4.16.0     PSF-2.0             https://github.com/python/typing_extensions
   python-docx        1.1.2      MIT                 https://github.com/python-openxml/python-docx
   lxml               6.1.1      BSD-3-Clause        https://github.com/lxml/lxml
-  cryptography        44–46      Apache-2.0 OR BSD-3-Clause https://github.com/pyca/cryptography
+  cryptography       46.0.7      Apache-2.0 OR BSD-3-Clause https://github.com/pyca/cryptography
+  aiohttp            3.14.1      Apache-2.0          https://github.com/aio-libs/aiohttp
+  frozenlist          1.8.0      Apache-2.0          https://github.com/aio-libs/frozenlist
+  multidict           6.7.1      Apache-2.0          https://github.com/aio-libs/multidict
+  propcache           0.5.2      Apache-2.0          https://github.com/aio-libs/propcache
+  yarl               1.24.2      Apache-2.0          https://github.com/aio-libs/yarl
+  MarkupSafe          3.0.3      BSD-3-Clause        https://github.com/pallets/markupsafe
+  pydantic-core      2.46.4      MIT                 https://github.com/pydantic/pydantic-core
+  llama-cpp-python   0.3.34      MIT                 https://github.com/abetlen/llama-cpp-python
   symspellpy         6.10.0     MIT                 https://github.com/mammothb/symspellpy
   psutil             7.2.2      BSD-3-Clause        https://github.com/giampaolo/psutil
   pymorphy3          2.0.6      MIT                 https://github.com/no-plagiarism/pymorphy3
@@ -320,8 +335,9 @@ listed in section 2.)
 NOTE on pymorphy3-dicts-uk: the Python code of this package is MIT-licensed,
 but the Ukrainian dictionary data it ships is licensed separately under
 Creative Commons Attribution-Share Alike 3.0
-(http://creativecommons.org/licenses/by-sa/3.0/), per the package's own
-description on PyPI.
+(https://creativecommons.org/licenses/by-sa/3.0/legalcode.txt), per the
+package's own description on PyPI. The official legal code is reproduced at
+licenses\CC-BY-SA-3.0.txt.
 
 NOTE on ONNX Runtime: onnxruntime.dll statically links additional
 third-party components (abseil, Eigen, re2, protobuf, ONNX, flatbuffers
@@ -339,10 +355,11 @@ listed in section 4. Apache-2.0 (fork) — licenses\Apache-2.0.txt; MIT
 Apache-2.0 and MIT are GPL-3.0 compatible.
 
 NOTE on Meetily device monitor: the runtime device-disconnect/reconnect
-approach in whisper_core\meeting\capture.py was adapted from the local MIT
-reference clone at reference\meetily\frontend\src-tauri\src\audio\device_monitor.rs
-(Meetily). This implementation is a Python adaptation for sounddevice and
-PyAudioWPatch; it does not copy Rust source text. Meetily is MIT licensed.
+approach in whisper_core\meeting\capture.py was adapted from Meetily
+(MIT licensed), file frontend/src-tauri/src/audio/device_monitor.rs, in the
+public repository https://github.com/Zackriya-Solutions/meetily
+This implementation is a Python adaptation for sounddevice and
+PyAudioWPatch; it does not copy Rust source text.
 
 
 --------------------------------------------------------------------------
@@ -351,23 +368,41 @@ FILES IN licenses\
 
   PERMISSIVE-LICENSES.txt    consolidated per-package license texts
   Apache-2.0.txt             Apache License 2.0
+  LGPL-2.1.txt               GNU LGPL v2.1
   LGPL-3.0.txt               GNU LGPL v3 (incorporates GPL v3 by reference)
   GPL-2.0.txt                GNU GPL v2
   MPL-2.0.txt                Mozilla Public License 2.0
   PSF-2.0.txt                Python Software Foundation License stack
   OFL-1.1.txt                SIL Open Font License 1.1
   CC-BY-4.0.txt              Creative Commons Attribution 4.0
+  CC-BY-SA-3.0.txt           Creative Commons Attribution-ShareAlike 3.0
   FONT-AWESOME-LICENSE.txt   Font Awesome Free official license notice
   Intel-OpenMP-EULA.txt      Intel EULA for Developer Tools
   PyInstaller-COPYING.txt    GPL-2.0 WITH PyInstaller Bootloader-exception
   ONNXRuntime-ThirdPartyNotices.txt
                              upstream notices for components statically
                              linked into onnxruntime.dll
+  BINARY-NOTICES.txt         per-file binary version, upstream, license,
+                             and SHA-256 trace for the audited Windows build
 
-PolyForm Noncommercial License 1.0.0 (the application license): LICENSE file
-in the application root directory; additional permissions in COMMERCIAL-LICENSE.md.
-The bundled FFmpeg build is LGPL (section 1) — no GPL codecs; its LGPL text is in
-licenses\LGPL-3.0.txt.
+PolyForm Noncommercial License 1.0.0 (the application license): LICENSE and
+COMMERCIAL-LICENSE.md beside this notice in the _internal directory. The
+PyAV FFmpeg build is LGPL-3.0-or-later (section 1), while the Qt Multimedia
+FFmpeg build is LGPL-2.1-or-later (section 2); no GPL codecs are enabled.
+Both applicable LGPL texts are provided in licenses\.
+
+
+--------------------------------------------------------------------------
+BINARY TRACE MANIFEST
+--------------------------------------------------------------------------
+
+Every packaged .dll, .pyd, and .exe in the audited Windows onedir build is
+mapped to its PE FileVersion when present; otherwise to owning-package
+METADATA or explicitly labelled companion-runtime PE provenance. Each row also
+records the upstream project, applicable license, and exact SHA-256 in
+licenses\BINARY-NOTICES.txt. The manifest includes the FFmpeg/PyAV DLLs
+individually, so a recipient can trace a packed PE file to the exact FFmpeg
+build identity and digest rather than relying on a package-level statement.
 
 --------------------------------------------------------------------------
 8. REFERENCE IMPLEMENTATION ACKNOWLEDGEMENT
@@ -375,7 +410,8 @@ licenses\LGPL-3.0.txt.
 
 Meetily (reference repository, consulted for live-transcription architecture)
   — MIT
-  Upstream: https://github.com/Zackriya-Solutions/meeting-minutes
+  Upstream: https://github.com/Zackriya-Solutions/meetily
+  (the repository was previously published as "meeting-minutes")
   Relevant reference: frontend\src-tauri\src\audio\transcription\worker.rs
 
 Balachky's Python implementation in whisper_core\live.py is an independent

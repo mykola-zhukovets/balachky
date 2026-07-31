@@ -177,6 +177,7 @@ class Recorder:
         self._preferred_device_name = input_device  # вибір користувача для retry
         self._sink = None            # feature/player-recordings: стрім-сток диктофона
         self._sink_failed = False    # лог помилки sink — раз на епізод, не щоблок
+        self._fallback_pending = False
         self._stream = None
         self._on_audio_state = on_audio_state or (lambda _state: None)
         self._recovery_requested = threading.Event()
@@ -238,8 +239,9 @@ class Recorder:
         Recovery передає start=False: спершу дописуємо тишу, і тільки тоді
         PortAudio дістає право викликати callback нового покоління.
         """
+        self._fallback_pending = False
         device = self._resolve_device(name)
-        attempts = [(device, name)]
+        attempts = [(device, name if device is not None else None)]
         if device is not None:
             attempts.append((None, None))
         for target_device, actual_name in attempts:
@@ -258,6 +260,10 @@ class Recorder:
                 self._device_name = actual_name if target_device is not None else None
                 if start:
                     stream.start()
+                if name and actual_name is None:
+                    self._fallback_pending = True
+                    if self._recording:
+                        self._report_device_fallback()
                 return True
             except Exception:
                 logging.exception("Мікрофон недоступний (%s)", actual_name)
@@ -266,6 +272,15 @@ class Recorder:
                 self._close_stream_object(stream)
         self._device_name = None
         return False
+
+    def _report_device_fallback(self) -> None:
+        if not self._fallback_pending:
+            return
+        self._fallback_pending = False
+        try:
+            self._on_audio_state("fallback")
+        except Exception:
+            logging.exception("Не вдалося повідомити про підміну мікрофона")
 
     def set_input_device(self, name: "str | None"):
         """Атомарно витіснити старий потік потоком вибраного мікрофона."""
@@ -498,6 +513,7 @@ class Recorder:
         self._sink = sink
         self._sink_failed = False
         self._recording = True
+        self._report_device_fallback()
 
     def stop(self) -> list:
         self._recording = False

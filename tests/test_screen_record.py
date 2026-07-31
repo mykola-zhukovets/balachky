@@ -5,6 +5,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 
@@ -41,20 +42,24 @@ class _Stream:
 
 
 class _Container:
-    def __init__(self, **kw):
+    def __init__(self, path, **kw):
         self.stream = _Stream(**{k: v for k, v in kw.items() if k != "close_error"})
         self.closed = False
         self.close_error = kw.get("close_error", False)
+        self._file = open(path, "wb")
+        self._file.write(b"header")
 
     def add_stream(self, codec, rate):
         self.codec, self.rate = codec, rate
         return self.stream
 
     def mux(self, _packet):
-        pass
+        self._file.write(b"packet")
 
     def close(self):
         self.closed = True
+        self._file.write(b"trailer")
+        self._file.close()
         if self.close_error:
             raise RuntimeError("close failed")
 
@@ -66,9 +71,9 @@ class _AV:
         self.containers = []
         self.kw = kw
 
-    def open(self, _path, mode):
+    def open(self, path, mode):
         self.assert_mode = mode
-        container = _Container(**self.kw)
+        container = _Container(path, **self.kw)
         self.containers.append(container)
         return container
 
@@ -101,6 +106,20 @@ class _Source:
         return np.zeros((6, 8, 4), dtype=np.uint8)
 
 
+class _InterruptedSource(_Source):
+    def __init__(self):
+        super().__init__()
+        self.second_grab = threading.Event()
+
+    def grab(self, _index):
+        self.grabs += 1
+        if self.grabs == 1:
+            return np.zeros((6, 8, 4), dtype=np.uint8)
+        self.second_grab.set()
+        self.release.wait(2.0)
+        raise RuntimeError("capture interrupted")
+
+
 class ScreenRecorderTests(unittest.TestCase):
     def _start(self, source, av=None, fps=12):
         recorder = ScreenRecorder(source_factory=lambda: source, av_module=av or _AV())
@@ -131,6 +150,41 @@ class ScreenRecorderTests(unittest.TestCase):
         self.assertTrue(recorder.wait_finished(1.0))
         self.assertEqual(source.grabs, 1)
         self.assertEqual(av.containers[0].stream.frames, 0)
+
+    def test_interrupted_recording_publishes_only_finalized_partial_file(self):
+        av = _AV()
+        source = _InterruptedSource()
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "screen.mp4"
+            output.write_bytes(b"old recording")
+            recorder = ScreenRecorder(
+                source_factory=lambda: source, av_module=av)
+            self.assertTrue(recorder.start(1, output, 12))
+            self.assertTrue(recorder.wait_started())
+            self.assertTrue(source.second_grab.wait(1.0))
+            self.assertEqual(output.read_bytes(), b"old recording")
+            source.release.set()
+            self.assertTrue(recorder.wait_finished(1.0))
+            self.assertTrue(recorder.finished_error)
+            self.assertEqual(output.read_bytes(), b"headertrailer")
+            self.assertEqual(list(output.parent.iterdir()), [output])
+
+    def test_fsync_failure_preserves_old_recording_and_removes_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "screen.mp4"
+            output.write_bytes(b"old recording")
+            recorder = ScreenRecorder(
+                source_factory=_Source, av_module=_AV())
+            with mock.patch(
+                    "whisper_core.meeting.screen_record.os.fsync",
+                    side_effect=OSError("fsync failed")):
+                self.assertTrue(recorder.start(1, output, 12))
+                self.assertTrue(recorder.wait_started())
+                recorder.request_stop()
+                self.assertTrue(recorder.wait_finished(1.0))
+            self.assertTrue(recorder.finished_error)
+            self.assertEqual(output.read_bytes(), b"old recording")
+            self.assertEqual(list(output.parent.iterdir()), [output])
 
     def test_hung_grab_does_not_block_stop_and_finished_stays_honest(self):
         source = _Source(block=True)

@@ -84,6 +84,7 @@ class _NavController(QObject):
     note_key_captured = Signal(str)
     command_edit_key_captured = Signal(str)
     panic_lock_key_captured = Signal(str)
+    screen_protection_state_changed = Signal(str)
     mic_test_result = Signal(str)
     update_result = Signal(object)
     download_progress = Signal(int, int)   # feature/auto-update
@@ -94,7 +95,7 @@ class _NavController(QObject):
     meeting_audio_ready = Signal(str)
     meeting_session_done = Signal(str, object)
     meeting_error = Signal(str, str)
-    meeting_storage_warning = Signal(str, float)
+    meeting_storage_warning = Signal(str, float, str)
     meeting_bookmark_key_captured = Signal(str)
     # запис екрана
     screen_record_state = Signal(str)
@@ -104,6 +105,7 @@ class _NavController(QObject):
     def __init__(self, sandbox: Path):
         super().__init__()
         self.cfg = Config()
+        self.cfg.save = lambda *a, **k: None
         self.cfg.model_name = "large-v3-turbo"
         self.profile = profiles.get_active(sandbox)
         self.output_mode = "paste"
@@ -135,7 +137,7 @@ class _NavController(QObject):
     def record_pause(self, on): pass
     def check_updates_now(self): pass
     def restart_app(self): pass
-    def enqueue_file(self, path): self._jobs += 1; return self._jobs
+    def enqueue_file(self, path, model=None): self._jobs += 1; return self._jobs
     def update_state(self): return "1.0.0", "1.0.0", "https://example/rel", False
     def delivery_state(self): return None, None, None   # feature/auto-update
     def start_installer_download(self, *a): pass
@@ -183,7 +185,15 @@ class _NavController(QObject):
     def clear_note_hotkey(self, *a, **k): pass
     def start_panic_key_capture(self, *a, **k): pass
     def clear_panic_lock_hotkey(self, *a, **k): pass
-    def set_screen_protection(self, *a, **k): pass
+    def set_screen_protection(self, enabled):
+        from fronts.desktop.app import DesktopApp
+        return DesktopApp.set_screen_protection(self, enabled)
+    def screen_protection_state(self):
+        from fronts.desktop.app import DesktopApp
+        return DesktopApp.screen_protection_state(self)
+    def apply_screen_protection_to_window(self, widget):
+        from fronts.desktop.app import DesktopApp
+        return DesktopApp.apply_screen_protection_to_window(self, widget)
     def start_mic_test(self, *a, **k): pass
     def set_vad(self, *a, **k): pass
     def set_noise_gate(self, *a, **k): pass
@@ -575,40 +585,75 @@ class NavSmokeTests(unittest.TestCase):
         finally:
             main_window_mod.QMenu = original_menu
 
+    def test_screen_protection_indicator_uses_failed_win32_result(self):
+        """Checkbox зберігає намір, а підпис показує фактичну відмову.
+        Мутація агрегатора «ігнорувати succeeded=False» мусить зробити цей тест
+        червоним, бо UI помилково покаже active замість failed."""
+        from unittest.mock import patch
+        from fronts.desktop.i18n import current_language, set_language
+        from fronts.desktop.main_window import _PAGES
+
+        language = current_language()
+        self.addCleanup(set_language, language)
+        set_language("uk")
+        refused = SimpleNamespace(
+            hwnd=101, enabled=True, supported=True,
+            succeeded=False, error_code=5)
+        with patch(
+                "whisper_core.win_hardening.is_display_affinity_supported",
+                return_value=True), patch(
+                "whisper_core.win_hardening.set_capture_protection_enabled",
+                return_value=(refused,)):
+            win = self._window()
+            win.resize(1000, 720)
+            settings_index = next(
+                i for i, (_icon, key) in enumerate(_PAGES)
+                if key == "nav_settings")
+            win.set_page(settings_index)
+            win.show()
+            self._app.processEvents()
+            win.settings._screen_protection.click()
+            self._app.processEvents()
+
+        status = getattr(win.settings, "_screen_protection_status", None)
+        self.assertIsNotNone(status, "немає індикатора фактичного стану")
+        self.assertFalse(status.isHidden(), "failed-стан приховано")
+        self.assertEqual(
+            status.text(), "Не вдалося ввімкнути захист екрана")
+        self.assertNotEqual(
+            status.text(), "Захист екрана діє")
+        self.assertEqual(status.accessibleName(), status.text())
+
     def test_sidebar_header_is_clickable_about_hub(self):
-        """№13: шапка сайдбара — ClickableFrame з accessibleName; клік будує
-        інформаційний хаб «Про програму» (exec замокано, щоб не блокувати тест)."""
+        """№13: шапка сайдбара — ClickableFrame з accessibleName; клік
+        перемикає на сторінку Налаштування → вкладку «Про програму» (модальне
+        вікно прибрано 30.07 — власник просив вести напряму в потрібний пункт
+        Налаштувань, а не спливати окремим вікном)."""
         from fronts.desktop.i18n import tr
         from fronts.desktop.main_window import ClickableFrame
-        from fronts.desktop import about as about_mod
+        from PySide6.QtWidgets import QToolButton
 
         win = self._window()
         frames = [f for f in win.findChildren(ClickableFrame)
                   if f.accessibleName() == tr("about_open")]
         self.assertTrue(frames, "шапка сайдбара не клікабельна / без accessibleName")
 
-        built = {}
-        orig_exec = about_mod.AboutDialog.exec
+        frames[0].clicked.emit()
+        self._app.processEvents()
 
-        def _no_block(self):
-            built["dlg"] = self
-            return 0
+        self.assertEqual(
+            win.pages.currentIndex(), win.pages.indexOf(win.settings),
+            "клік по шапці не перевів на сторінку Налаштувань")
+        self.assertEqual(
+            win.settings._tabs.tabText(win.settings._tabs.currentIndex()),
+            tr("set_tab_about"),
+            "клік по шапці не відкрив вкладку «Про програму»")
 
-        about_mod.AboutDialog.exec = _no_block
-        try:
-            frames[0].clicked.emit()
-        finally:
-            about_mod.AboutDialog.exec = orig_exec
-        dlg = built.get("dlg")
-        self.assertIsNotNone(dlg, "клік по шапці не відкрив «Про програму»")
-        # зовнішній лінк на репозиторій: відкривається у браузері + має ім'я
-        from PySide6.QtWidgets import QLabel
-        gh = [l for l in dlg.findChildren(QLabel)
-              if l.accessibleName() == tr("about_github")]
-        self.assertTrue(gh, "у хабі нема лінка на GitHub з accessibleName")
-        self.assertTrue(gh[0].openExternalLinks(),
-                        "лінк GitHub не відкриває зовнішнє (setOpenExternalLinks)")
-        dlg.setParent(win)   # приберемо разом із вікном (стоп-таймери в tearDown)
+        # зовнішній лінк на репозиторій усе ще досяжний — тепер на вкладці
+        gh = win.settings.findChild(QToolButton, "authorGithubLink")
+        self.assertIsNotNone(gh, "на вкладці «Про програму» нема лінка на GitHub")
+        self.assertTrue((gh.accessibleName() or "").strip(),
+                        "лінк GitHub без accessibleName")
 
     def test_model_card_has_about_link_for_preset_not_for_local(self):
         """№7: картка пресета несе клікабельний «Про модель ↗» (https, у браузер,

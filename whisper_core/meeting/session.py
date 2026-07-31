@@ -29,6 +29,7 @@ from . import (
     STATUS_RECORDING, STATUS_STOPPED, STATUS_CORRUPTED, TRACK_MIC, TRACK_SYS, TRACKS,
     PRESET_BOTH, PRESET_MULTIMIC, PRESET_ONLYMIC,
 )
+from ..paths import anonymize_path
 
 # ре-експорт для контракту (session.SCHEMA, session.STATUS_*, session.PRESET_* —
 # так білдер UI і не дублює рядки, і не тягне з двох місць)
@@ -49,6 +50,7 @@ __all__ = [
 
 _META_NAME = "meeting.json"
 _ENCRYPT_MARKER = "encrypting.marker"
+_ARTIFACT_COPY_BUFFER_BYTES = 1024 * 1024
 # С3: заздалегідь зарезервовані блоки під аварійний запис meeting.json. На
 # повному диску atomic_write_json сам не має де писати; звільнивши цей файл,
 # ми гарантовано вивільняємо місце під позначку storage_error.
@@ -283,12 +285,13 @@ def _preset_for(sources) -> str:
 
 def _alloc_dir(root: Path) -> Path:
     """Тека сесії = локальний час старту; колізія (два старти за секунду) →
-    суфікс -1, -2… (як Profile.reset_memory; Windows rename не перезаписує)."""
+    суфікс -1, -2… Tombstone теж резервує ім'я, навіть якщо папку вже видалено."""
     root.mkdir(parents=True, exist_ok=True)
     base = time.strftime("%Y-%m-%d_%H-%M-%S")
     d = root / base
     n = 1
-    while d.exists():
+    while (d.exists()
+           or (root / f".{d.name}.audit.deleted").exists()):
         d = root / f"{base}-{n}"
         n += 1
     d.mkdir()
@@ -403,6 +406,13 @@ class MeetingSession:
     def _rotate(self, track: str) -> None:
         st = self._tracks[track]
         if st["file"] is not None:
+            # Сегмент ~45с (DEFAULT_SEGMENT_SECONDS) — природна межа для fsync:
+            # синхронізувати на кожен блок PCM дав би затримку захоплення живого
+            # звуку, а лише при finalize() лишав би до 45с найсвіжішого запису
+            # без гарантії диска при аварії живлення. Ротація вже трапляється з
+            # цим кроком, тож fsync тут не додає окремої паузи поверх наявної.
+            st["file"].flush()
+            os.fsync(st["file"].fileno())
             st["file"].close()
             st["file"] = None
         st["index"] += 1
@@ -456,20 +466,47 @@ class MeetingSession:
 
     def finalize(self, status: str = STATUS_STOPPED) -> MeetingMeta:
         """Флаш хвостових сегментів, порахувати duration за к-стю кадрів на диску,
-        записати meeting.json зі статусом. Ідемпотентна."""
+        записати meeting.json зі статусом. Ідемпотентна.
+
+        fsync кожного артефакту (хвостовий сегмент доріжки, meeting.json) —
+        best-effort: збій одного файлу (напр. диск відвалився саме зараз) не
+        має заблокувати решту фіналізації чи лишити сесію в стані "recording"
+        назавжди. Усі збої збираються в один WARNING без стека на кожен файл —
+        деталь у самому OSError і так каже все потрібне."""
         if self._finalized:
             return self._meta
+        fsync_failures = []
         for track in self._sources:
             st = self._tracks[track]
             with st["lock"]:
                 if st["file"] is not None:
-                    st["file"].close()
+                    f = st["file"]
                     st["file"] = None
+                    try:
+                        # Хвостовий сегмент коротший за 45с і не пройшов
+                        # _rotate() — без цього fsync останні секунди наради
+                        # лишались би лише в буфері ОС до природного flush.
+                        f.flush()
+                        os.fsync(f.fileno())
+                    except OSError:
+                        # anonymize_path — конвенція модуля: жоден шлях у лог
+                        # не несе C:\Users\<логін> (рецензія 31.07).
+                        fsync_failures.append(anonymize_path(
+                            self._dir / track / f"{st['index']:04d}.f32"))
+                    finally:
+                        f.close()
         with self._meta_lock:
             self._meta.status = status
             self._meta.duration = _measure_duration(
                 self._dir, self._rate, self._channels, self._sources)
-            self._write_meta()
+            try:
+                self._write_meta()
+            except OSError:
+                fsync_failures.append(anonymize_path(self._dir / _META_NAME))
+        if fsync_failures:
+            logging.warning(
+                "Фіналізація наради: не вдалося fsync %d файл(ів): %s",
+                len(fsync_failures), ", ".join(fsync_failures))
         # Запис завершено — аварійний резерв більше не потрібен, повертаємо місце.
         self._release_storage_reserve()
         self._finalized = True
@@ -620,7 +657,11 @@ def write_artifact_file(session_dir: Path, relative_path, source_path: Path) -> 
     plain.parent.mkdir(parents=True, exist_ok=True)
     temp = plain.with_name(f"{plain.name}.{uuid.uuid4().hex}.tmp")
     try:
-        shutil.copyfile(source_path, temp)
+        with source_path.open("rb") as source, temp.open("wb") as output:
+            shutil.copyfileobj(
+                source, output, length=_ARTIFACT_COPY_BUFFER_BYTES)
+            output.flush()
+            os.fsync(output.fileno())
         os.replace(temp, plain)
     finally:
         temp.unlink(missing_ok=True)
@@ -633,7 +674,17 @@ def _write_meta(session_dir: Path, meta: MeetingMeta) -> None:
 
 
 def decrypt_session_to(session_dir: Path, destination: Path) -> Path:
-    """Materialize one session for path-only consumers; caller owns cleanup."""
+    """Materialize one session for path-only consumers; caller owns cleanup.
+
+    Без fsync навмисно: обидва виклики (materialize_session,
+    _materialized_meeting_dir у fronts/desktop/app.py) пишуть у
+    tempfile.TemporaryDirectory — одноразовий кеш для програвання/перегляду,
+    що видаляється при виході або зміні сесії. `session_dir` (зашифрований
+    оригінал — єдиний довговічний носій наради) тут лише читається, не
+    змінюється. Аварія живлення під час копіювання лишає биту тимчасову
+    теку, яку наступний виклик просто перестворить з оригіналу — втрати
+    даних немає, тож синхронізація на диск тут не потрібна.
+    """
     from .storage_crypto import decrypt_file, ensure_dek
     session_dir = Path(session_dir)
     destination = Path(destination)
@@ -701,7 +752,8 @@ def load_meta(session_dir: Path) -> "MeetingMeta | None":
             InvalidTag = ()
         if isinstance(exc, (InvalidTag, ValueError, UnicodeError)) and (
                 session_dir / (_META_NAME + ".enc")).exists():
-            logging.error("Encrypted meeting metadata failed authentication: %s", session_dir)
+            logging.error("Encrypted meeting metadata failed authentication: %s",
+                          anonymize_path(session_dir))
             try:
                 created = int(session_dir.stat().st_mtime)
             except OSError:
@@ -963,7 +1015,7 @@ def delete_session(session_dir: Path, root: "Path | None" = None) -> bool:
         return False
     if not _within_root(session_dir, root):
         logging.warning("delete_session: %r поза сховищем %r — відмова",
-                        str(session_dir), str(root))
+                        anonymize_path(session_dir), anonymize_path(root))
         return False
     if not session_dir.exists():
         return False

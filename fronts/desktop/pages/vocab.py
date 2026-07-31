@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCursor
 
+import qtawesome as qta
+
 import learn  # модуль у корені репо; PyInstaller пакує його як звичайний модуль
 from .. import theme
 from whisper_core import paths, profiles
@@ -57,6 +59,32 @@ def _clear(lay):
             item.widget().deleteLater()
         elif item.layout():
             _clear(item.layout())
+
+
+def _table_empty_widget(text: str) -> QWidget:
+    """Порожній об'єднаний рядок таблиці — іконка + приглушений текст замість
+    голого сірого рядка (аудит 31.07: без іконки рядок сприймався як збій
+    завантаження таблиці, не як пояснення). Один рядок БЕЗ переносу — рядок
+    таблиці має фіксовану висоту (theme.setup_table); повний текст — у
+    тултипі, той самий патерн, що й в інших комірках цієї сторінки
+    (напр. sounds.setToolTip)."""
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(8, 2, 8, 2)
+    lay.setSpacing(8)
+    lay.addStretch()
+    icon = QLabel()
+    icon.setPixmap(qta.icon("fa6s.circle-info", color=theme.IDLE).pixmap(14, 14))
+    lay.addWidget(icon)
+    label = QLabel(text)
+    label.setProperty("muted", True)
+    label.setToolTip(text)
+    fm = label.fontMetrics()
+    label.setText(fm.elidedText(text, Qt.ElideRight, 480))
+    lay.addWidget(label, 1)
+    lay.addStretch()
+    w.setToolTip(text)
+    return w
 
 
 class _ProfileRow(QFrame):
@@ -590,6 +618,8 @@ class VocabPage(QWidget):
         # заповнення НЕ має будити itemChanged (це не правка користувача)
         self._table.blockSignals(True)
         self._table.clearSpans()
+        if self._table.rowCount():
+            self._table.removeCellWidget(0, 0)
         if terms:
             self._table.setRowCount(len(terms))
             for i, (canon, variants) in enumerate(sorted(terms.items())):
@@ -611,11 +641,7 @@ class VocabPage(QWidget):
         else:
             self._table.setRowCount(1)
             self._table.setSpan(0, 0, 1, 2)
-            empty = QTableWidgetItem(tr("vocab_terms_empty"))
-            empty.setTextAlignment(Qt.AlignCenter)
-            empty.setToolTip(tr("vocab_terms_empty"))
-            empty.setFlags(empty.flags() & ~Qt.ItemIsEditable)
-            self._table.setItem(0, 0, empty)
+            self._table.setCellWidget(0, 0, _table_empty_widget(tr("vocab_terms_empty")))
         self._table.blockSignals(False)
         # помічені нові слова
         _clear(self._cand_box)
@@ -1027,6 +1053,8 @@ class VocabPage(QWidget):
         data = macros_mod.load_macros(self._macros_path())
         table = self._macros_table
         table.clearSpans()
+        if table.rowCount():
+            table.removeCellWidget(0, 0)
         if data:
             table.setRowCount(len(data))
             for i, (trigger, expansion) in enumerate(sorted(data.items())):
@@ -1042,9 +1070,7 @@ class VocabPage(QWidget):
         else:
             table.setRowCount(1)
             table.setSpan(0, 0, 1, 2)
-            empty = QTableWidgetItem(tr("vocab_macros_empty"))
-            empty.setTextAlignment(Qt.AlignCenter)
-            table.setItem(0, 0, empty)
+            table.setCellWidget(0, 0, _table_empty_widget(tr("vocab_macros_empty")))
 
     def _add_macro(self):
         dlg = _MacroAddDialog(self)
@@ -1090,6 +1116,8 @@ class VocabPage(QWidget):
         pairs = phrasebook.list_phrases(self._phrases_path())
         table = self._phrase_table
         table.clearSpans()
+        if table.rowCount():
+            table.removeCellWidget(0, 0)
         if pairs:
             table.setRowCount(len(pairs))
             for i, (write, variants) in enumerate(pairs):
@@ -1104,10 +1132,7 @@ class VocabPage(QWidget):
         else:
             table.setRowCount(1)
             table.setSpan(0, 0, 1, 2)
-            empty = QTableWidgetItem(tr("vocab_phrase_empty"))
-            empty.setTextAlignment(Qt.AlignCenter)
-            empty.setToolTip(tr("vocab_phrase_empty"))
-            table.setItem(0, 0, empty)
+            table.setCellWidget(0, 0, _table_empty_widget(tr("vocab_phrase_empty")))
 
     def _refresh_phrase_suggestions(self):
         """Кандидати у пам'ять фраз зі щоденника помилок АКТИВНОГО словника

@@ -5,6 +5,7 @@
 Закриття вікна = сховати у трей (застосунок живе, поки трей активний).
 """
 import ctypes
+from ctypes import wintypes
 import html
 import logging
 import re
@@ -15,16 +16,14 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QStackedWidget,
     QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QFrame,
     QButtonGroup, QFileDialog, QApplication, QMenu, QInputDialog,
-    QSizePolicy, QMessageBox, QProgressBar,
+    QSizePolicy, QMessageBox, QProgressBar, QPushButton,
 )
 from PySide6.QtCore import Qt, QSettings, QTimer, QSize, Signal, QRectF
 from PySide6.QtGui import QShortcut, QKeySequence, QPixmap, QImage, QColor, QIcon, QPainter
 
 import qtawesome as qta
 
-from whisper_core import __version__
-from whisper_core._buildinfo import build_version
-from whisper_core.paths import asset_root, punctuator_model_dir
+from whisper_core.paths import asset_root, punctuator_model_dir, anonymize_path
 from whisper_core.terms import add_term
 
 from whisper_core import processing, punctuator  # feature/processing-slider
@@ -42,6 +41,45 @@ from .pages import page_header
 from . import theme   # нічний режим: іконки/HTML читають палітру наживо
 from .theme import spaced
 from whisper_core import history
+
+
+class TextLogReminderDialog(QMessageBox):
+    """Одноразове privacy-нагадування для старого include_text=True."""
+
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.setIcon(QMessageBox.Information)
+        self.setWindowTitle(tr("test_log_text_notice_title"))
+        self.setText(tr("test_log_text_notice_body"))
+        self.keep_button = self.addButton(
+            tr("test_log_text_notice_keep"), QMessageBox.RejectRole)
+        self.disable_button = self.addButton(
+            tr("test_log_text_notice_disable"), QMessageBox.AcceptRole)
+        self.keep_button.setAccessibleName(tr("test_log_text_notice_keep"))
+        self.disable_button.setAccessibleName(tr("test_log_text_notice_disable"))
+        self.setDefaultButton(self.keep_button)
+        self.setEscapeButton(self.keep_button)
+
+
+def maybe_show_test_log_text_reminder(parent, controller) -> bool:
+    """Показати re-consent лише у вже видимому, не згорнутому головному вікні."""
+    cfg = controller.cfg
+    if (not bool(getattr(cfg, "test_mode_include_text", False))
+            or bool(getattr(cfg, "test_mode_text_notice_shown", False))
+            or parent is None
+            or not parent.isVisible()
+            or parent.isMinimized()):
+        return False
+
+    dialog = TextLogReminderDialog(controller, parent)
+    dialog.exec()
+    cfg.test_mode_text_notice_shown = True
+    if dialog.clickedButton() is dialog.disable_button:
+        controller.set_test_mode(bool(getattr(cfg, "test_mode", False)), False)
+    else:
+        controller.save_config()
+    return True
 
 
 def _norm_word(word: str) -> str:
@@ -281,6 +319,145 @@ class ClickableFrame(QFrame):
         super().keyPressEvent(event)
 
 
+class SidebarDownloadIndicator(QFrame):
+    """Індикатор фонового завантаження моделі AI-протоколу, видимий З БУДЬ-ЯКОЇ
+    сторінки (E-бекграунд-докачка, аудит 31.07.2026).
+
+    Обґрунтування місця (сайдбар, між прокруткою навігації й кнопкою
+    «Налаштування»): сайдбар присутній на всіх сторінках — Диктування, Аудіо,
+    Нарада, Запис екрана, Історія, Словник, Налаштування, Пошук — тож людина
+    бачить стан якісного качання, гортаючи будь-яку з них, без окремої
+    QStatusBar знизу (та забирала б 24-32px висоти й ламала скляний дизайн
+    сайдбара на кожній сторінці, а не лише поки щось качається).
+
+    Приховано, доки немає активного завантаження; клік по картці відкриває
+    повний ProtocolModelDownloadDialog (приєднання, ALREADY_THIS)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setProperty("card", True)
+        self.hide()
+        self._speed_bps = None
+        self._speed_ref_time = None
+        self._speed_ref_bytes = 0
+        self._last_ui_update = 0.0
+        self._active_key = None
+        self._active_label = ""
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(4)
+        top = QHBoxLayout(); top.setSpacing(6)
+        self._title = QLabel()
+        self._title.setProperty("strong", True)
+        self._title.setWordWrap(True)
+        top.addWidget(self._title, stretch=1)
+        self._cancel_btn = QPushButton("✕")
+        self._cancel_btn.setFixedWidth(22)
+        self._cancel_btn.setToolTip(tr("protocol_model_wait_cancel_download"))
+        self._cancel_btn.setAccessibleName(tr("protocol_model_wait_cancel_download"))
+        self._cancel_btn.clicked.connect(self._on_cancel_clicked)
+        top.addWidget(self._cancel_btn)
+        lay.addLayout(top)
+        self._bar = QProgressBar()
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+        lay.addWidget(self._bar)
+        self._status = QLabel()
+        self._status.setProperty("muted", True)
+        self._status.setWordWrap(True)
+        lay.addWidget(self._status)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAccessibleName(tr("protocol_model_wait_title"))
+        self.setToolTip(tr("protocol_model_wait_title"))
+
+        from .download_manager import DownloadManager
+        self._manager = DownloadManager.instance()
+        self._manager.started.connect(self._on_started)
+        self._manager.progress.connect(self._on_progress)
+        self._manager.finished_ok.connect(self._on_finished_ok)
+        self._manager.failed.connect(self._on_failed)
+        self._manager.cancelled.connect(self._on_cancelled)
+        # Програма могла запуститись, а завантаження вже (частково) триває —
+        # неможливо насправді (менеджер живе лише в межах процесу), проте
+        # захист не завадить, якщо порядок ініціалізації колись зміниться.
+        if self._manager.is_busy():
+            self._on_started(self._manager.active_key(), self._manager.active_label())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self._active_key is not None:
+            self._open_dialog()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _open_dialog(self):
+        from .pages.protocol_ui import ProtocolModelDownloadDialog
+        dlg = ProtocolModelDownloadDialog(
+            self._active_key, label=self._active_label, parent=self.window())
+        dlg.show(); dlg.raise_(); dlg.activateWindow()
+
+    def _on_cancel_clicked(self):
+        self._manager.cancel_download()
+
+    def _on_started(self, key, label):
+        self._active_key = key
+        self._active_label = label or tr("protocol_model_wait_title")
+        self._title.setText(self._active_label)
+        self._bar.setRange(0, 0)
+        self._status.setText(tr("protocol_model_downloading_status"))
+        self._speed_bps = None
+        self._speed_ref_time = None
+        self._speed_ref_bytes = 0
+        self._last_ui_update = 0.0
+        self.show()
+
+    def _on_progress(self, key, done, total):
+        if key != self._active_key:
+            return
+        now = time.monotonic()
+        is_final = bool(total) and done >= total
+        if not is_final and (now - self._last_ui_update) < 0.2:
+            return
+        self._last_ui_update = now
+        if self._speed_ref_time is None:
+            self._speed_ref_time = now
+            self._speed_ref_bytes = done
+        else:
+            elapsed = now - self._speed_ref_time
+            if elapsed >= 0.2:
+                self._speed_bps = (done - self._speed_ref_bytes) / elapsed
+                self._speed_ref_time = now
+                self._speed_ref_bytes = done
+        if total:
+            self._bar.setRange(0, 1000)
+            self._bar.setValue(min(1000, int(done * 1000 / total)))
+        from .pages.protocol_ui import _progress_text
+        self._status.setText(_progress_text(done, total, self._speed_bps))
+
+    def _on_finished_ok(self, key):
+        if key != self._active_key:
+            return
+        self._status.setText(tr("protocol_model_ready"))
+        self._bar.setRange(0, 1); self._bar.setValue(1)
+        self._active_key = None
+        QTimer.singleShot(3000, self._hide_if_idle)
+
+    def _on_failed(self, key, _msg):
+        if key == self._active_key:
+            self._active_key = None
+            self.hide()
+
+    def _on_cancelled(self, key):
+        if key == self._active_key:
+            self._active_key = None
+            self.hide()
+
+    def _hide_if_idle(self):
+        if self._active_key is None:
+            self.hide()
+
+
 def _verbatim_differs(raw: str, final: str) -> bool:
     """Чи обробка (чистка/пунктуація) справді змінила текст — ОДНА умова і для
     підпису «виправлено написання», і для кнопки/пункту меню «Копіювати
@@ -515,28 +692,12 @@ class DictationPage(TermFixMenuMixin, QWidget):
         scroll.setWidget(feedhost)
         self._scroll = scroll
 
-        # порожній стан ⇄ стрічка: перемикається у add_entry
-        empty = QWidget()
-        ev = QVBoxLayout(empty)
-        ev.addStretch(3)
-        mic = QLabel()
-        mic.setPixmap(qta.icon("fa6s.microphone", color=theme.IDLE).pixmap(52, 52))
-        mic.setAlignment(Qt.AlignCenter)
-        theme.register_restyle_call(mic, lambda w: w.setPixmap(   # нічний режим
-            qta.icon("fa6s.microphone", color=theme.IDLE).pixmap(52, 52)))
-        ev.addWidget(mic)
-        ev.addSpacing(14)
-        et = QLabel(tr("dict_empty_title"))
-        et.setProperty("emptytitle", True)
-        et.setAlignment(Qt.AlignCenter)
-        ev.addWidget(et)
-        ev.addSpacing(6)
-        eh = QLabel(tr("dict_empty_hint"))
-        eh.setProperty("muted", True)
-        eh.setAlignment(Qt.AlignCenter)
-        spaced(eh, center=True)          # підказка диктування — просторіші рядки
-        ev.addWidget(eh)
-        ev.addStretch(4)
+        # порожній стан ⇄ стрічка: перемикається у add_entry. Спільний
+        # компонент EmptyState (аудит 31.07: один компонент, не шість копій)
+        # — раніше Диктування будувало власну копію тим самим набором рядків.
+        empty = EmptyState("fa6s.microphone", tr("dict_empty_title"),
+                           tr("dict_empty_hint"))
+        spaced(empty.hint_label, center=True)   # підказка диктування — просторіші рядки
 
         self._feed_stack = QStackedWidget()
         self._feed_stack.addWidget(empty)      # 0 — порожній стан
@@ -745,7 +906,7 @@ class DictationPage(TermFixMenuMixin, QWidget):
         # слів» сам займає ~247 точок; разом із трьома підписаними кнопками ряд
         # просив 776 точок, а картка на мінімумі вікна (1000) дає 683 — Qt
         # стискав кнопки нижче minimumSizeHint і різав НЕ ЛИШЕ нову «Копіювати
-        # дослівно», а й здорову «Переформатувати…» (знахідка суду 25.07).
+        # дослівно», а й здорову «Переформатувати…» (знахідка рецензії 25.07).
         # Окремий ряд просить 495 точок і вміщається з запасом на найвужчому
         # вікні в обох мовах — без скорочення підписів і без ховання дій у меню
         # «…» (обидві дії часті: копіювання — головний сценарій картки).
@@ -792,7 +953,7 @@ class DictationPage(TermFixMenuMixin, QWidget):
         _style_del(del_btn)
         theme.register_restyle_call(del_btn, _style_del)
         del_btn.setIconSize(QSize(13, 13))
-        del_btn.setFixedSize(22, 22)
+        del_btn.setFixedSize(24, 24)   # мін. 24×24 для клікабельних цілей (WCAG 2.5.8)
         del_btn.setAutoRaise(True)
         del_btn.setCursor(Qt.PointingHandCursor)
         del_btn.setFocusPolicy(Qt.StrongFocus)
@@ -944,7 +1105,9 @@ class FilesPage(TermFixMenuMixin, QWidget):
 
         self._qbox = QVBoxLayout()
         self._queue_empty = EmptyState("fa6s.file-audio", tr("files_queue_empty_title"),
-                                       tr("files_queue_empty_hint"))
+                                       tr("files_queue_empty_hint"),
+                                       button_text=tr("files_choose"), on_click=self._pick)
+        self._queue_empty.button.setEnabled(not self._no_model)
         root.addWidget(self._queue_empty)
 
         self._qbox.setSpacing(12)
@@ -1578,7 +1741,7 @@ class FilesPage(TermFixMenuMixin, QWidget):
         try:
             content = Path(src).read_text(encoding="utf-8-sig")
         except OSError:
-            logging.exception("Не вдалося прочитати субтитри %s", src)
+            logging.exception("Не вдалося прочитати субтитри %s", anonymize_path(src))
             self._saved_note(saved_lbl, tr("files_import_read_fail"), error=True)
             return
         cues = export.parse_subtitles(content)
@@ -1692,9 +1855,9 @@ class MainWindow(QMainWindow):
         logo = QLabel(tr("brand_top"))
         logo.setProperty("logo", True)
         words.addWidget(logo)
-        logo_sub_text = tr("brand_bottom")
-        if logo_sub_text:
-            logo_sub = QLabel(logo_sub_text)
+        bottom = tr("brand_bottom")
+        if bottom:
+            logo_sub = QLabel(bottom)
             logo_sub.setProperty("logosub", True)
             words.addWidget(logo_sub)
         brand.addLayout(words)
@@ -1720,6 +1883,12 @@ class MainWindow(QMainWindow):
             "QScrollArea { background: transparent; border: none; }"
             " QScrollArea > QWidget > QWidget { background: transparent; }")
         sv.addWidget(nav_scroll, stretch=1)
+        # Індикатор фонового завантаження моделі AI-протоколу (E-бекграунд-
+        # докачка, аудит 31.07.2026): між прокруткою навігації й «Налаштування»
+        # — видимий з будь-якої сторінки, приховується сам, доки нема качання.
+        self._download_indicator = SidebarDownloadIndicator()
+        sv.addWidget(self._download_indicator)
+        sv.addSpacing(8)
         # «Налаштування» — унизу, окремою кнопкою над футером (слоган/версія)
         if self._settings_nav_btn is not None:
             sv.addWidget(self._settings_nav_btn)
@@ -1734,10 +1903,6 @@ class MainWindow(QMainWindow):
         slogan.setContentsMargins(12, 0, 0, 0)
         sv.addWidget(slogan)
         sv.addSpacing(6)
-        ver = QLabel(tr("sidebar_version", ver=build_version(__version__)))
-        ver.setProperty("version", True)
-        ver.setContentsMargins(12, 0, 0, 0)
-        sv.addWidget(ver)
         # позначка активного режиму тестування (hint-рівень; під версією).
         # Оновлюється живо через сигнал test_mode_changed при перемиканні в Налаштуваннях.
         self._test_indicator = QLabel(tr("sidebar_test_mode"))
@@ -1805,32 +1970,11 @@ class MainWindow(QMainWindow):
         motion.fade_switch(self.pages, index)
 
     def _open_about(self):
-        """Клік по шапці сайдбара → інформаційний хаб «Про програму».
-        Дії (довідка/ліцензії/звіт) делегуються у вже наявну логіку сторінки
-        Налаштувань — без дублювання коду."""
-        from .about import AboutDialog
-        dlg = AboutDialog(
-            self,
-            on_help=self.settings._on_open_help,
-            on_licenses=self.settings._open_third_party,
-            on_report=self._report_from_about,
-        )
-        self._about_dialog = dlg
-        try:
-            dlg.exec()
-        finally:
-            self._about_dialog = None
-
-    def _report_from_about(self):
-        """Звіт про проблему з хабу: спершу закрити хаб (щоб toast зі шляхом було
-        видно), далі — та сама збірка zip, що й у Налаштуваннях."""
-        dlg = getattr(self, "_about_dialog", None)
-        if dlg is not None:
-            dlg.accept()
-        # Хаб міг бути відкритий НЕ зі сторінки Налаштувань — тоді self.settings
-        # прихована сторінка QStackedWidget і toast на ній був би невидимий.
-        # Показуємо toast на головному (видимому) вікні.
-        self.settings._report_problem(toast_target=self.window())
+        """Клік по шапці сайдбара → вкладка «Про програму» в Налаштуваннях
+        (раніше відкривала окреме модальне вікно — власник просив прибрати
+        спливання і вести напряму в потрібний пункт Налаштувань)."""
+        self.set_page(self.pages.indexOf(self.settings))
+        self.settings.select_about_tab()
 
     def set_page(self, index: int):
         """Перемкнути вкладку програмно (старт, скріншоти): кнопка + сторінка."""
@@ -1839,6 +1983,9 @@ class MainWindow(QMainWindow):
         test_log("page_switch", page=_PAGES[index][1], index=index)
         motion.fade_switch(self.pages, index)   # ТЗ п.3: fade-перехід (no-op при вимк.)
 
+    def maybe_show_test_log_text_reminder(self):
+        return maybe_show_test_log_text_reminder(self, self.controller)
+
     def showEvent(self, event):
         """Темний системний titlebar Windows 11 (DWM); світлий на темному вікні
         виглядає чужорідно. Помилка не критична — просто лишиться світлий."""
@@ -1846,20 +1993,27 @@ class MainWindow(QMainWindow):
         try:
             hwnd = int(self.winId())
             value = ctypes.c_int(1)
+            dwm = ctypes.windll.dwmapi
+            dwm.DwmSetWindowAttribute.argtypes = (
+                wintypes.HWND, wintypes.DWORD, ctypes.c_void_p,
+                wintypes.DWORD)
+            dwm.DwmSetWindowAttribute.restype = ctypes.c_long
             for attr in (20, 19):   # 20 = Win11/10 20H1+; 19 — старіші білди Win10
-                res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                res = dwm.DwmSetWindowAttribute(
                     hwnd, attr, ctypes.byref(value), ctypes.sizeof(value))
                 if res == 0:
                     break
         except Exception:
             pass
-        cfg = getattr(self.controller, "cfg", None)
-        if cfg and getattr(cfg, "screen_protection", False):
+        apply_screen_protection = getattr(
+            self.controller, "apply_screen_protection_to_window", None)
+        if callable(apply_screen_protection):
             try:
-                from whisper_core.win_hardening import set_window_display_affinity
-                set_window_display_affinity(int(self.winId()), True)
+                # Реєстрація потрібна і при вимкненому opt-in: тоді наступне
+                # перемикання застосує захист до цього живого вікна й збере факт.
+                apply_screen_protection(self)
             except Exception:
-                pass
+                logging.exception("Збій встановлення display affinity")
         # Mica-скло (Win11 22H2+): лише при backdrop="auto" і УСПІШНИХ DWM-викликах;
         # інакше вікно лишається твердим «оформленням» (тихий фолбек, нічого не міняємо)
         if (not self._backdrop_done

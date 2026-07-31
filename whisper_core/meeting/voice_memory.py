@@ -237,14 +237,29 @@ def take_pending_centroid(profile, session_id: str, speaker_label: str) -> "list
     return vec
 
 
-def delete_pending_centroids(profile, session_id: str) -> None:
-    """Видалити pending-файл сесії (при видаленні наради)."""
+def delete_pending_centroids(profile, session_id: str) -> bool:
+    """Видалити pending-файл сесії. True — файла немає; False — він лишився."""
     path = _pending_file(profile, session_id)
     try:
-        if path.is_file():
-            path.unlink()
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        log.exception("Помилка перевірки voice_pending %s", path)
+        return False
+    try:
+        path.unlink()
     except OSError:
         log.exception("Помилка видалення voice_pending %s", path)
+        return False
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        log.exception("Помилка перевірки voice_pending після видалення %s", path)
+        return False
+    return False
 
 
 def clear_pending_centroids(profile) -> None:

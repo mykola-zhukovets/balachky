@@ -16,6 +16,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -24,8 +25,10 @@ for _p in (_ROOT, _ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout
-from PySide6.QtCore import Qt
+import shiboken6
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QPushButton, QWidget, QVBoxLayout)
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 
 
 def _app():
@@ -66,6 +69,35 @@ class VisualGateSelfCheck(unittest.TestCase):
         self.assertEqual(
             v_normal, [],
             f"детектор хибно позначив нормальну кнопку: {v_normal}")
+
+    def test_dialog_scan_executes_deferred_delete_before_returning(self):
+        app = _app()
+        import visual_gate
+        from fronts.desktop.main_window import TextLogReminderDialog
+
+        qt = visual_gate._lazy_qt()
+        parent = QMainWindow()
+        dialogs = []
+
+        def factory():
+            dialog = TextLogReminderDialog(SimpleNamespace(), parent)
+            dialogs.append(dialog)
+            return dialog
+
+        visual_gate._scan_one_dialog(
+            "TextLogReminderDialog", factory, "uk", [], app, qt)
+        was_alive_after_scan = shiboken6.isValid(dialogs[0])
+
+        # RED-прогін не повинен лишати відкладене видалення до static teardown.
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        parent.close()
+        parent.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+
+        self.assertFalse(
+            was_alive_after_scan,
+            "deleteLater не виконано: діалог пережив завершення обходу")
 
 
 if __name__ == "__main__":

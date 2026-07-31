@@ -84,7 +84,7 @@ def validate_rule(match: str, value: str, *, match_mode: str = MATCH_WORD,
     if match_mode not in _MATCH_MODES:
         raise RuleError("tts_pron_regex_bad", f"невідомий режим: {match_mode}")
     if match_mode == MATCH_REGEX:
-        # v1: ВІЛЬНИЙ regex НЕ підтримується (суд хвилі 4 БЛОКЕР 3). Статичний детектор
+        # v1: ВІЛЬНИЙ regex НЕ підтримується (рецензія хвилі 4 БЛОКЕР 3). Статичний детектор
         # ReDoS-повноти недосяжний: ловив nested-quantifier ((a+)+), але пропускав
         # ambiguous alternation ((a|aa)+, (a|a)*) — теж експоненційні. re тримає GIL,
         # тож runtime-timeout не перериває зависання воркера. word/anywhere покривають
@@ -165,7 +165,7 @@ class PronPipeline:
         flags = 0 if r.case_sensitive else re.IGNORECASE
         if r.match_mode == MATCH_REGEX:
             return None                          # v1: regex-правила НЕ застосовуємо
-            #                                      (ReDoS; суд хвилі 4). from_ipc теж безпечний.
+            #                                      (ReDoS; рецензія хвилі 4). from_ipc теж безпечний.
         pat = re.escape(r.match)
         if r.match_mode == MATCH_WORD:
             pat = r"(?<!\w)" + pat + r"(?!\w)"
@@ -386,7 +386,7 @@ def learn(profile, match: str, value: str, *, match_mode: str = MATCH_WORD,
                 r.correction_type, r.scope) == key:
             existing_rule = r
             break
-    # UPSERT (суд хвилі 4 БЛОКЕР 1): існуюче правило ОНОВЛЮЄМО значенням на нове —
+    # UPSERT (рецензія хвилі 4 БЛОКЕР 1): існуюче правило ОНОВЛЮЄМО значенням на нове —
     # той самий id, нова подія learn (append-only; реконструкція бере останню за id).
     # Раніше поверталось already_learned зі СТАРИМ значенням → застрягав назавжди.
     import secrets

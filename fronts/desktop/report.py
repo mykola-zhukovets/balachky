@@ -4,7 +4,11 @@
 щоб покривати юніт-тестом. Кнопка в Налаштуваннях — лише тонка обгортка.
 
 ПРИВАТНІСТЬ: у звіт іде тільки whitelist полів моделі й аудіо. Шляхи робочих
-папок, назви пристроїв та інші приватні поля свідомо НЕ включаються.
+папок, назви пристроїв та інші приватні поля свідомо НЕ включаються. Перед
+пакуванням файли логу проганяються через crash.sanitize_log_bytes — ім'я
+облікового запису Windows у будь-яких шляхах усередині логу замінюється на
+"<користувач>". Кнопка в Налаштуваннях перед викликом показує користувачу
+діалог із чесним описом вмісту архіву (див. pages/settings._report_problem).
 """
 import logging
 import platform
@@ -51,7 +55,11 @@ def _total_memory_mb():
 
         st = _MemStatus()
         st.dwLength = ctypes.sizeof(_MemStatus)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GlobalMemoryStatusEx.argtypes = (ctypes.POINTER(_MemStatus),)
+        kernel32.GlobalMemoryStatusEx.restype = wintypes.BOOL
+        if kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
             return int(st.ullTotalPhys // (1024 * 1024))
     except Exception:
         pass
@@ -61,12 +69,12 @@ def _total_memory_mb():
 def build_number() -> str:
     """«1.0.0 (abc1234)» — версія + короткий коміт збірки. М'який відкат на саму
     версію, якщо _buildinfo недоступний (не має валити збірку звіту)."""
-    from whisper_core import __version__
+    from whisper_core import DISPLAY_VERSION
     try:
         from whisper_core._buildinfo import build_version
-        return build_version(__version__)
+        return build_version(DISPLAY_VERSION)
     except Exception:
-        return __version__
+        return DISPLAY_VERSION
 
 
 def loaded_components() -> str:
@@ -114,10 +122,12 @@ def build_report_zip(dest_dir, *, app_version, cfg=None, log_dir=None,
         zf.writestr("config-safe.txt", safe_config_dump(cfg))
         zf.writestr("components.txt", loaded_components())
         if log_dir is not None:
+            from .crash import sanitize_log_bytes
             log_dir = Path(log_dir)
             for name in sorted(p.name for p in log_dir.glob("balachky*.log")):
                 try:
-                    zf.writestr(f"logs/{name}", (log_dir / name).read_bytes())
+                    raw = (log_dir / name).read_bytes()
+                    zf.writestr(f"logs/{name}", sanitize_log_bytes(raw))
                 except OSError:
                     pass
     return zip_path

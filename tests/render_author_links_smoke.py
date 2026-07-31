@@ -1,12 +1,13 @@
 """Smoke-рендер значків автора (GitHub + «Підтримати») — ОКРЕМИЙ процес
 (конвенція render_*_smoke; offscreen ДОПУСТИМИЙ: перевіряємо СТРУКТУРУ, не вигляд).
 
-Фідбек Миколи 22.07: підпис «Зробив Микола Жуковець» доповнено двома значками-
-посиланнями і в майстрі першого запуску (крок «Вітання»), і у Налаштуваннях
-(вкладка «Система», нова секція «Про автора» ЗВЕРХУ). Тест стереже:
+Фідбек Миколи 22.07 + 30.07: підпис автора доповнено значками-посиланнями і в
+майстрі першого запуску (крок «Вітання»), і в Налаштуваннях. 30.07 картку
+«Про автора» перенесено з вкладки «Система» на окрему вкладку «Про програму»
+(власник: «навіщо на цій сторінці двічі дублювати про автора»). Тест стереже:
   • обидва значки існують, мають accessibleName і клікабельні (clicked під'єднано);
   • у властивості linkUrl лежать саме URL із єдиного джерела (fronts/desktop/links);
-  • секція «Про автора» — ПЕРША картка вкладки «Система», решта секцій на місці.
+  • секція «Про автора» — картка вкладки «Про програму», решта секцій на місці.
 
     python -m unittest tests.render_author_links_smoke
     python tests/render_author_links_smoke.py
@@ -100,8 +101,8 @@ class AuthorLinksSmokeTests(unittest.TestCase):
                         "значок без accessibleName (§18)")
         self.assertTrue((btn.toolTip() or "").strip(),
                         "значок без tooltip-пояснення")
-        self.assertIn("↗", btn.toolTip(),
-                      "tooltip без маркера зовнішнього посилання ↗")
+        # Owner decision d6b00eb: external-link tooltips stay arrow-free.
+        self.assertNotIn("↗", btn.toolTip())
         self.assertEqual(btn.property("linkUrl"), url,
                          "у значку не той URL, що в єдиному джерелі links.py")
         self.assertTrue(_sig_connected(btn, "clicked(bool)", "clicked()"),
@@ -127,35 +128,38 @@ class AuthorLinksSmokeTests(unittest.TestCase):
         self._win = win
         return win
 
-    def test_settings_system_tab_author_section_on_top(self):
-        """Вкладка «Система»: секція «Про автора» — ПЕРША картка, з тими самими
-        значками; наявні секції не загублено."""
+    def test_about_tab_author_section_present(self):
+        """Вкладка «Про програму»: секція «Про автора» на місці, з контактом
+        GitHub (значок «Підтримати» тепер живе у рядку валютної підтримки —
+        реквізити відразу видно, а не лише за одним значком, фідбек власника
+        25.07); наявні секції вкладки не загублено."""
         win = self._window()
         tabs = win.settings._tabs
-        sys_idx = next(i for i in range(tabs.count())
-                       if tabs.tabText(i) == tr("set_tab_system"))
-        content = tabs.widget(sys_idx).widget()        # QScrollArea → вміст
+        about_idx = next(i for i in range(tabs.count())
+                         if tabs.tabText(i) == tr("set_tab_about"))
+        content = tabs.widget(about_idx).widget()        # QScrollArea → вміст
         layout = content.layout()
 
-        first = layout.itemAt(0).widget()
-        self.assertEqual(first.objectName(), "authorCard",
-                         "секція «Про автора» не перша у вкладці «Система»")
+        author_card = None
+        for i in range(layout.count()):
+            w = layout.itemAt(i).widget()
+            if w is not None and w.objectName() == "authorCard":
+                author_card = w
+                break
+        self.assertIsNotNone(author_card,
+                             "секція «Про автора» відсутня на вкладці «Про програму»")
 
-        gh = first.findChild(QToolButton, "authorGithubLink")
-        support = first.findChild(QToolButton, "authorSupportLink")
+        gh = author_card.findChild(QToolButton, "authorGithubLink")
         self._assert_link(gh, links.GITHUB_URL)
-        self._assert_link(support, links.SUPPORT_URL)
 
-        # підпис автора і muted-рядок на місці
-        texts = [l.text() for l in first.findChildren(QLabel)]
-        self.assertIn(tr("onb_author"), texts, "нема підпису автора")
-        self.assertIn(tr("author_support_short"), texts,
-                      "нема muted-рядка про безкоштовність/підтримку")
+        # підпис автора на місці
+        texts = [l.text() for l in author_card.findChildren(QLabel)]
+        self.assertIn(tr("set_author"), texts, "нема підпису автора")
 
-        # наявні секції не загублено: усього карток лишилось ≥ 5
+        # наявні секції не загублено: hero/whatsnew/author/help/license = 5 карток
         cards = [w for w in content.findChildren(QFrame) if w.property("card")]
         self.assertGreaterEqual(
-            len(cards), 5, "після додавання «Про автора» зникли інші секції")
+            len(cards), 5, "на вкладці «Про програму» бракує секцій")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import json
+import os
 import wave
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -242,16 +243,23 @@ def _stream_wav(session_dir: Path, track: str, rate: int, channels: int,
     peak = 0.0
     wrote = False
     try:
-        with wave.open(str(tmp_path), "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(out_rate)
-            for mono in _iter_resampled_mono(session_dir / track, channels, rate, out_rate):
-                if not mono.size:
-                    continue
-                peak = max(peak, float(np.max(np.abs(mono))))
-                w.writeframes(_float_to_pcm16(mono))
-                wrote = True
+        # Файл відкриваємо самі (не рядком-шляхом), щоб дістатись fileno() і
+        # fsync-нути перед replace — wave.close() лише пише заголовок і не
+        # чіпає диск. Пост-обробка йде вже після живого захоплення, тож один
+        # fsync на весь файл (не на кожен блок) не додає затримки запису.
+        with tmp_path.open("wb") as fh:
+            with wave.open(fh, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(out_rate)
+                for mono in _iter_resampled_mono(session_dir / track, channels, rate, out_rate):
+                    if not mono.size:
+                        continue
+                    peak = max(peak, float(np.max(np.abs(mono))))
+                    w.writeframes(_float_to_pcm16(mono))
+                    wrote = True
+            fh.flush()
+            os.fsync(fh.fileno())
         if not wrote or peak < _SILENCE_PEAK:
             tmp_path.unlink(missing_ok=True)
             return None
@@ -338,14 +346,19 @@ def _segmented_track_wavs(session_dir: Path, track: str, *, rate: int,
     paths = []
     track_peak = 0.0
     writer = None
+    writer_fh = None
     tmp_path = None
     frames_in_file = 0
 
     def open_writer(index):
-        nonlocal writer, tmp_path, frames_in_file
+        nonlocal writer, writer_fh, tmp_path, frames_in_file
         path = output_dir / f"{index:04d}.wav"
         tmp_path = path.with_suffix(".wav.tmp")
-        writer = wave.open(str(tmp_path), "wb")
+        # fileobj, не рядок-шлях: потрібен fileno() для fsync перед replace
+        # (див. _stream_wav вище — той самий компроміс: fsync раз на готовий
+        # експортний блок, не на кожен фрейм живого запису).
+        writer_fh = tmp_path.open("wb")
+        writer = wave.open(writer_fh, "wb")
         writer.setnchannels(1)
         writer.setsampwidth(2)
         writer.setframerate(out_rate)
@@ -353,11 +366,15 @@ def _segmented_track_wavs(session_dir: Path, track: str, *, rate: int,
         return path
 
     def close_writer(path):
-        nonlocal writer, tmp_path
+        nonlocal writer, writer_fh, tmp_path
         if writer is None:
             return
         writer.close()
         writer = None
+        writer_fh.flush()
+        os.fsync(writer_fh.fileno())
+        writer_fh.close()
+        writer_fh = None
         tmp_path.replace(path)
         tmp_path = None
         paths.append(path)
@@ -391,6 +408,8 @@ def _segmented_track_wavs(session_dir: Path, track: str, *, rate: int,
     except Exception:
         if writer is not None:
             writer.close()
+        if writer_fh is not None:
+            writer_fh.close()
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         raise

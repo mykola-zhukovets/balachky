@@ -101,7 +101,10 @@ class CorruptProfileFailClosedTests(unittest.TestCase):
         from fronts.desktop.pages.vocab import VocabPage
         VocabPage._refresh_profile_meta_warning(page)
         self.assertTrue(label.visible)
-        self.assertIn("profile.json", label.text)
+        # Warning must not send an untechnical user to hand-edit the JSON file;
+        # it must point at the in-app switch that safely rewrites it instead.
+        self.assertNotIn("profile.json", label.text)
+        self.assertIn("Зберігати нові розшифровки в історії", label.text)
         self.assertTrue(label.accessible_name)
 
 
@@ -331,24 +334,31 @@ class HonestIntegrityCopyTests(unittest.TestCase):
 
 class OfflinePunctuatorTests(unittest.TestCase):
     def test_load_model_is_offline_and_does_not_log_download(self):
-        loader = Mock(return_value=object())
-        models = types.ModuleType("punctuators.models")
-        models.PunctCapSegModelONNX = SimpleNamespace(
-            from_pretrained=loader)
+        config_type = Mock(return_value=object())
+        model_type = Mock(return_value=object())
+        model_module = types.ModuleType(
+            "punctuators.models.punc_cap_seg_model")
+        model_module.PunctCapSegConfigONNX = config_type
+        model_module.PunctCapSegModelONNX = model_type
         package = types.ModuleType("punctuators")
+        models = types.ModuleType("punctuators.models")
         package.models = models
         with patch.object(punctuator, "available", return_value=True), \
+                patch.object(punctuator, "_assets_valid", return_value=True), \
                 patch.dict(sys.modules, {
                     "punctuators": package,
-                    "punctuators.models": models}), \
+                    "punctuators.models": models,
+                    "punctuators.models.punc_cap_seg_model": model_module}), \
                 patch.object(punctuator.netlog, "record") as net_record:
             model = punctuator.load_model("C:/local/punctuator")
 
         self.assertIsNotNone(model)
-        loader.assert_called_once_with(
-            punctuator.MODEL_NAME,
-            cache_dir="C:/local/punctuator",
-            local_files_only=True)
+        config_type.assert_called_once_with(
+            directory="C:/local/punctuator",
+            spe_filename="spe_unigram_64k_lowercase_47lang.model",
+            model_filename="punct_cap_seg_47lang.onnx",
+            config_filename="config.yaml")
+        model_type.assert_called_once_with(config_type.return_value)
         net_record.assert_not_called()
 
 

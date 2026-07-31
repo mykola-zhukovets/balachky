@@ -17,7 +17,7 @@
 is_valid_protocol сюди НЕ застосовний (вихід вільний, це не структурований
 протокол). Гейт «тихої заглушки» — на боці service.CommandEditGenerator: ловимо
 FAKE_BACKEND_MARKER і порожнечу, щоб без бекенда показати «встановіть компонент»,
-а не заглушку (урок судді feature/output-formats).
+а не заглушку (урок рецензента feature/output-formats).
 """
 from __future__ import annotations
 

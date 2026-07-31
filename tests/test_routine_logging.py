@@ -50,6 +50,37 @@ class RoutineLogTests(unittest.TestCase):
             self.assertIn("chars=", content)
             self.assertNotIn(secret_text, content)
 
+    def test_config_path_is_omitted_from_routine_log_and_copied_diagnostics(self):
+        private_path = r"C:\Users\private-person\AppData\Local\Balachky\config.toml"
+        with tempfile.TemporaryDirectory() as tmp:
+            path, handler = self._handler(tmp)
+            logger = crash._EVENT_LOGGER
+            previous_level = logger.level
+            previous_propagate = logger.propagate
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+            try:
+                crash.diagnostic_event(
+                    "app_ready", config_path=private_path, version="test-version")
+                handler.flush()
+                content = path.read_text(encoding="utf-8")
+                with patch.object(crash, "LOG_FILE", path):
+                    report = crash.copy_diagnostics(Config())
+            finally:
+                logger.removeHandler(handler)
+                handler.close()
+                logger.setLevel(previous_level)
+                logger.propagate = previous_propagate
+
+            for label, output in (("routine log", content),
+                                  ("copied diagnostics", report)):
+                with self.subTest(output=label):
+                    self.assertNotIn(private_path, output)
+                    self.assertNotIn("private-person", output)
+                    self.assertIn("event=app_ready", output)
+                    self.assertIn("version=test-version", output)
+
     def test_log_level_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.toml"

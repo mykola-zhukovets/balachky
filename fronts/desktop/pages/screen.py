@@ -1,9 +1,12 @@
 """Окрема сторінка «Запис екрана» — не залежить від режиму Нарада."""
+import logging
+import shutil
 import time
 import qtawesome as qta
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QFrame, QComboBox, QButtonGroup, QCheckBox, QScrollArea)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QLabel, QFileDialog, QFrame, QComboBox, QButtonGroup, QCheckBox,
+    QScrollArea, QToolButton, QPushButton, QStackedWidget)
 try:
     from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
     from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -11,7 +14,10 @@ except Exception:  # pragma: no cover
     QMediaPlayer = QAudioOutput = QVideoWidget = None
 from ..chip_popover import ValueSliderChip
 from ..glass import GlassButton, StatusTag
+from ..empty_state import EmptyState
 from ..i18n import tr
+from .. import motion
+from ..record_action_bar import RecordActionBar
 from .. import theme   # нічний режим: сегмент-контрол читає палітру
 from . import page_header
 
@@ -22,6 +28,11 @@ class ScreenPage(QWidget):
         self.controller = controller
         self._started = 0
         self._recording = False
+        # Аудит чесності (31.07, знахідка 4): чи вже показано КОНКРЕТНУ
+        # причину збою через _error() цього запису. Скидається на старті
+        # нового запису (_state("recording")).
+        self._error_shown = False
+        self._error_text = ""
 
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 26, 32, 18)
@@ -31,16 +42,21 @@ class ScreenPage(QWidget):
         head.setSpacing(12)
         head.addLayout(page_header(tr("nav_screen"), tr("screen_subtitle")), 1)
 
-        # Єдина текстова кнопка з ВІДЕО-іконкою (аудит 1.2.1)
-        self._rec_action = GlassButton(tr("screen_start"))
+        # Єдина текстова кнопка з ВІДЕО-іконкою (аудит 1.2.1). Плаский QPushButton
+        # (НЕ GlassButton): GlassButton малює все сам у paintEvent і QSS
+        # [accent="true"] на нього не лягає (лишається непомітним склом, як
+        # сусідні кнопки) — головна дія сторінки ховалась (той самий дефект,
+        # що знайдено на кнопці «Отримати текст наради», e092484).
+        self._rec_action = QPushButton(tr("screen_start"))
         self._rec_action.setProperty("accent", True)
+        self._rec_action.setCursor(Qt.PointingHandCursor)
         self._rec_action.setIcon(qta.icon("fa6s.video"))
         self._rec_action.setAccessibleName(tr("screen_start"))
         self._rec_action.clicked.connect(self._toggle)
         head.addWidget(self._rec_action)
         root.addLayout(head)
 
-        root.addWidget(self._build_controls())
+        root.addWidget(self._build_settings_disclosure())
 
         # Об'єднана статусна панель
         status_panel = QFrame()
@@ -77,7 +93,17 @@ class ScreenPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(host)
-        root.addWidget(scroll, 1)
+
+        # порожній стан ⇄ список записів (аудит 31.07: критичний дефект —
+        # без жодного запису нижні ~80% сторінки лишались голим полем без
+        # тексту й іконки, як зламаний/незавантажений UI).
+        self._empty = EmptyState("fa6s.video", tr("screen_empty_title"),
+                                 tr("screen_empty_hint"),
+                                 button_text=tr("screen_start"), on_click=self._toggle)
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._empty)   # 0 — порожній стан
+        self._stack.addWidget(scroll)        # 1 — список записів
+        root.addWidget(self._stack, 1)
 
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
@@ -89,6 +115,39 @@ class ScreenPage(QWidget):
 
         self._refresh_sources()
         self._refresh()
+
+    def _build_settings_disclosure(self) -> QWidget:
+        """Розкривна секція налаштувань запису екрана (канон побудови сторінок
+        30.07 п.4): шість рядків налаштувань раніше стояли розгорнутими
+        завжди й відсували стрічку записів вниз — той самий дефект, що на
+        Нараді до аудиту 22.07. Згортаємо в один блок, як там; розкривач —
+        та сама явна кнопка з рамкою й стрілкою (п.3, property("disclosure")
+        у theme.py), не дрібний рядок-підпис."""
+        host = QWidget()
+        v = QVBoxLayout(host)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(8)
+        toggle = QToolButton()
+        toggle.setText(tr("screen_settings"))
+        toggle.setCheckable(True)
+        toggle.setChecked(False)
+        toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        toggle.setArrowType(Qt.RightArrow)
+        toggle.setCursor(Qt.PointingHandCursor)
+        toggle.setAccessibleName(tr("screen_settings"))
+        toggle.setProperty("disclosure", True)
+        panel = self._build_controls()
+        panel.setVisible(False)
+        toggle.toggled.connect(self._on_settings_toggled)
+        v.addWidget(toggle, alignment=Qt.AlignLeft)
+        v.addWidget(panel)
+        self._settings_toggle = toggle
+        self._settings_panel = panel
+        return host
+
+    def _on_settings_toggled(self, opened: bool):
+        self._settings_panel.setVisible(opened)
+        self._settings_toggle.setArrowType(Qt.DownArrow if opened else Qt.RightArrow)
 
     def _build_controls(self):
         panel = QFrame()
@@ -106,21 +165,18 @@ class ScreenPage(QWidget):
         segment_frame = QFrame()
         segment_frame.setProperty("glasspanel", True)
 
-        def _segment_style(w):
-            w.setStyleSheet(
-                f"QFrame {{ background: {theme._WHITE_04}; border-radius: 8px; padding: 2px; }}"
-            )
-
-        _segment_style(segment_frame)
-        theme.register_restyle_call(segment_frame, _segment_style)
+        # style_segment_frame прибирає власну рамку підкладки: [glasspanel]
+        # QSS-правило дає border 1px, а активна кнопка-«таблетка» малює СВОЮ
+        # золоту рамку поверх — дві лінії поспіль (діагноз 2026-07-30 №2).
+        theme.style_segment_frame(segment_frame)
+        theme.register_restyle_call(segment_frame, theme.style_segment_frame)
         kinds_lay = QHBoxLayout(segment_frame)
         kinds_lay.setContentsMargins(2, 2, 2, 2)
         kinds_lay.setSpacing(2)
 
         self._kind = QButtonGroup(self)
         for ident, key in (("monitor", "screen_source_monitor"),
-                           ("window", "screen_source_window"),
-                           ("rect", "screen_source_rect")):
+                           ("window", "screen_source_window")):
             b = GlassButton(tr(key))
             b.setCheckable(True)
             b.setProperty("kind", ident)
@@ -222,9 +278,6 @@ class ScreenPage(QWidget):
         elif kind == "window":
             for win in self.controller.list_screen_windows():
                 self._source.addItem(win.label, {"kind": "window", "hwnd": win.hwnd})
-        else:
-            for mon in self.controller.list_screen_monitors()[:1]:
-                self._source.addItem(mon.label, {"kind": "rect", "rect": (mon.left, mon.top, mon.width, mon.height)})
         if not self._source.count():
             self._source.addItem(tr("screen_no_source"), None)
         self._source.blockSignals(False)
@@ -238,13 +291,18 @@ class ScreenPage(QWidget):
         if self._recording:
             self._rec_action.setEnabled(True)
             self._rec_action.setToolTip(tr("screen_stop"))
+            self._empty.button.setEnabled(True)
             return
         if not has_source:
             self._rec_action.setEnabled(False)
             self._rec_action.setToolTip(tr("screen_no_source_tooltip"))
+            self._empty.button.setEnabled(False)
+            self._empty.button.setToolTip(tr("screen_no_source_tooltip"))
         else:
             self._rec_action.setEnabled(True)
             self._rec_action.setToolTip(tr("screen_start"))
+            self._empty.button.setEnabled(True)
+            self._empty.button.setToolTip("")
 
     def _options(self):
         cfg = self.controller.cfg
@@ -267,15 +325,27 @@ class ScreenPage(QWidget):
             self.controller.screen_record_stop()
             return
         source = self._source.currentData()
-        if source and self.controller.screen_record_start(source, self._options()):
+        if not source:
+            # Кнопка зазвичай неактивна без джерела (_update_start_button_state),
+            # але сигнал currentIndexChanged може відставати — не мовчати.
+            logging.warning("Спроба почати запис екрана без обраного джерела")
+            self._error(tr("screen_no_source_tooltip"))
+            return
+        if self.controller.screen_record_start(source, self._options()):
             self._state("recording")
+        # інакше screen_record_start уже залогував причину й надіслав
+        # screen_record_error → _error() виставить бейдж "error" з поясненням
 
     def _state(self, state):
+        if state == "recording":
+            self._error_shown = False   # новий запис — забуваємо стару причину
         self._recording = (state == "recording")
         label = tr("screen_stop") if self._recording else tr("screen_start")
         self._rec_action.setText(label)
         self._rec_action.setAccessibleName(label)
         self._rec_action.setIcon(qta.icon("fa6s.square" if self._recording else "fa6s.video"))
+        self._empty.button.setText(label)
+        self._empty.button.setAccessibleName(label)
         self._update_start_button_state(has_source=self._source.currentData() is not None)
         self._badge.set_state("busy" if self._recording else "queued",
                              tr("screen_recording") if self._recording else tr("screen_idle"))
@@ -290,11 +360,21 @@ class ScreenPage(QWidget):
         self._timer.setText(f"{seconds // 60:02d}:{seconds % 60:02d}")
 
     def _error(self, message):
-        self._badge.set_state("error", tr("screen_error", error=message))
+        self._error_shown = True
+        self._error_text = tr("screen_error", error=message)
+        self._badge.set_state("error", self._error_text)
 
     def _finished(self, _path, ok):
+        # Аудит чесності (31.07, знахідка 4): _state("idle") нижче сам
+        # перемальовує бейдж на "queued"/screen_idle — якщо конкретну
+        # причину вже показав _error() РАНІШЕ за цей сигнал, після ідле-
+        # скидання повертаємо саме її, а не загальний "screen_failed".
+        preserve_detail = not ok and self._error_shown
         self._state("idle")
         self._refresh()
+        if preserve_detail:
+            self._badge.set_state("error", self._error_text)
+            return
         self._badge.set_state("done" if ok else "error", tr("screen_saved") if ok else tr("screen_failed"))
 
     def _refresh(self):
@@ -302,16 +382,71 @@ class ScreenPage(QWidget):
             item = self._list.takeAt(0)
             w = item.widget()
             w and w.deleteLater()
-        for path in self.controller.list_screen_recordings():
-            card = QFrame()
-            card.setProperty("card", True)
-            lay = QHBoxLayout(card)
-            lay.addWidget(QLabel(path.name), 1)
-            watch = GlassButton(tr("screen_play"))
-            watch.setAccessibleName(tr("screen_play"))
-            watch.clicked.connect(lambda _=False, p=path: self._watch(p))
-            lay.addWidget(watch)
-            self._list.insertWidget(0, card)
+        recordings = self.controller.list_screen_recordings()
+        for path in recordings:
+            self._list.insertWidget(0, self._build_recording_card(path))
+        self._stack.setCurrentIndex(1 if recordings else 0)
+
+    def _build_recording_card(self, path):
+        """Картка одного відеозапису: назва + RecordActionBar —
+        «Дивитися відео» як специфічна дія сторінки, решта
+        (перейменувати/показати в теці/надіслати/видалити) — спільний бар,
+        той самий, що застосується на Аудіофайлах. `state["path"]` тримає
+        актуальний шлях: після перейменування наступні дії (видалити, показати
+        в теці…) мусять цілитись у НОВИЙ файл, не в застарілий захоплений
+        лямбдою на момент побудови картки."""
+        state = {"path": path}
+        card = QFrame()
+        card.setProperty("card", True)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 13, 18, 13)
+        lay.setSpacing(8)
+
+        name = QLabel(path.name)
+        name.setProperty("strong", True)
+        lay.addWidget(name)
+
+        watch = GlassButton(tr("screen_play"))
+        watch.setIcon(qta.icon("fa6s.circle-play"))
+        watch.setAccessibleName(tr("screen_play"))
+        watch.clicked.connect(lambda _=False: self._watch(state["path"]))
+
+        bar = RecordActionBar(path.stem, str(path), extra_widget=watch)
+
+        def _on_rename(new_stem):
+            new_path = self.controller.rename_screen_recording(state["path"], new_stem)
+            if new_path is None:
+                motion.toast(self, tr("recact_rename_failed"))
+                return
+            state["path"] = new_path
+            name.setText(new_path.name)
+            bar.set_display_name(new_path.stem)
+            bar.set_path_text(str(new_path))
+
+        bar.rename_requested.connect(_on_rename)
+        bar.show_in_folder_requested.connect(
+            lambda: self.controller.show_screen_recording_in_folder(state["path"]))
+        bar.save_as_requested.connect(lambda: self._save_recording_as(state["path"]))
+        bar.copy_path_requested.connect(
+            lambda: QApplication.clipboard().setText(str(state["path"])))
+        bar.delete_requested.connect(lambda: self._delete_recording(state["path"]))
+        lay.addWidget(bar)
+        return card
+
+    def _save_recording_as(self, path):
+        out, _sel = QFileDialog.getSaveFileName(self, tr("recact_save_as"), path.name)
+        if not out:
+            return
+        try:
+            shutil.copy2(path, out)
+        except OSError:
+            motion.toast(self, tr("recact_save_as_failed"))
+
+    def _delete_recording(self, path):
+        if self.controller.delete_screen_recording(path):
+            self._refresh()
+        else:
+            motion.toast(self, tr("recact_delete_failed"))
 
     def _watch(self, path):
         from ..video_player import VideoPlayerDialog

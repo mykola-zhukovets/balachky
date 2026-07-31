@@ -16,7 +16,10 @@ import sys
 import tempfile
 import threading
 import unittest
+from ctypes import wintypes
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -87,6 +90,76 @@ class ComboReleasedTests(unittest.TestCase):
         self.assertTrue(hn._combo_released(groups, lambda vk: False))
 
 
+class ManagerLifecycleTests(unittest.TestCase):
+    def test_stop_keeps_entries_when_thread_is_still_alive(self):
+        manager = hn.HotkeyManager()
+        join_calls = []
+        thread_alive = [True]
+        alive_thread = SimpleNamespace(
+            join=join_calls.append,
+            is_alive=lambda: thread_alive[0],
+        )
+        entry = object()
+        manager._thread = alive_thread
+        manager._thread_id = None
+        manager._ok = True
+        manager._entries[7] = entry
+
+        created_threads = []
+
+        def make_thread(**_kwargs):
+            created_threads.append(True)
+            return SimpleNamespace(start=lambda: None)
+
+        with patch.object(hn.sys, "platform", "win32"), \
+                patch.object(hn.threading, "Thread", side_effect=make_thread):
+            stop_ok = manager.stop()
+            restart_ok = manager.start()
+
+        self.assertIs(stop_ok, False)
+        self.assertEqual(join_calls, [3.0])
+        self.assertIs(manager._thread, alive_thread)
+        self.assertIs(manager._entries[7], entry)
+        self.assertTrue(manager._ok)
+        self.assertTrue(manager._stop_unconfirmed)
+        self.assertFalse(restart_ok)
+        self.assertEqual(created_threads, [])
+
+    def test_start_recovers_after_unconfirmed_thread_dies(self):
+        manager = hn.HotkeyManager()
+        thread_alive = [True]
+        manager._thread = SimpleNamespace(
+            join=lambda _timeout: None,
+            is_alive=lambda: thread_alive[0],
+        )
+        manager._thread_id = None
+        manager._ok = True
+        manager._entries[7] = object()
+
+        self.assertIs(manager.stop(), False)
+        thread_alive[0] = False
+
+        created_threads = []
+
+        def make_thread(**_kwargs):
+            created_threads.append(True)
+            return SimpleNamespace(
+                start=lambda: setattr(manager, "_ok", True))
+
+        manager._ready = SimpleNamespace(
+            clear=lambda: None,
+            wait=lambda _timeout: None,
+        )
+        with patch.object(hn.sys, "platform", "win32"), \
+                patch.object(hn.threading, "Thread", side_effect=make_thread):
+            restart_ok = manager.start()
+
+        self.assertTrue(restart_ok)
+        self.assertEqual(created_threads, [True])
+        self.assertFalse(manager._stop_unconfirmed)
+        self.assertEqual(manager._entries, {})
+
+
 @unittest.skipUnless(IS_WIN, "RegisterHotKey — лише Windows")
 class ManagerTests(unittest.TestCase):
     """Реальний RegisterHotKey на прихованому message-loop потоці."""
@@ -96,7 +169,7 @@ class ManagerTests(unittest.TestCase):
         self.assertTrue(self.m.start())
 
     def tearDown(self):
-        self.m.stop()
+        self.assertTrue(self.m.stop())
 
     def test_register_unregister_no_leak(self):
         # рідкісна комбінація, щоб не зачепити чуже
@@ -123,6 +196,10 @@ class ManagerTests(unittest.TestCase):
         hid = self.m.register("ctrl+alt+f21", fired.set)
         try:
             user32 = ctypes.WinDLL("user32")
+            user32.PostThreadMessageW.argtypes = (
+                wintypes.DWORD, wintypes.UINT, wintypes.WPARAM,
+                wintypes.LPARAM)
+            user32.PostThreadMessageW.restype = wintypes.BOOL
             self.assertTrue(user32.PostThreadMessageW(
                 self.m.thread_id(), hn.WM_HOTKEY, hid, 0))
             self.assertTrue(fired.wait(2.0), "callback не спрацював на WM_HOTKEY")
@@ -138,6 +215,11 @@ class ManagerTests(unittest.TestCase):
             self.m.suspend()
             # поки призупинено — комбінація вільна для іншого власника
             user32 = ctypes.WinDLL("user32", use_last_error=True)
+            user32.RegisterHotKey.argtypes = (
+                wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT)
+            user32.RegisterHotKey.restype = wintypes.BOOL
+            user32.UnregisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int)
+            user32.UnregisterHotKey.restype = wintypes.BOOL
             probe_ok = bool(user32.RegisterHotKey(None, 0x3FFF, 0x0001 | 0x0002, 0x85))
             if probe_ok:
                 user32.UnregisterHotKey(None, 0x3FFF)
@@ -199,7 +281,7 @@ class LiveSendInputSmokeTests(unittest.TestCase):
         try:
             hid = m.register("ctrl+alt+f18", pressed.set, released.set, hold=True)
         except hn.HotkeyError as e:
-            m.stop()
+            self.assertTrue(m.stop())
             self.skipTest(f"комбінацію смоуку зайнято: {e}")
         try:
             if not self._tap(down=True):
@@ -214,7 +296,7 @@ class LiveSendInputSmokeTests(unittest.TestCase):
         finally:
             self._tap(down=False)   # страхування: не лишати клавіші «затиснутими»
             m.unregister(hid)
-            m.stop()
+            self.assertTrue(m.stop())
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Живі скріни попапів чіпів (обробка + кадри/сек), день. НЕ offscreen (DWM/Mica).
 
-Слайдер у попапах має єдиний компактний стиль: ледь помітна
+Слайдер у попапах — єдиний затверджений стиль (23.07): ледь помітна
 доріжка, крапки-зупинки, ручка-пігулка. Скрипт відкриває попап чіпа обробки
 (Диктування) і чіпа кадрів (Запис екрана) та грабить вікно РАЗОМ із відкритим
 попапом системним ImageGrab (як screenshots.py).
@@ -36,7 +36,10 @@ TARGETS = [("popover-processing-day", 0, "dict"),
 def main():
     if sys.platform != "win32":
         sys.exit("Tilky Windows (DWM/Mica).")
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    shcore = ctypes.windll.shcore
+    shcore.SetProcessDpiAwareness.argtypes = (ctypes.c_int,)
+    shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+    shcore.SetProcessDpiAwareness(2)
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)

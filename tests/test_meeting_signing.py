@@ -36,6 +36,11 @@ _GV_LOG_ID = "00000000-0000-4000-8000-000000000000"
 _GV_HASH = "a" * 64
 _GV_SIG_B64 = ("cSZL4+IGEpEYc4b2bh6yxgjI8/fxPX7QQWhmpC1+P08g"
                "ua4nc4qWKnuGXVj2Sh8h+RqXW1mM7dXufDsxO8uLDQ==")
+_INVALID_KEY_ID_MESSAGE = (
+    "Невірний формат key_id. Потрібно sha256: і 64 малі "
+    "шістнадцяткові символи.")
+_INVALID_TRUSTED_KEY_MESSAGE = (
+    "Невірний формат файла ключа. Перевірте key_id і public_key.")
 
 
 def _load_verify_module():
@@ -66,6 +71,32 @@ def _signed_session(root: Path, name="sess", n_extra=1):
     for _ in range(n_extra):
         audit_log.append_event(sess, audit_log.EVENT_STOPPED, signer=ident)
     return sess, ident
+
+
+def _mixed_key_session(root: Path):
+    """Журнал A→B без сертифікованого переходу між ключами."""
+    a_root = root / "identity-a"
+    b_root = root / "identity-b"
+    a_root.mkdir()
+    b_root.mkdir()
+    ident_a = signing.ensure_signing_identity(a_root)
+    ident_b = signing.ensure_signing_identity(b_root)
+    assert ident_a.key_id != ident_b.key_id
+
+    sess = root / "mixed-key-session"
+    audit_log.append_event(
+        sess, audit_log.EVENT_CREATED, signer=ident_a,
+        require_signature=True, ts=1.0)
+    audit_log.append_event(
+        sess, audit_log.EVENT_STOPPED, signer=ident_b, ts=2.0)
+
+    log = sess / "audit.jsonl"
+    events = [json.loads(line) for line in _read_lines(log)]
+    # Формат дозволяє ключу B бути самодостатнім у власній події. public_key
+    # не входить до підписаного body, тому чинний підпис B лишається валідним.
+    events[1]["auth"]["public_key"] = ident_b.public_key_b64
+    _write_lines(log, [json.dumps(e, ensure_ascii=False) for e in events])
+    return sess, ident_a, ident_b
 
 
 # ── 1. Одиничні тести signing.py ─────────────────────────────────────────
@@ -181,6 +212,11 @@ class AuditLogSignedTests(unittest.TestCase):
                     e.get("artifacts") or {}, e.get("note"), prev)
                 prev = e["hash"]
             _write_lines(log, [json.dumps(e, ensure_ascii=False) for e in events])
+            (sess / ".audit.head").write_text(json.dumps({
+                "version": 1,
+                "seq": events[-1]["seq"],
+                "hash": events[-1]["hash"],
+            }) + "\n", encoding="utf-8")
             res = audit_log.verify_chain(sess)
             self.assertEqual(res.status, audit_log.STATUS_BROKEN)
             self.assertEqual(res.auth_status, "signed_invalid")
@@ -293,7 +329,7 @@ class AuditLogSignedTests(unittest.TestCase):
                              audit_log.STATUS_BROKEN)
 
     def test_mixed_auth_journal_broken(self):
-        # Follow-up крипто-суду (§7.2, дзеркало verify.py): auth прибрано лише
+        # Follow-up крипто-рецензії (§7.2, дзеркало verify.py): auth прибрано лише
         # з нульової події (гасить сигнал «журнал підписаний»), решта подій
         # підписані. Це структурно неможливий legacy-журнал → BROKEN.
         with tempfile.TemporaryDirectory() as d:
@@ -413,7 +449,7 @@ class EvidenceSignedTests(unittest.TestCase):
             self.assertNotIn("evidence.json", paths)  # сам себе не перелічує
 
     def test_report_states_strip_to_legacy_limitation(self):
-        # Follow-up крипто-суду (§3.2/§3.3): REPORT.txt чесно попереджає, що
+        # Follow-up крипто-рецензії (§3.2/§3.3): REPORT.txt чесно попереджає, що
         # підпис не рятує від повного розпідписування пакета без зовнішнього
         # якоря (checkpoint).
         with tempfile.TemporaryDirectory() as d:
@@ -597,11 +633,45 @@ class StandaloneSignedVerifierTests(unittest.TestCase):
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
             self.assertIn("VERIFIED", r2.stdout)
 
+    def test_mixed_key_journal_with_expect_key_is_untrusted(self):
+        with tempfile.TemporaryDirectory() as d:
+            sess, ident_a, ident_b = _mixed_key_session(Path(d))
+            status, details = _load_verify_module().verify(
+                sess, sess / "audit.jsonl", expect_key_id=ident_a.key_id)
+
+            self.assertEqual(status, "untrusted")
+            self.assertEqual(
+                details["key_ids"], sorted([ident_a.key_id, ident_b.key_id]))
+
+    def test_mixed_key_journal_with_trusted_key_is_untrusted_and_cli_honest(
+            self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            sess, ident_a, _ident_b = _mixed_key_session(root)
+            shutil.copyfile(self._verify_py(), sess / "verify.py")
+            sentinel = "ALERT_FIX08_NO_INPUT_ECHO"
+            keyfile = root / "trusted-a.json"
+            keyfile.write_text(json.dumps({
+                "key_id": ident_a.key_id,
+                "public_key": ident_a.public_key_b64,
+                "note": sentinel,
+            }), encoding="utf-8")
+
+            r = self._run(sess, "--trusted-key", str(keyfile))
+
+            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+            self.assertIn("SIGNATURE VALID", r.stdout)
+            self.assertIn("ключ не підтверджено", r.stdout)
+            self.assertNotIn("VERIFIED", r.stdout)
+            self.assertNotIn("ключ підтверджений", r.stdout)
+            self.assertNotIn(sentinel, r.stdout)
+            self.assertNotIn(sentinel, r.stderr)
+
 
 # ── 6. Standalone verify.py над evidence-пакетом: обхід підпису manifest ──
 
 class StandaloneEvidenceTamperTests(unittest.TestCase):
-    """Блокер крипто-суду: раніше блок перевірки підпису manifest виконувався
+    """Блокер крипто-рецензії: раніше блок перевірки підпису manifest виконувався
     ЛИШЕ якщо manifest сам оголошував ``signer.algorithm == "Ed25519"``. Атакер
     без приватного ключа прибирав ``signer`` — і verify.py віддавав код 0
     «VERIFIED» на усіченому журналі (A7) або код 4 «UNSIGNED LEGACY» на
@@ -644,6 +714,22 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             cwd=str(workdir), capture_output=True, text=True,
             encoding="utf-8", errors="replace", env=env)
 
+    def _assert_invalid_cli_result(self, result, sentinel, message,
+                                   *input_texts):
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn(sentinel, result.stdout)
+        self.assertNotIn(sentinel, result.stderr)
+        self.assertIn(message, result.stderr)
+        for text in input_texts:
+            self.assertNotIn(text, result.stdout)
+            self.assertNotIn(text, result.stderr)
+
+    def _write_trusted_key(self, root: Path, sentinel: str, payload) -> Path:
+        keyfile = root / (sentinel + ".json")
+        keyfile.write_text(json.dumps(payload), encoding="utf-8")
+        return keyfile
+
     def _manifest(self, ext: Path) -> dict:
         return json.loads((ext / "evidence.json").read_text(encoding="utf-8"))
 
@@ -676,6 +762,131 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             r = self._run(ext)
             self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
             self.assertIn("UNSIGNED LEGACY", r.stdout)
+
+    def test_invalid_expect_key_id_is_rejected_before_banner(self):
+        invalid_values = [
+            "ALERT3_INVALID_KEY_ID",
+            "sha256:" + "a" * 63,
+            "sha256:" + "a" * 65,
+            "sha256:" + "A" * 64,
+            " sha256:" + "a" * 64,
+            "sha256:" + "a" * 64 + " ",
+            "prefix-sha256:" + "a" * 64,
+            "sha256:" + "a" * 64 + "-suffix",
+            "sha256:" + "a" * 63 + "а",
+            "sha256:" + "a" * 63 + "\n",
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            ext, _ = self._package(Path(d), signed=False)
+            for invalid in invalid_values:
+                with self.subTest(invalid=repr(invalid)):
+                    r = self._run(ext, "--expect-key-id", invalid)
+                    self._assert_invalid_cli_result(
+                        r, invalid, _INVALID_KEY_ID_MESSAGE, invalid)
+
+    def test_trusted_key_rejects_malformed_base64_before_banner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ext, _ = self._package(root, signed=False)
+            pub = bytes(range(32))
+            valid_b64 = base64.b64encode(pub).decode("ascii")
+            malformed_b64 = valid_b64[:8] + "!!!" + valid_b64[8:]
+            sentinel = "ALERT3_BAD_BASE64"
+            key_id = signing._compute_key_id(pub)
+            keyfile = self._write_trusted_key(root, sentinel, {
+                "key_id": key_id,
+                "public_key": malformed_b64,
+            })
+            r = self._run(ext, "--trusted-key", str(keyfile))
+            self._assert_invalid_cli_result(
+                r, sentinel, _INVALID_TRUSTED_KEY_MESSAGE,
+                malformed_b64, key_id)
+
+    def test_trusted_key_rejects_31_byte_public_key_before_banner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ext, _ = self._package(root, signed=False)
+            pub = bytes(range(31))
+            pub_b64 = base64.b64encode(pub).decode("ascii")
+            sentinel = "ALERT3_31_BYTE_KEY"
+            key_id = signing._compute_key_id(pub)
+            keyfile = self._write_trusted_key(root, sentinel, {
+                "key_id": key_id,
+                "public_key": pub_b64,
+            })
+            r = self._run(ext, "--trusted-key", str(keyfile))
+            self._assert_invalid_cli_result(
+                r, sentinel, _INVALID_TRUSTED_KEY_MESSAGE, pub_b64, key_id)
+
+    def test_trusted_key_rejects_33_byte_public_key_before_banner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ext, _ = self._package(root, signed=False)
+            pub = bytes(range(33))
+            pub_b64 = base64.b64encode(pub).decode("ascii")
+            sentinel = "ALERT3_33_BYTE_KEY"
+            key_id = signing._compute_key_id(pub)
+            keyfile = self._write_trusted_key(root, sentinel, {
+                "key_id": key_id,
+                "public_key": pub_b64,
+            })
+            r = self._run(ext, "--trusted-key", str(keyfile))
+            self._assert_invalid_cli_result(
+                r, sentinel, _INVALID_TRUSTED_KEY_MESSAGE, pub_b64, key_id)
+
+    def test_trusted_key_rejects_mismatched_key_id_before_banner(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ext, _ = self._package(root, signed=False)
+            pub = bytes(range(32))
+            pub_b64 = base64.b64encode(pub).decode("ascii")
+            mismatched_key_id = signing._compute_key_id(bytes(reversed(pub)))
+            self.assertNotEqual(mismatched_key_id,
+                                signing._compute_key_id(pub))
+            sentinel = "ALERT3_MISMATCHED_KEY_ID"
+            keyfile = self._write_trusted_key(root, sentinel, {
+                "key_id": mismatched_key_id,
+                "public_key": pub_b64,
+            })
+            r = self._run(ext, "--trusted-key", str(keyfile))
+            self._assert_invalid_cli_result(
+                r, sentinel, _INVALID_TRUSTED_KEY_MESSAGE,
+                pub_b64, mismatched_key_id)
+
+    def test_trusted_keys_array_rejects_any_invalid_entry_without_partial_trust(
+            self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ext, ident = self._package(root)
+            invalid_pub = bytes(range(32))
+            invalid_pub_b64 = base64.b64encode(invalid_pub).decode("ascii")
+            mismatched_key_id = signing._compute_key_id(
+                bytes(reversed(invalid_pub)))
+            sentinel = "ALERT3_NO_PARTIAL_TRUST"
+            keyfile = self._write_trusted_key(root, sentinel, {"keys": [
+                {
+                    "key_id": ident.key_id,
+                    "public_key": ident.public_key_b64,
+                },
+                {
+                    "key_id": mismatched_key_id,
+                    "public_key": invalid_pub_b64,
+                },
+            ]})
+            r = self._run(ext, "--trusted-key", str(keyfile))
+            self._assert_invalid_cli_result(
+                r, sentinel, _INVALID_TRUSTED_KEY_MESSAGE,
+                invalid_pub_b64, mismatched_key_id)
+
+    def test_canonical_expect_key_id_refusal_does_not_echo_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            ext, _ = self._package(Path(d), signed=False)
+            key_id = "sha256:" + "0" * 64
+            r = self._run(ext, "--expect-key-id", key_id)
+            self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
+            self.assertIn("ПІДПИСУ НЕМАЄ", r.stdout)
+            self.assertNotIn(key_id, r.stdout)
+            self.assertNotIn(key_id, r.stderr)
 
     # ── (1) прибрати блок signer ──
     def test_stripped_signer_block_is_broken(self):
@@ -783,7 +994,7 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             self.assertIn("BROKEN", r.stdout)
             self.assertNotIn("UNSIGNED LEGACY", r.stdout)
 
-    # ── follow-up крипто-суду (а): явно заявлений ключ + непідписаний журнал ──
+    # ── follow-up крипто-рецензії (а): явно заявлений ключ + непідписаний журнал ──
     def test_legacy_with_expect_key_is_refusal_not_code_4(self):
         """(1) Слідчий заявив «очікую підпис ключем X», а журнал непідписаний.
         Чесна відповідь — ВІДМОВА окремим кодом 6, а не «код 4 legacy»."""
@@ -811,6 +1022,8 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             r = self._run(ext, "--trusted-key", str(keyfile))
             self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
             self.assertIn("ПІДПИСУ НЕМАЄ", r.stdout)
+            self.assertNotIn(signing._compute_key_id(pub), r.stdout)
+            self.assertNotIn(signing._compute_key_id(pub), r.stderr)
 
     def test_legacy_without_expect_key_still_code_4(self):
         """(2) Без заявленого ключа поведінка legacy НЕ змінилась — код 4."""
@@ -828,7 +1041,7 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("VERIFIED", r.stdout)
 
-    # ── follow-up крипто-суду (б): змішаний журнал = BROKEN ──
+    # ── follow-up крипто-рецензії (б): змішаний журнал = BROKEN ──
     def _downgrade_to_legacy(self, ext: Path):
         """Атакер прибирає signer і оголошує пакет legacy — саме так гаситься
         гейт підпису manifest; лишається тільки перевірка журналу."""

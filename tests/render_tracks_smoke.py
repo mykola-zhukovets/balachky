@@ -89,11 +89,10 @@ class MultiTrackRenderTests(unittest.TestCase):
         self.assertEqual([c.key for c in p._panel.channels], ["mic", "sys"])
 
     def test_all_controls_named(self):
-        from fronts.desktop.i18n import tr
         p = self._player()
         # транспорт
-        self.assertEqual(p._play_btn.accessibleName(), tr("player_play"))
-        self.assertEqual(p._speed_btn.accessibleName(), tr("player_speed"))
+        self.assertEqual(p._play_btn.accessibleName(), "Відтворити")
+        self.assertEqual(p._speed_btn.accessibleName(), "Швидкість")
         self.assertTrue(p._seek.accessibleName())
         # рядки панелі: чекбокс, слайдер, соло — усі названі
         for key, (chk, vol, solo) in p._panel._rows.items():
@@ -234,10 +233,9 @@ class VideoMixerRenderTests(unittest.TestCase):
         self.assertEqual(keys, ["screen", "mic", "sys"])
 
     def test_screen_audio_row_hidden_until_video_has_audio(self):
-        from fronts.desktop.i18n import tr
         dlg = self._dialog(_SPECS)
         chk_screen = dlg._panel._rows["screen"][0]
-        self.assertEqual(chk_screen.text(), tr("player_screen_audio"))
+        self.assertEqual(chk_screen.text(), "Звук екрана")
         self.assertFalse(chk_screen.isVisible())        # німий екран → рядок схований
         # доріжки наради — видимі
         self.assertTrue(dlg._panel._rows["mic"][0].isVisible())

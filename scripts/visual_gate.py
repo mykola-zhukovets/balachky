@@ -104,7 +104,7 @@ ICON_GLYPH_TOL = 1
 # Гейт до 25.07 міряв РІВНО одну ширину (1856) — і законно писав «0 порушень»
 # там, де на вузькому вікні текст різався. Через цю сліпоту власник ДВІЧІ за добу
 # знаходив обрізання раніше за автоматику (Центр моделей, група доказовості
-# наради), а суд 25.07 — ще й ряд кнопок картки диктування. Тепер ширин три:
+# наради), а рецензія 25.07 — ще й ряд кнопок картки диктування. Тепер ширин три:
 #   1000 — MainWindow.minimumWidth(): найгірший ДОСЯЖНИЙ мишею випадок. Вужче
 #          вікно Qt не дасть, тож усе, що чисто тут, чисто на будь-якій ширині;
 #   1280 — типовий ноутбук (найпоширеніша реальна ширина в користувачів);
@@ -569,6 +569,14 @@ def _process(app, times=3):
         app.processEvents()
 
 
+def _flush_deferred(app):
+    """Виконати deleteLater зараз, а не лишати C++-об'єкти до teardown Qt."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    _process(app)
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+
+
 def scan_container(root, page, lang, results, seen, app, qt):
     """Сканує root і, послідовно активуючи кожну вкладку QTabWidget та кожен
     індекс вкладеного QStackedWidget, добирає приховані підсторінки."""
@@ -603,15 +611,14 @@ def _dialog_factories(win, lang):
     діалоги (докачка GPU/моделі, протокол наради, онбординг, захоплення клавіші
     з grabKeyboard, редактор команди з резолвом моделі) свідомо пропущені —
     їхня побудова має побічні ефекти. Пропущені перелічені у звіті (skipped)."""
-    from fronts.desktop.about import AboutDialog
     from fronts.desktop.corpus_dialog import CorpusReportDialog
     from fronts.desktop.navcommands_dialog import NavCommandsDialog
     from fronts.desktop.diff_review import DiffReviewDialog
     from fronts.desktop.pages.vocab import (
         _BulkImportDialog, _MacroAddDialog, _PhraseAddDialog)
     from fronts.desktop.pages.settings import NetworkLogDialog
+    from fronts.desktop.main_window import TextLogReminderDialog
 
-    _noop = lambda *a, **k: None
     # заповнений журнал мережі — щоб гейт перевірив і таблицю, і довідку
     _net_rows = [
         {"ts": 1_700_000_000.0, "host": "huggingface.co", "kind": "model",
@@ -625,9 +632,6 @@ def _dialog_factories(win, lang):
                   "без зайвих емоцій, готовий до відправлення адресату.")
     return [
         ("crash", _build_crash_box),
-        ("AboutDialog",
-         lambda: AboutDialog(win, on_help=_noop, on_report=_noop,
-                             on_licenses=_noop)),
         ("CorpusReportDialog",
          lambda: CorpusReportDialog("нейромережа впала на другому кроці", win)),
         ("NavCommandsDialog", lambda: NavCommandsDialog(lang, None, win)),
@@ -640,6 +644,8 @@ def _dialog_factories(win, lang):
         ("MultiTrackPlayer", lambda: _make_tracks_dialog(win)),
         ("VideoMixerDialog", lambda: _make_video_mixer_dialog(win)),
         ("NetworkLogDialog", lambda: NetworkLogDialog(win, entries=_net_rows)),
+        ("TextLogReminderDialog",
+         lambda: TextLogReminderDialog(win.controller, win)),
         # feature/tts-listen (Хвиля 1): панель «Прослухати» — транспорт+Зберегти й
         # порожній стан «завантажте голос» (найтекстовіший). Джерела ледачі
         # (InlinePlayer не грає без файлу), без мережі/воркерів — скан безпечний.
@@ -727,7 +733,7 @@ def _make_video_mixer_dialog(win):
     логікою показу/приховання (reveal_channel). _make_video_dialog будує відео БЕЗ
     audio_tracks, тож `if self._audio_tracks:` не спрацьовує і ця панель НЕ існує
     під час гейта — обрізання тексту/іконки саме тут проходило б --strict непомітно
-    (сліпа зона, знахідка суду 22.07). Тут вмикаємо режим наради й РОЗКРИВАЄМО
+    (сліпа зона, знахідка рецензії 22.07). Тут вмикаємо режим наради й РОЗКРИВАЄМО
     «Звук екрана», щоб детектор бачив ПОВНИЙ набір рядків (екран+mic+sys) в обох
     мовах. Джерела ледачі (без файлів не грають) — сканування безпечне."""
     from fronts.desktop.i18n import tr
@@ -768,7 +774,7 @@ def _build_crash_box():
 
 
 def _scan_one_dialog(name, factory, lang, results, app, qt):
-    """Збудувати, показати, просканувати й закрити ОДИН діалог. Виправлення 3:
+    """Збудувати, показати, просканувати й закрити ОДИН діалог. Фікс 3:
     якщо фабрика КИДАЄ виняток — це ПОРУШЕННЯ (dialog_broken), а не тихий
     warning+continue. Раніше зламаний діалог (фабрика падала) давав зелений
     --strict: гейт мовчки пропускав бите вікно, яке саме й покликаний ловити.
@@ -796,7 +802,9 @@ def _scan_one_dialog(name, factory, lang, results, app, qt):
             dlg.deleteLater()
         except Exception:
             pass
-        _process(app)
+        # processEvents() поза app.exec() не доставляє DeferredDelete сам:
+        # діалог мусить померти тут, поки QApplication ще жива.
+        _flush_deferred(app)
 
 
 def scan_dialogs(win, lang, results, app, qt):
@@ -846,7 +854,7 @@ def close_main_window(win, app):
             pass
     win.close()
     win.deleteLater()
-    _process(app, 3)
+    _flush_deferred(app)
 
 
 # ─────── пост-фейл стан: довга помилка завантаження компонента ───────
@@ -1011,6 +1019,30 @@ def scan_onboarding_wizard(lang, results, app, qt):
                         "size": [0, 0]})
 
 
+def _check_horizontal_overflow(page, page_name, lang, results, qt):
+    """Порушення page_horizontal_overflow: вміст QScrollArea сторінки ширший за
+    видиму область (viewport) — ознака ряду без переносу, що розпирає картку
+    за межі вікна горизонтальною прокруткою (діагноз 2026-07-30 №1). До фіксу
+    гейт це не бачив: мок read_meeting_utterances повертав [], тож ряд чіпів
+    узагалі не будувався (сліпа зона, не хиба самої формули перевірки)."""
+    scroll = getattr(page, "_scroll", None)
+    if scroll is None:
+        return
+    content = scroll.widget()
+    if content is None:
+        return
+    viewport_w = scroll.viewport().width()
+    needed_w = max(content.width(), content.minimumSizeHint().width())
+    if needed_w > viewport_w + TOL:
+        results.append({
+            "type": "page_horizontal_overflow",
+            "lang": lang, "page": page_name, "widget": _widget_path(content),
+            "text": "вміст стрічки ширший за вікно (горизонтальна прокрутка)",
+            "needed": needed_w, "avail": viewport_w,
+            "size": [content.width(), content.height()],
+        })
+
+
 def scan_done_meeting_state(win, lang, results, app, qt):
     """Скан стану завершеної наради (готова картка з текстом і кнопками дій).
     Якщо побудова або оновлення стану завершеної наради зазнає збою (виняток) —
@@ -1018,6 +1050,8 @@ def scan_done_meeting_state(win, lang, results, app, qt):
     пропуск/continue (за каноном).
     """
     from types import SimpleNamespace
+    import tempfile
+    tmpdir = None
     try:
         page = win.meeting
         idx = win.pages.indexOf(page)
@@ -1040,13 +1074,34 @@ def scan_done_meeting_state(win, lang, results, app, qt):
         orig_utts = getattr(ctrl, "read_meeting_utterances", None)
         orig_meta = getattr(ctrl, "meeting_integrity_meta", None)
         orig_ready = getattr(ctrl, "protocol_model_ready", None)
+        orig_audio_paths = getattr(ctrl, "meeting_audio_paths", None)
+
+        # Чіпи часових позначок (segrow) додаються лише коли є і utterances,
+        # і вбудований плеєр (`if utterances and player is not None`) — плеєр
+        # будується лише коли meeting_audio_paths() дає реальний WAV-файл,
+        # інакше _add_audio_player() тихо повертає None і ряд чіпів НІКОЛИ не
+        # будується, скільки завгодно utterances не давай (те саме сліпе
+        # місце, що й порожній read_meeting_utterances — діагноз №4).
+        tmpdir = tempfile.mkdtemp(prefix="balachky_gate_meeting_")
+        fake_wav = Path(tmpdir) / "mic.wav"
+        fake_wav.write_bytes(b"")
+        ctrl.meeting_audio_paths = lambda sid: {"mic": str(fake_wav)}
 
         ctrl.list_meetings = lambda: [meta]
         ctrl.read_meeting_transcript = lambda sid: (
             "[00:00] Я: Доброго дня, шановні колеги.\n"
             "[00:05] Співрозмовники: Доброго дня, розпочинаємо обговорення."
         )
-        ctrl.read_meeting_utterances = lambda sid: []
+        # 12 реплік — реальний максимум чіпів часових позначок (meeting.py
+        # segrow бере utterances[:12]). Порожній список ХОВАВ увесь ряд чіпів
+        # від гейта (if utterances and player: ... узагалі не виконувався) —
+        # саме тому переповнення ряду на 1000px не ловилось (діагноз №4).
+        mock_utterances = [
+            SimpleNamespace(start=float(i * 5), end=float(i * 5 + 4),
+                            text=f"Репліка {i + 1} тестової наради.")
+            for i in range(12)
+        ]
+        ctrl.read_meeting_utterances = lambda sid: mock_utterances
         ctrl.meeting_integrity_meta = lambda sid: SimpleNamespace(
             status="unverified", audio_sha="abc123def45678901234567890123456", events=[]
         )
@@ -1057,12 +1112,15 @@ def scan_done_meeting_state(win, lang, results, app, qt):
             _process(app, 4)
             seen = set()
             scan_container(page, "MeetingPage/done-card", lang, results, seen, app, qt)
+            _check_horizontal_overflow(page, "MeetingPage/done-card", lang, results, qt)
         finally:
             if orig_list is not None: ctrl.list_meetings = orig_list
             if orig_read is not None: ctrl.read_meeting_transcript = orig_read
             if orig_utts is not None: ctrl.read_meeting_utterances = orig_utts
             if orig_meta is not None: ctrl.meeting_integrity_meta = orig_meta
             if orig_ready is not None: ctrl.protocol_model_ready = orig_ready
+            if orig_audio_paths is not None:
+                ctrl.meeting_audio_paths = orig_audio_paths
     except Exception as exc:
         print(f"  ❌ visual_gate failure: scan_done_meeting_state error: {exc}")
         results.append({
@@ -1075,13 +1133,16 @@ def scan_done_meeting_state(win, lang, results, app, qt):
             "avail": 0,
             "size": [0, 0],
         })
+    finally:
+        if tmpdir is not None:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def scan_dictation_feed_state(win, lang, results, app, qt):
     """Скан заповненої стрічки диктування. Дефолтний обхід сторінок бачить лише
     ПОРОЖНІЙ стан («ще нічого не надиктовано»), тож увесь мета-ряд картки —
     «Копіювати», «Копіювати дослівно», «Переформатувати…», ✕ — до цього пробника
-    гейт не бачив узагалі (сліпа зона, знахідка суду 25.07). Подаємо raw ≠ final,
+    гейт не бачив узагалі (сліпа зона, знахідка рецензії 25.07). Подаємо raw ≠ final,
     щоб кнопка дослівного копіювання теж була видима: саме на цьому ряду тісно.
     Збій побудови картки — ПОРУШЕННЯ, а не мовчазний пропуск."""
     try:
@@ -1160,7 +1221,7 @@ def run_language(lang, app, sandbox, qt, results, width=PRIMARY_WIDTH):
 def _match_key(v) -> tuple:
     """Ключ збігу з базлайном: ШИРИНА+мова+сторінка+тип+текст+WIDGET-шлях. БЕЗ пікселів
     (ширини дрейфують від DPI/шрифта — інакше базлайн ламався б на кожному
-    масштабі). Виправлення 5: widget-шлях (_widget_path: ланцюг класів+objectName) у
+    масштабі). Фікс 5: widget-шлях (_widget_path: ланцюг класів+objectName) у
     ключі — інакше один забазлайнений напис (напр. «Delete» на сторінці) «прощав»
     би ВСІ однакові написи там само, і нове обрізання іншого контролю з тим самим
     текстом проходило б --strict непомітно.
@@ -1290,7 +1351,7 @@ def selfcheck(app, qt) -> int:
     else:
         print("selfcheck: цілий гліф (20×16, icon_w) не чіпано ✓")
 
-    # Виправлення 3: зламана фабрика діалогу МУСИТЬ ловитись як dialog_broken (валить
+    # Фікс 3: зламана фабрика діалогу МУСИТЬ ловитись як dialog_broken (валить
     # --strict), а не тихо пропускатись. Синтетична фабрика, що кидає RuntimeError.
     broken_results = []
 
@@ -1315,7 +1376,10 @@ def _init_app(qt):
     QApplication = qt["QApplication"]
     if sys.platform == "win32":
         try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            shcore = ctypes.windll.shcore
+            shcore.SetProcessDpiAwareness.argtypes = (ctypes.c_int,)
+            shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+            shcore.SetProcessDpiAwareness(2)
         except Exception:
             pass
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -1447,10 +1511,17 @@ def main():
 
 
 def os_exit(code):
-    """Обходимо нативну static-деструкцію Qt на виході (джерело флакі-крашів
-    ПІСЛЯ вердикту). Флашимо потоки й виходимо жорстко."""
+    """Завершити Qt/DXGI штатно, потім вийти без Python static teardown."""
+    from PySide6.QtWidgets import QApplication
+    import shiboken6
+
     sys.stdout.flush()
     sys.stderr.flush()
+    app = QApplication.instance()
+    if app is not None:
+        _flush_deferred(app)
+        app.quit()
+        shiboken6.delete(app)
     os._exit(code)
 
 

@@ -48,7 +48,7 @@ class VoiceCard(QFrame):
             note.setProperty("card_note", True)
             lay.addWidget(note)
 
-        # RAD-TTS: пофонемний мапінг приблизний (best-effort) → чесна нота (суд хвилі 3)
+        # RAD-TTS: пофонемний мапінг приблизний (best-effort) → чесна нота (рецензія хвилі 3)
         if preset.engine_kind == "radtts":
             approx = QLabel(tr("tts_voice_approx_karaoke"))
             approx.setProperty("card_note", True)
@@ -62,8 +62,17 @@ class VoiceCard(QFrame):
 
         if not available:
             dl = GlassButton(tr("tts_voice_download"))
-            dl.setToolTip(tr("hint_tts_voice_download"))
-            dl.clicked.connect(lambda: on_download and on_download(preset.id))
+            self._dl_btn = dl
+            self._downloading = False
+            if _v.voice_downloadable(preset.id):
+                dl.setToolTip(tr("hint_tts_voice_download"))
+                dl.clicked.connect(lambda: self._begin_download(on_download))
+            else:
+                # чесна заглушка (як «Почути зразок»): файли цього пресета ще не
+                # запіновано в цій збірці → завантаження неможливе, кнопка мовчки
+                # нічого не вдавала б (рецензія: тиха відмова) — тож просто неактивна.
+                dl.setEnabled(False)
+                dl.setToolTip(tr("hint_tts_voice_download_unavailable"))
             row_l.addWidget(dl)
         else:
             self._radio = QRadioButton(tr("tts_voice_active"))
@@ -88,6 +97,36 @@ class VoiceCard(QFrame):
         row_l.addStretch(1)
         lay.addWidget(row)
 
+    # --- завантаження голосу: видимий поступ або чесна відмова (рецензія: тиха
+    # відмова більше не припустима — кожен клік або справді качає, або каже чому
+    # ні) ------------------------------------------------------------------
+    def _begin_download(self, on_download):
+        if not on_download or self._downloading:
+            return                                   # подвійний клік — ігнор
+        self._downloading = True
+        self._dl_btn.setEnabled(False)
+        self._dl_btn.setText(tr("tts_voice_downloading", pct=0))
+        on_download(self._preset.id, on_progress=self._on_dl_progress,
+                    on_done=self._on_dl_done, on_failed=self._on_dl_failed)
+
+    # Слоти нижче — bound-методи ЦЬОГО QWidget: виклик з фонового потоку/QThread
+    # через Qt-сигнал автоматично потрапляє в GUI-потік (auto/queued connection),
+    # тож пряме редагування self._dl_btn тут безпечне.
+    def _on_dl_progress(self, done, total):
+        pct = int(done * 100 / total) if total else 0
+        self._dl_btn.setText(tr("tts_voice_downloading", pct=pct))
+
+    def _on_dl_done(self):
+        self._downloading = False
+        self._dl_btn.setText(tr("tts_voice_download_done"))
+        self._dl_btn.setToolTip(tr("tts_voice_download_done"))
+
+    def _on_dl_failed(self, _message=""):
+        self._downloading = False
+        self._dl_btn.setEnabled(True)
+        self._dl_btn.setText(tr("tts_voice_download"))
+        self._dl_btn.setToolTip(tr("hint_tts_voice_download"))
+
 
 class VoiceManagerDialog(QDialog):
     def __init__(self, parent=None, *, root=None, active_by_lang=None,
@@ -106,11 +145,11 @@ class VoiceManagerDialog(QDialog):
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(10)
 
-        eyebrow = QLabel(tr("tts_voices_eyebrow"))
-        eyebrow.setProperty("eyebrow", True)
-        outer.addWidget(eyebrow)
+        # Заголовок вікна вже показує tr("tts_voices_eyebrow") (setWindowTitle
+        # вище) — окремий eyebrow-лейбл із тим самим текстом тут дублював його
+        # (смуга вікна «ГОЛОСИ» + одразу під нею ще раз «голоси» малими).
 
-        # §9-10 (ревізія): тумблер увімкнення пакета — БЕЗ нього звичайний
+        # §9-10 (рецензія): тумблер увімкнення пакета — БЕЗ нього звичайний
         # користувач не міг штатно активувати озвучення (tts_enabled=False дефолт).
         self._enable = QCheckBox(tr("set_tts_enable"))
         self._enable.setChecked(bool(tts_enabled))

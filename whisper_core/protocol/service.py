@@ -71,7 +71,7 @@ def _resolve_ready_path(active_id, model_root, custom_models, missing_exc):
     """Активна модель → шлях до файлу; якщо її немає/недоступна — чесна помилка
     (НЕ підміняємо іншою моделлю нишком). Спільне для всіх трьох генераторів."""
     resolved = _mm.resolve(active_id, _models_root(model_root), custom_models or [])
-    if resolved is None or not resolved.available():
+    if resolved is None or not resolved.integrity_available():
         raise missing_exc("Модель мовної генерації ще не завантажена")
     return str(resolved.model_path)
 
@@ -281,7 +281,7 @@ class QAGenerator:
         # Гейт «тихої заглушки»: без llama-cpp-python worker бере FakeBackend, чий
         # generate повертає рядок-позначку (FAKE_BACKEND_MARKER). Відповідь вільна,
         # тож is_valid_protocol тут не годиться — ловимо позначку і порожнечу
-        # напряму, щоб НЕ показати заглушку/пустку за успіх (урок судді).
+        # напряму, щоб НЕ показати заглушку/пустку за успіх (урок рецензента).
         if FAKE_BACKEND_MARKER in result:
             _log.error("Вихід LLM — заглушка FakeBackend: бекенд недоступний")
             raise QAError(BACKEND_UNAVAILABLE_MSG)
@@ -390,7 +390,7 @@ class RewriteGenerator:
                     pass
         if self._cancelled:
             raise RewriteCancelled("Переформатування скасовано")
-        # Гейт «тихої заглушки» (урок судді): без llama-cpp-python worker бере
+        # Гейт «тихої заглушки» (урок рецензента): без llama-cpp-python worker бере
         # FakeBackend, чий generate повертає FAKE_BACKEND_MARKER. Вихід вільний,
         # тож is_valid_protocol тут не годиться — ловимо позначку і порожнечу
         # напряму, щоб НЕ показати заглушку/пустку за успіх.
@@ -501,7 +501,7 @@ class CommandEditGenerator:
                     pass
         if self._cancelled:
             raise CommandEditCancelled("Редагування скасовано")
-        # Гейт «тихої заглушки» (урок судді): без llama-cpp-python worker бере
+        # Гейт «тихої заглушки» (урок рецензента): без llama-cpp-python worker бере
         # FakeBackend, чий generate повертає FAKE_BACKEND_MARKER. Вихід вільний,
         # тож is_valid_protocol тут не годиться — ловимо позначку і порожнечу
         # напряму, щоб НЕ заміняти виділення заглушкою/пусткою.

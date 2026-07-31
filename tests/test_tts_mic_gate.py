@@ -134,7 +134,7 @@ class TestAppGateBlocksRecording(unittest.TestCase):
 
 
 class TestAllSixGatesGuarded(unittest.TestCase):
-    """CRITICAL §9.1 (суд): УСІ 6 точок мік-гейту перевіряють результат (`if not …:
+    """CRITICAL §9.1 (рецензія): УСІ 6 точок мік-гейту перевіряють результат (`if not …:
     return`). AST-структурний захист від регресу в БУДЬ-ЯКІЙ точці — прибирання
     `if not` у будь-якому сайті робить його негардженим → червонить."""
 

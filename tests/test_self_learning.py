@@ -1,7 +1,7 @@
 # feature/selflearn-dict
 """Самонавчання словника «виправив раз — назавжди», ПІД КОЖЕН СЛОВНИК окремо.
 
-Покриває механіку спеки Terra: diff одного виправлення, класифікацію (bias /
+Покриває механіку навчання: diff одного виправлення, класифікацію (bias /
 точна заміна / пара-фраза), ІЗОЛЯЦІЮ по профілях, захист від засмічення
 («гартати»≠«гортати», дублі, суперечності, перекриття, ліміти), undo, перебудову
 проєкцій після рестарту, участь вивченого у словнику рушія, а також
@@ -201,7 +201,7 @@ class IsolationTests(unittest.TestCase):
                              .get("deployment", "deployment"))
 
     def test_learning_home_leaves_work_untouched(self):
-        # чек-ліст судді №1: вивчили в home — work НЕ замінює
+        # чек-ліст рецензента №1: вивчили в home — work НЕ замінює
         with tempfile.TemporaryDirectory() as tmp:
             home = _profile(tmp, "home")
             work = _profile(tmp, "work")

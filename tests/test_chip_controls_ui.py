@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (                        # noqa: E402
 )
 
 from fronts.desktop import motion, theme               # noqa: E402
-from fronts.desktop.i18n import tr, STRINGS           # noqa: E402
+from fronts.desktop.i18n import (                     # noqa: E402
+    STRINGS, current_language, set_language, tr,
+)
 from fronts.desktop.chip_popover import (              # noqa: E402
     Popover, ValueSliderChip, _focus_ring_color, make_slider,
 )
@@ -55,18 +57,19 @@ class ProcessingChipTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
         motion.init_config(SimpleNamespace(animations=False))
+        cls._language = current_language()
+        cls.addClassCleanup(set_language, cls._language)
+        set_language("uk")
 
     def test_chip_label_shows_current_level(self):
         c = ProcessingChip(processing.DICTATION)
-        self.assertEqual(c._chip.text(),
-                         tr("proc_chip_label", level=tr("proc_mode_verbatim")))
+        self.assertEqual(c._chip.text(), "Обробка: Дослівно")
         c.setMode("fillers")
-        self.assertEqual(c._chip.text(),
-                         tr("proc_chip_label", level=tr("proc_mode_fillers")))
+        self.assertEqual(c._chip.text(), "Обробка: Без слів-паразитів")
 
     def test_chip_has_accessible_name(self):
         c = ProcessingChip(processing.DICTATION)
-        self.assertEqual(c._chip.accessibleName(), tr("proc_slider_dict_name"))
+        self.assertEqual(c._chip.accessibleName(), "Рівень обробки тексту")
 
     def test_mode_api_forwarded(self):
         c = ProcessingChip(processing.DICTATION)
@@ -80,7 +83,7 @@ class ProcessingChipTests(unittest.TestCase):
         c.modeChanged.connect(rec)
         c._slider._labels[1].clicked.emit(1)     # вибір у попапі-слайдері
         self.assertEqual(rec.values, ["fillers"])
-        self.assertIn(tr("proc_mode_fillers"), c._chip.text())
+        self.assertIn("Без слів-паразитів", c._chip.text())
 
     def test_document_unavailable_forwarded(self):
         c = ProcessingChip(processing.DICTATION)
@@ -99,7 +102,11 @@ class ProcessingChipTests(unittest.TestCase):
     def test_tooltip_lands_on_chip(self):
         c = ProcessingChip(processing.DICTATION)
         c.setToolTip(tr("proc_slider_dict_hint"))
-        self.assertEqual(c._chip.toolTip(), tr("proc_slider_dict_hint"))
+        self.assertEqual(
+            c._chip.toolTip(),
+            "Дослівно — вставляється як почули. Без слів-паразитів — прибирає "
+            "“емм”, “ну”. З пунктуацією — розставляє розділові знаки й "
+            "причісує чернетку.")
 
     def test_sync_animations_safe(self):
         self.assertIsNone(ProcessingChip(processing.DICTATION).sync_animations())
@@ -110,6 +117,9 @@ class ValueSliderChipTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
         motion.init_config(SimpleNamespace(animations=False))
+        cls._language = current_language()
+        cls.addClassCleanup(set_language, cls._language)
+        set_language("uk")
 
     def _chip(self, value=30):
         return ValueSliderChip(5, 60, value, label_key="screen_fps_chip",
@@ -117,7 +127,7 @@ class ValueSliderChipTests(unittest.TestCase):
 
     def test_chip_label_shows_value(self):
         c = self._chip(30)
-        self.assertEqual(c._chip.text(), tr("screen_fps_chip", n=30))
+        self.assertEqual(c._chip.text(), "Кадри: 30")
 
     def test_value_and_range(self):
         c = self._chip(24)
@@ -142,8 +152,8 @@ class ValueSliderChipTests(unittest.TestCase):
 
     def test_chip_and_slider_have_accessible_name(self):
         c = self._chip()
-        self.assertEqual(c._chip.accessibleName(), tr("screen_fps"))
-        self.assertEqual(c._slider.accessibleName(), tr("screen_fps"))
+        self.assertEqual(c._chip.accessibleName(), "Кадрів на секунду")
+        self.assertEqual(c._slider.accessibleName(), "Кадрів на секунду")
 
     def test_popover_holds_slider(self):
         c = self._chip()

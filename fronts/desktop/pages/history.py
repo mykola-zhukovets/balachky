@@ -94,6 +94,7 @@ class HistoryPage(QWidget):
         # порожній стан ⇄ стрічка
         empty = EmptyState("fa6s.clock-rotate-left", tr("common_empty_here"),
                            tr("hist_empty_hint"))
+        self._empty = empty
         self._empty_title = empty.title_label
         self._empty_hint = empty.hint_label
 
@@ -103,6 +104,13 @@ class HistoryPage(QWidget):
         root.addWidget(self._stack, stretch=1)
 
         self._cards = []   # (card_widget, текст у нижньому регістрі) — для фільтра
+
+    def _enable_memory(self):
+        """Кнопка першого кроку на порожньому стані «історію вимкнено» — той
+        самий виклик, що й прапорець «Зберігати нові розшифровки в історії»
+        у Словниках (vocab.py), без переходу на іншу сторінку."""
+        self.controller.toggle_memory(True)
+        self.refresh()
 
     def focus_query(self, text: str) -> None:
         """feature/global-search: підставити запит у поле пошуку історії, щоб
@@ -227,9 +235,11 @@ class HistoryPage(QWidget):
             if memory_on:
                 self._empty_title.setText(tr("common_empty_here"))
                 self._empty_hint.setText(tr("hist_empty_hint"))
+                self._empty.set_button("")
             else:
                 self._empty_title.setText(tr("hist_mem_off_title"))
                 self._empty_hint.setText(tr("hist_mem_off_hint"))
+                self._empty.set_button(tr("hist_mem_off_enable"), self._enable_memory)
             self._memory_note.hide()
             self._stack.setCurrentIndex(0)
             return

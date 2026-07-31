@@ -30,20 +30,22 @@ class EngineAvailabilityTests(unittest.TestCase):
              patch.object(sidecar.os.path, "exists", return_value=True):
             self.assertTrue(sidecar.engine_available())
 
-    def test_spec_honours_skip_flag(self):
-        """BALACHKY_SKIP_TTS=1 має лишатись у .spec — на ньому тримається полегшена збірка."""
+    def test_spec_keeps_legacy_skip_flag_compatibility(self):
+        """Старий прапорець лишається лише як сумісний alias нового профілю."""
         from pathlib import Path
         spec = (Path(__file__).resolve().parents[1] / "balachky.spec").read_text(encoding="utf-8")
         self.assertIn('BALACHKY_SKIP_TTS', spec)
-        self.assertIn('if not _skip_tts and _torch_ilu.find_spec("torch")', spec)
-        # os у .spec не імпортований глобально — свій псевдонім обов'язковий,
-        # інакше збірка падає на NameError уже після довгого Analysis
-        self.assertIn("import os as _os", spec)
+        self.assertIn('BALACHKY_BUILD_PROFILE', spec)
+        self.assertIn('BALACHKY_SKIP_TTS is deprecated', spec)
 
 
 class OnboardingSkipsVoiceStepTests(unittest.TestCase):
-    def test_voice_step_skipped_when_engine_missing(self):
-        """Без рушія майстер не пропонує качати голос, а йде далі."""
+    def test_voice_step_shown_honestly_when_engine_missing(self):
+        """Рішення власника 31.07 (аудит 30.07, Дефект 3): без рушія майстер
+        БІЛЬШЕ не пропускає крок «Озвучення» мовчки (старий код перемикав
+        сторінку і тієї ж миті кликав _advance_from_voice — вона блимала й
+        зникала). Тепер сторінка ЗАВЖДИ показується; чесне пояснення і
+        одна кнопка «Далі» — усередині _update_voice_page_state."""
         from PySide6.QtWidgets import QApplication
         from fronts.desktop import onboarding
 
@@ -55,8 +57,10 @@ class OnboardingSkipsVoiceStepTests(unittest.TestCase):
              patch.object(wiz, "_advance_from_voice") as adv, \
              patch.object(wiz, "_update_voice_page_state") as upd:
             wiz._go_next()
-        adv.assert_called_once()
-        upd.assert_not_called()
+        upd.assert_called_once()
+        adv.assert_not_called()
+        self.assertEqual(wiz._stack.currentIndex(), 3,
+                         "крок «Озвучення» мусить лишитись видимим, не проскочити")
         wiz.close()
 
     def test_voice_step_shown_when_engine_present(self):

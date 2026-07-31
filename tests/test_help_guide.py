@@ -1,5 +1,5 @@
 """Довідка: локальний README пріоритетно, інакше — сторінка репо; і що пункт
-трею "Довідка" справді зʼявляється, коли передано колбек on_help."""
+трею «Довідка» справді зʼявляється, коли передано колбек on_help."""
 import os
 import unittest
 from unittest.mock import patch
@@ -17,25 +17,27 @@ class OpenUserGuideTests(unittest.TestCase):
     def test_prefers_local_readme_when_bundled(self):
         opened = {}
         with patch.object(help_mod.paths, "bundled_doc",
-                          return_value="C:/app/README.uk.md"), \
+                          return_value="C:/app/README.md"), \
              patch.object(help_mod, "current_language", return_value="uk"), \
              patch.object(help_mod.QDesktopServices, "openUrl",
                           side_effect=lambda url: opened.update(url=url)):
             help_mod.open_user_guide()
         # відкрито локальний файл, а не мережеву сторінку
         self.assertTrue(opened["url"].isLocalFile())
-        self.assertTrue(opened["url"].toLocalFile().endswith("README.uk.md"))
+        self.assertTrue(opened["url"].toLocalFile().endswith("README.md"))
 
     def test_each_language_asks_for_its_own_readme(self):
         """Довідка мусить брати файл СВОЄЇ мови — і той файл має існувати.
 
-        Канонічний README.md є англійським для сторінки GitHub, а українська
-        довідка живе в README.uk.md. Тест захищає мапу мов від випадкового
-        повернення до старих імен.
+        Мапа мов пережила перейменування README: канонічним став український
+        README.md, англійський переїхав у README.en.md, а мапа лишилась
+        старою — «en» відкривало користувачеві українську довідку, «uk»
+        просило README.uk.md, якого в репозиторії вже немає. Старий тест
+        цього не бачив, бо перевіряв лише «локальний важливіший за мережу».
         Тут вимагаємо і правильне ім'я, і наявність файлу в репозиторії."""
         from pathlib import Path
         repo = Path(__file__).resolve().parents[1]
-        expected = {"uk": "README.uk.md", "en": "README.md"}
+        expected = {"uk": "README.md", "en": "README.en.md"}
         for lang, name in expected.items():
             asked = {}
             # openUrl → False: імітуємо, що браузер не відкрився, і довідка
@@ -49,12 +51,12 @@ class OpenUserGuideTests(unittest.TestCase):
                 help_mod.open_user_guide()
             self.assertEqual(
                 asked.get("name"), name,
-                f'для мови "{lang}" довідка має брати {name}')
+                f"для мови «{lang}» довідка має брати {name}")
             self.assertTrue(
                 (repo / name).is_file(),
                 f"{name} немає в репозиторії — довідка відкриє порожнечу")
             self.assertIn(name, help_mod._REMOTE[lang],
-                          f'запасне посилання для "{lang}" веде не на {name}')
+                          f"запасне посилання для «{lang}» веде не на {name}")
 
     def test_falls_back_to_repo_when_no_local(self):
         opened = {}
@@ -65,22 +67,6 @@ class OpenUserGuideTests(unittest.TestCase):
             help_mod.open_user_guide()
         self.assertFalse(opened["url"].isLocalFile())
         self.assertIn("github.com", opened["url"].toString())
-
-    def test_repository_readme_language_contract(self):
-        """GitHub показує англійський README, а обидві мови з'єднані явно."""
-        from pathlib import Path
-        repo = Path(__file__).resolve().parents[1]
-        english = (repo / "README.md").read_text(encoding="utf-8")
-        ukrainian = (repo / "README.uk.md").read_text(encoding="utf-8")
-        legacy = (repo / "README.en.md").read_text(encoding="utf-8")
-
-        self.assertIn("<strong>English</strong>", english)
-        self.assertIn('href="README.uk.md"', english)
-        self.assertIn('<a id="usage"></a>', english)
-        self.assertIn('href="README.md"', ukrainian)
-        self.assertIn("<strong>Українська</strong>", ukrainian)
-        self.assertIn('<a id="використання"></a>', ukrainian)
-        self.assertIn("README.md#usage", legacy)
 
 
 class TrayHelpItemTests(unittest.TestCase):

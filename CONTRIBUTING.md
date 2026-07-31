@@ -1,4 +1,4 @@
-# Внесок у "Балачки" / Contributing to Balachky
+# Внесок у “Балачки” / Contributing to Balachky
 
 Дякуємо за бажання допомогти! Проєкт розробляється й підтримується автором одноосібно, тому зрозумілі, чіткі повідомлення та пропозиції дуже цінуються.
 
@@ -6,11 +6,11 @@ Thanks for wanting to help! This project is maintained solely by the author, so 
 
 ---
 
-## Для користувачів та дописувачів
+## Українською — для користувачів та дописувачів
 
 ### Як повідомити про баг або запропонувати ідею
-- **Повідомити про баг:** Відкрийте вкладку **Issues** і натисніть **New issue → "Повідомити про баг"**. Заповніть підказки у формі.
-- **Запропонувати функцію:** Відкрийте **Issues → New issue → "Запропонувати функцію"** або створіть тему у **Discussions**.
+- **Повідомити про баг:** Відкрийте вкладку **Issues** і натисніть **New issue → “Повідомити про баг”**. Заповніть підказки у формі.
+- **Запропонувати функцію:** Відкрийте **Issues → New issue → “Запропонувати функцію”** або створіть тему у **Discussions**.
 - **Запропонувати слово у словник:** Якщо хочете додати термін чи виправлення розпізнавання, напишіть у **Discussions** або створіть **Issue**.
 
 ### Чого НЕ треба робити
@@ -28,7 +28,7 @@ Thanks for wanting to help! This project is maintained solely by the author, so 
 
 ---
 
-## For Users & Contributors
+## English — For Users & Contributors
 
 ### Reporting Bugs & Requesting Features
 - **Report a bug:** Open the **Issues** tab and click **New issue → "Bug report"**. Fill in the template fields.

@@ -1,7 +1,7 @@
 """Smoke-рендер підсвітки непевних слів — ОКРЕМИЙ процес (як render_nav_smoke).
 
 feature/model-bottlenecks (під-хвиля 2). Дві склейки, які НІЩО не тестувало до
-цього (суд довів мутацією _render_html(final, []) — вона пережила 1839 тестів,
+цього (рецензія довела мутацією _render_html(final, []) — вона пережила 1839 тестів,
 рівно вихідний клас бага хвилі: word-дані є, а до QLabel не долітають):
 
   * DictationPage.add_entry(raw, final, words) → text.setText(render HTML) —

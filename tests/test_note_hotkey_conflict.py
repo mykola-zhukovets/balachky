@@ -107,7 +107,7 @@ class NoteHotkeyConflictTests(unittest.TestCase):
         app.bookmark_hotkey = SimpleNamespace(reapply=lambda: None)
         app.command_edit_hotkey = SimpleNamespace(reapply=lambda: None)
         app._apply_note_hotkey = lambda: None
-        # Звірка суду №7: legacy-rebind знімає ВСІ хоткеї (keyboard.unhook_all) —
+        # Звірка рецензії №7: legacy-rebind знімає ВСІ хоткеї (keyboard.unhook_all) —
         # _apply_key має перевісити й панік-хоткей, інакше після ребайнду PTT
         # panic-lock тихо мертвий. Мутація (прибрати _apply_panic_hotkey) валить це.
         panic_reapplied = {"n": 0}

@@ -5,7 +5,7 @@ render_*_smoke; offscreen ДОПУСТИМИЙ: перевіряємо СТРУ�
 Ловить три класи багів на ВСІХ сторінках MainWindow (фейк-контролер спільний із
 render_nav_smoke):
   (а) §18 accessible name: кожен видимий QPushButton/GlassButton/QCheckBox/
-      QComboBox має непорожній accessibleName АБО text — інакше суддя/скрінрідер
+      QComboBox має непорожній accessibleName АБО text — інакше рецензент/скрінрідер
       не назве контрол. Fail зі списком порушників.
   (б) §17 «мертві кнопки»: кожна видима кнопка має ≥1 приймач на clicked
       (isSignalConnected) — БЕЗ реального кліку (клік у smoke-процесі ризикований).
@@ -30,7 +30,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from PySide6.QtCore import Qt, QPoint
-from PySide6.QtWidgets import QCheckBox, QComboBox, QPushButton, QLabel
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QPushButton, QLabel,
+                               QToolButton)
 
 from types import SimpleNamespace
 
@@ -245,6 +246,15 @@ class A11ySmokeTests(unittest.TestCase):
         found = {}
         for i in range(_PAGE_COUNT):
             win.set_page(i)
+            self._app.processEvents()
+            # Частина налаштувань живе за розкривачем і згорнута за
+            # замовчуванням (канон сторінок: головне видно, другорядне
+            # сховане). Для перевірки переносу розгортаємо їх — інакше
+            # підпис просто невидимий і тест «не знаходить» його,
+            # хоча дефекту немає.
+            for tb in win.findChildren(QToolButton):
+                if tb.property("disclosure") and not tb.isChecked():
+                    tb.click()
             self._app.processEvents()
             for w in win.findChildren(QLabel):
                 if w.objectName() in self._MUST_WRAP and w.isVisible():

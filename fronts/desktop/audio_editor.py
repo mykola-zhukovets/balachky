@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QMessageBox, QVBoxLayout, QWidget)
 
 from whisper_core import audioedit
+from .crash import anonymize_path
 from .glass import GlassButton
 from .i18n import tr
 from .player import fmt_time, _IconButton
@@ -262,7 +263,8 @@ class AudioEditorPanel(QWidget):
                 self._path, start, end, marker=tr("audioedit_redact_marker"), note=note,
                 source=self._source)
         except Exception:
-            logging.exception("Не вдалося заредагувати транскрипт: %s", self._path)
+            logging.exception("Не вдалося заредагувати транскрипт: %s",
+                              anonymize_path(self._path))
             result = None
         if result is None:
             # Ні винятку не ковтаємо, ні None не видаємо за успіх: транскрипт НЕ

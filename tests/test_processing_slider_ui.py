@@ -11,7 +11,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from fronts.desktop import motion                    # noqa: E402
-from fronts.desktop.i18n import tr                   # noqa: E402
+from fronts.desktop.i18n import (                    # noqa: E402
+    current_language, set_language, tr,
+)
 from fronts.desktop.processing_slider import ProcessingSlider  # noqa: E402
 from whisper_core import processing                  # noqa: E402
 
@@ -30,13 +32,18 @@ class ProcessingSliderTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
         motion.init_config(SimpleNamespace(animations=False))   # reduce-motion
 
+    def setUp(self):
+        self._language = current_language()
+        self.addCleanup(set_language, self._language)
+        set_language("uk")
+
     def _slider(self, surface=processing.DICTATION, caption=""):
         w = ProcessingSlider(surface, caption=caption)
         return w
 
     def test_three_stops_with_exact_labels(self):
         # Диктування: третя позиція — «З пунктуацією» (не «Під документ»): у конвеєрі
-        # ще нема генеративного переписування, тож назва чесна (спека §3, блокер суду).
+        # ще нема генеративного переписування, тож назва чесна (спека §3, блокер рецензії).
         w = self._slider()
         texts = [lbl.text() for lbl in w.findChildren(QLabel)]
         for key in ("proc_mode_verbatim", "proc_mode_fillers", "proc_mode_punct"):
@@ -54,8 +61,9 @@ class ProcessingSliderTests(unittest.TestCase):
     def test_accessible_name_per_surface(self):
         wd = self._slider(processing.DICTATION)
         wm = self._slider(processing.MEETING)
-        self.assertEqual(wd._slider.accessibleName(), tr("proc_slider_dict_name"))
-        self.assertEqual(wm._slider.accessibleName(), tr("proc_slider_meeting_name"))
+        self.assertEqual(wd._slider.accessibleName(), "Рівень обробки тексту")
+        self.assertEqual(wm._slider.accessibleName(),
+                         "Рівень обробки протоколу")
 
     def test_accessible_description_live(self):
         w = self._slider()

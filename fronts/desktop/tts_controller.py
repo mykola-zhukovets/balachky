@@ -49,7 +49,7 @@ class TtsController:
         # СТРІМІНГ (§3.2 TTFS): перший chunk_ready → плеєру НЕГАЙНО, не після combine.
         # (token, wav_path, timings, is_first) — маршал у GUI робить app.
         self._on_chunk_playable = on_chunk_playable or (lambda tok, p, t, first: None)
-        # суд 5.3: playback-генерація завершилась БЕЗ жодного відданого плеєру чанка
+        # рецензія 5.3: playback-генерація завершилась БЕЗ жодного відданого плеєру чанка
         # (скасування/помилка/відхилення/порожньо/fake) → зняти resume-arm тієї генерації,
         # щоб наступний незалежний потік не успадкував чужу позицію. Несе generation-токен.
         self._on_synth_dropped = on_synth_dropped or (lambda tok: None)
@@ -117,7 +117,9 @@ class TtsController:
             return set()
 
     def _guard_voice(self, text: str):
-        """Спільна перевірка: enabled/порожньо/мова/наявність голосу.
+        """Швидка перевірка: enabled/порожньо/мова/наявність теки голосу.
+
+        Повна перевірка цілісності виконується лише у worker-потоці.
         Повертає (rv, lang, outcome): outcome!=None → рано вийти з кодом."""
         if not getattr(self._cfg, "tts_enabled", False):
             self._toast("tts_disabled_note")
@@ -157,6 +159,8 @@ class TtsController:
             return
         def _do_prewarm():
             try:
+                if not rv.integrity_available():
+                    return
                 lease = self._coord.acquire_tts(active=False)
                 if lease is None:
                     return
@@ -318,7 +322,7 @@ class TtsController:
         state = {"fake": False, "first": True}
 
         def notify_dropped():
-            # суд 5.3/5.4: генерація завершилась, не віддавши жодного playable-чанка
+            # рецензія 5.3/5.4: генерація завершилась, не віддавши жодного playable-чанка
             # плеєру → зняти resume-arm цієї генерації. Критерій — ФАКТ доставки, а не
             # порожнеча wavs: on_event додає wav у wavs БЕЗУМОВНО, але _on_chunk_playable
             # викликає лише для АКТИВНОГО token; при preempt (token знеактивнено) wav
@@ -330,7 +334,7 @@ class TtsController:
                     pass
 
         def safe_toast(key):
-            # суд 5.5: тост НЕ має зривати drop/cleanup — notify_dropped викликаємо ПЕРШИМ,
+            # рецензія 5.5: тост НЕ має зривати drop/cleanup — notify_dropped викликаємо ПЕРШИМ,
             # тост обгортаємо, щоб виняток трею не пропустив _finish (витік temp/arm).
             try:
                 self._toast(key)
@@ -360,6 +364,11 @@ class TtsController:
         except Exception:                  # noqa: BLE001
             lex_snapshot = []
         try:
+            if not rv.integrity_available():
+                notify_dropped()
+                safe_toast("tts_no_voice_hint")
+                self._finish(token, temp)
+                return
             self._sidecar.load_voice(rv.id, engine=rv.engine_kind,
                                      manifest_path=rv.manifest_path)
             self._sidecar.synthesize_stream(
@@ -368,13 +377,13 @@ class TtsController:
                 want_timings=not export, lexicon_snapshot=lex_snapshot,
                 on_event=on_event)
         except TtsSidecarError:
-            notify_dropped()               # суд 5.5: drop ГАРАНТОВАНО перед тостом
+            notify_dropped()               # рецензія 5.5: drop ГАРАНТОВАНО перед тостом
             safe_toast("tts_engine_error")
             self._finish(token, temp)
             return
         except Exception:                  # noqa: BLE001
             _log.exception("Помилка синтезу озвучення")
-            notify_dropped()               # суд 5.5: drop ГАРАНТОВАНО перед тостом
+            notify_dropped()               # рецензія 5.5: drop ГАРАНТОВАНО перед тостом
             safe_toast("tts_engine_error")
             self._finish(token, temp)
             return
@@ -385,7 +394,7 @@ class TtsController:
                     self._busy = False
         # відхилення fake-marker (CRITICAL 2): відсутня модель ≠ «успіх тиші»
         if state["fake"]:
-            notify_dropped()               # суд 5.5: drop ГАРАНТОВАНО перед тостом
+            notify_dropped()               # рецензія 5.5: drop ГАРАНТОВАНО перед тостом
             safe_toast("tts_engine_error")
             self._finish(token, temp)
             return

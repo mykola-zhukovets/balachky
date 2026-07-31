@@ -27,7 +27,7 @@ class TargetChangedTests(unittest.TestCase):
         self.assertTrue(target_changed(555, None))   # фокус зник → теж «змінилось»
 
     def test_reused_hwnd_treated_as_same_documented_tradeoff(self):
-        # СВІДОМИЙ КОМПРОМІС (LOW, суд): звірка лише за HWND. Якщо Windows
+        # СВІДОМИЙ КОМПРОМІС (LOW, рецензія): звірка лише за HWND. Якщо Windows
         # перевикористає той самий числовий HWND для нового вікна, ми трактуємо
         # його як «те саме» — крихітне вікно гонки, ловити дорожче за користь.
         # Тест фіксує контракт: зміна на звірку класу/PID оновить і його, і
@@ -67,17 +67,19 @@ class DeliverPasteGuardTests(unittest.TestCase):
         clip = MagicMock()
         with patch.object(desktop_app, "paste_text",
                           return_value=paste_result) as pt, \
+             patch.object(desktop_app, "cancel_clipboard_restore") as cancel, \
              patch.object(wininput, "capture_paste_target",
                           return_value=current_target), \
              patch.dict(sys.modules, {"pyperclip": clip}):
             desktop_app._deliver_paste(app, "текст", False, pinned_target=pinned)
-        return pt, clip
+        return pt, clip, cancel
 
     def test_window_changed_blocks_paste(self):
         app, messages, undo, history = self._app(confirm=True)
-        pt, clip = self._deliver(app, pinned=(111, "Поле"),
-                                 current_target=(999, "Чужий чат"))
+        pt, clip, cancel = self._deliver(app, pinned=(111, "Поле"),
+                                         current_target=(999, "Чужий чат"))
         pt.assert_not_called()                       # наосліп НЕ вставляємо
+        cancel.assert_called_once_with()             # старий timer не затре текст
         clip.copy.assert_called_once_with("текст")   # текст лишається в буфері
         self.assertEqual(len(messages), 1)
         self.assertIn("Чужий чат", messages[0])      # у тості — нове вікно
@@ -86,8 +88,8 @@ class DeliverPasteGuardTests(unittest.TestCase):
 
     def test_same_window_pastes_as_before(self):
         app, messages, undo, history = self._app(confirm=True)
-        pt, clip = self._deliver(app, pinned=(111, "Поле"),
-                                 current_target=(111, "Поле"))
+        pt, clip, _ = self._deliver(app, pinned=(111, "Поле"),
+                                    current_target=(111, "Поле"))
         pt.assert_called_once_with("текст", typing_fallback=False)
         self.assertEqual(messages, [])
         self.assertEqual(history.recent(), ["текст"])   # вставку записано
@@ -95,21 +97,21 @@ class DeliverPasteGuardTests(unittest.TestCase):
 
     def test_gate_off_pastes_even_if_changed(self):
         app, messages, undo, history = self._app(confirm=False)
-        pt, _ = self._deliver(app, pinned=(111, "Поле"),
-                              current_target=(999, "Інше"))
+        pt, _, _ = self._deliver(app, pinned=(111, "Поле"),
+                                 current_target=(999, "Інше"))
         pt.assert_called_once_with("текст", typing_fallback=False)
         self.assertEqual(messages, [])
 
     def test_no_pin_skips_guard(self):
         # «повторити вставку» з трею: закріплення нема → перевірку не робимо
         app, messages, undo, history = self._app(confirm=True)
-        pt, _ = self._deliver(app, pinned=None, current_target=(999, "Інше"))
+        pt, _, _ = self._deliver(app, pinned=None, current_target=(999, "Інше"))
         pt.assert_called_once_with("текст", typing_fallback=False)
         self.assertEqual(messages, [])
 
 
 class QueueForcedGuardTests(unittest.TestCase):
-    """feature/dictation-queue (рекомендація суду): для джоба ЧЕРГИ (pinned_pid
+    """feature/dictation-queue (рекомендація рецензії): для джоба ЧЕРГИ (pinned_pid
     відомий → відкладена вставка) звірка вікна ПРИМУСОВА, навіть коли тумблер
     paste_confirm_on_window_change вимкнено. Причина: між записом і вставкою з
     черги минає значно більше часу (фонова розшифровка попередніх фраз), тож
@@ -156,7 +158,7 @@ class QueueForcedGuardTests(unittest.TestCase):
         return pt, clip
 
     def test_queue_blocks_changed_window_even_with_gate_off(self):
-        # головний кейс суду: тумблер ВИМКНЕНО, але це черга → звірка все одно діє
+        # головний кейс рецензії: тумблер ВИМКНЕНО, але це черга → звірка все одно діє
         app, messages, undo, history = self._app(confirm=False)
         pt, clip = self._deliver(app, pinned=(111, "Поле"), pinned_pid=1000,
                                  current_target=(999, "Чужий чат"),

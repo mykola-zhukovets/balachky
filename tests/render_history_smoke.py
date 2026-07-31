@@ -31,6 +31,11 @@ class MockProfile:
 class MockCtl:
     def __init__(self, p):
         self.profile = MockProfile(p)
+        self.toggled = []
+
+    def toggle_memory(self, on):
+        self.toggled.append(on)
+        self.profile.memory_enabled = on
 
 
 def _write_history(path, records):
@@ -88,6 +93,36 @@ def main() -> int:
         vis_all = _visible_texts("")                 # порожній запит → усі видимі
         assert len(vis_all) == 2, "порожній запит має показати всі картки"
 
+        # --- аудит 31.07: порожній стан (0 записів) ---
+        empty_hp = Path(tmp) / "history-empty.jsonl"
+        _write_history(empty_hp, [])
+        ctl = MockCtl(empty_hp)
+        empty_page = HistoryPage(ctl)
+        empty_page.refresh()
+        assert empty_page._stack.currentIndex() == 0, \
+            "0 записів мали показати порожній стан"
+        assert empty_page._empty.button.text() == "", \
+            "історія УВІМКНЕНА: кнопки в порожньому стані бути не мусить"
+
+        # вимкнена історія — реальна кнопка «Увімкнути історію», не відсилання
+        # у трей (аудит: раніше текст вказував на невірне місце дії)
+        ctl.profile.memory_enabled = False
+        empty_page.refresh()
+        assert empty_page._stack.currentIndex() == 0
+        assert empty_page._empty.button.text(), \
+            "історія ВИМКНЕНА: кнопка «Увімкнути історію» мусить бути видима"
+        empty_page._empty.button.click()
+        assert ctl.toggled == [True], "кнопка мала увімкнути пам'ять через controller"
+        assert ctl.profile.memory_enabled is True
+
+        # після увімкнення й появи запису — порожній стан зникає (перевірка
+        # факту, не рядка): дописуємо один запис і оновлюємо сторінку.
+        _write_history(empty_hp, [{"ts": ts_new, "final": "перший запис"}])
+        empty_page.refresh()
+        assert empty_page._stack.currentIndex() == 1, \
+            "перший запис мав прибрати порожній стан і показати стрічку"
+
+        empty_page.deleteLater()
         page.deleteLater()
 
     print("RENDER HISTORY SMOKE OK")

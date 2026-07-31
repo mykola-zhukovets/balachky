@@ -24,15 +24,15 @@ from whisper_core import paths
 from .i18n import current_language, tr
 
 # Локальні файли (пакуються в збірку через datas у balachky.spec).
-# Канонічний README.md — англійський (головна сторінка репозиторію),
-# український живе в README.uk.md.
-_LOCAL = {"uk": "README.uk.md", "en": "README.md"}
-# Сторінки репо з якорем розділу "як користуватися"
+# Канонічний README.md — УКРАЇНСЬКИЙ (головна сторінка репозиторію),
+# англійський живе в README.en.md.
+_LOCAL = {"uk": "README.md", "en": "README.en.md"}
+# Сторінки репо з якорем розділу «як користуватися»
 _REMOTE = {
     "uk": ("https://github.com/mykola-zhukovets/balachky/"
-           "blob/master/README.uk.md#використання"),
+           "blob/master/README.md#використання"),
     "en": ("https://github.com/mykola-zhukovets/balachky/"
-           "blob/master/README.md#usage"),
+           "blob/master/README.en.md#usage"),
 }
 
 
@@ -53,7 +53,8 @@ def open_user_guide(parent=None) -> bool:
 
     # Ні браузер, ні системна асоціація не спрацювали — не мовчимо.
     where = str(local) if local is not None else _REMOTE[lang]
-    logging.warning("Довідку відкрити не вдалося; шлях для людини: %s", where)
+    logging.warning("Довідку відкрити не вдалося; шлях для людини: %s",
+                     paths.anonymize_path(where))
     if parent is None:
         # Немає вікна — нема кому показувати. Модальне вікно без батька блокує
         # потік, а в середовищі без екрана валить процес: саме так повний прогін

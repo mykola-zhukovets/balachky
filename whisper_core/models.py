@@ -9,16 +9,144 @@
 ПРИВАТНІСТЬ: жоден виклик у цьому модулі не ходить у мережу — тільки читання
 локальної файлової системи (кеш-формат HuggingFace).
 """
+import hashlib
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 # фолбек, якщо faster_whisper недоступний на момент виклику (не має статись)
 _FALLBACK_REPOS = {
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     "large-v3": "Systran/faster-whisper-large-v3",
 }
+
+
+@dataclass(frozen=True)
+class ModelDownloadAsset:
+    filename: str
+    size: int
+    sha256: str
+
+
+# Точні байти файлів у закріплених MODEL_REVISIONS. Маніфест є частиною піна:
+# зміна upstream-ревізії без одночасного оновлення розміру й SHA тут зупинить
+# завантаження, а не активує неперевірені байти.
+_MODEL_DOWNLOAD_MANIFESTS = {
+    ("Systran/faster-whisper-small",
+     "536b0662742c02347bc0e980a01041f333bce120"): (
+        ModelDownloadAsset(
+            "config.json", 2370,
+            "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828"),
+        ModelDownloadAsset(
+            "tokenizer.json", 2203239,
+            "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"),
+        ModelDownloadAsset(
+            "vocabulary.txt", 459861,
+            "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"),
+        ModelDownloadAsset(
+            "model.bin", 483546902,
+            "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"),
+    ),
+    ("Systran/faster-whisper-medium",
+     "08e178d48790749d25932bbc082711ddcfdfbc4f"): (
+        ModelDownloadAsset(
+            "config.json", 2257,
+            "3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807"),
+        ModelDownloadAsset(
+            "tokenizer.json", 2203239,
+            "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"),
+        ModelDownloadAsset(
+            "vocabulary.txt", 459861,
+            "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"),
+        ModelDownloadAsset(
+            "model.bin", 1533761395,
+            "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae"),
+    ),
+    ("mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+     "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"): (
+        ModelDownloadAsset(
+            "config.json", 2263,
+            "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e"),
+        ModelDownloadAsset(
+            "preprocessor_config.json", 340,
+            "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"),
+        ModelDownloadAsset(
+            "tokenizer.json", 2710337,
+            "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"),
+        ModelDownloadAsset(
+            "vocabulary.json", 1068114,
+            "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"),
+        ModelDownloadAsset(
+            "model.bin", 1617884929,
+            "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"),
+    ),
+    ("Systran/faster-whisper-large-v3",
+     "edaa852ec7e145841d8ffdb056a99866b5f0a478"): (
+        ModelDownloadAsset(
+            "config.json", 2394,
+            "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9"),
+        ModelDownloadAsset(
+            "preprocessor_config.json", 340,
+            "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711"),
+        ModelDownloadAsset(
+            "tokenizer.json", 2480617,
+            "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca"),
+        ModelDownloadAsset(
+            "vocabulary.json", 1068114,
+            "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"),
+        ModelDownloadAsset(
+            "model.bin", 3087284237,
+            "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1"),
+    ),
+}
+
+
+def model_download_manifest(repo_id: str, revision: str):
+    """Перевірений маніфест файлів саме для пари repo+commit.
+
+    Невідома або рухома ревізія не має безпечного fallback: завантаження
+    керованої STT-моделі мусить зупинитися до першого мережевого запиту.
+    """
+    try:
+        return _MODEL_DOWNLOAD_MANIFESTS[(repo_id, revision)]
+    except KeyError as exc:
+        raise ValueError(
+            f"Немає SHA-256 маніфесту для {repo_id}@{revision}") from exc
+
+
+def model_snapshot_integrity(model_dir: str, repo_id: str,
+                             revision: str) -> bool:
+    """Повністю звірити керований snapshot перед передачею байтів рушію.
+
+    Для невідомої користувацької ревізії маніфесту нема — цей гейт її не
+    класифікує. Відомий app-managed snapshot приймається лише якщо кожен файл
+    має точний розмір і SHA-256 із закріпленого маніфесту.
+    """
+    try:
+        manifest = model_download_manifest(repo_id, revision)
+    except ValueError:
+        return True
+    snapshot = (Path(model_dir) /
+                ("models--" + repo_id.replace("/", "--")) /
+                "snapshots" / revision)
+    for asset in manifest:
+        path = snapshot / asset.filename
+        try:
+            if not path.is_file() or path.stat().st_size != asset.size:
+                return False
+            checksum = hashlib.sha256()
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    checksum.update(block)
+            if checksum.hexdigest() != asset.sha256:
+                return False
+        except OSError:
+            return False
+    return True
 
 # стани, які повертає resolve_model_state
 PINNED_OK = "pinned_ok"                       # пінований знімок на місці
@@ -312,20 +440,68 @@ def known_repos() -> set:
     return {repo_for(name) for name in MODEL_REVISIONS}
 
 
+def _content_fingerprint(fp: str, size: int):
+    """Дешевий, але надійний (не-адверсаріальний контекст: файли моделей, не
+    чужий вміст) відбиток вмісту файлу — розмір + хеш перших і останніх 1 МіБ.
+    None — файл не вдалось прочитати (гонка/права доступу)."""
+    _SAMPLE = 1 << 20
+    h = hashlib.blake2b(digest_size=16)
+    try:
+        with open(fp, "rb") as f:
+            h.update(f.read(_SAMPLE))
+            if size > _SAMPLE:
+                f.seek(max(0, size - _SAMPLE))
+                h.update(f.read(_SAMPLE))
+    except OSError:
+        return None
+    return (size, h.digest())
+
+
 def _dir_size(path) -> int:
-    """Сума розмірів РЕАЛЬНИХ файлів у теці (БЕЗ ходіння за symlink-ами кешу, щоб
-    не рахувати blob двічі: snapshots/<rev>/model.bin → ../../blobs/<hash>).
-    os.walk не спускається у symlink-теки (followlinks=False за замовчуванням)."""
+    """Сума розмірів РЕАЛЬНИХ файлів у теці, без подвійного рахунку тієї самої
+    моделі. Дві причини дублікатів у HF-кеші:
+      1. symlink на blob (звичайний стан кешу) — не рахуємо: getsize за
+         замовчуванням не йде по лінку, і os.walk (followlinks=False) не
+         спускається у symlink-теки;
+      2. ДЕРЕФЕРЕНСОВАНИЙ файл (див. dereference_snapshot): реальна КОПІЯ
+         байтів blob-а всередині snapshots/<rev>/, зроблена, щоб заморожений
+         .exe міг відкрити файл без traversal символьних лінків (WinError 448).
+         Копія фізично лежить на диску ДВІЧІ (blobs/ і snapshots/), але це та
+         сама модель — рахуємо один раз за відбитком вмісту (розмір + хеш
+         країв файлу), інакше «Завантажено» вдвічі більше за обіцяний розмір.
+    """
+    path = os.path.abspath(os.fspath(path))
+    blobs_root = os.path.join(path, "blobs")
+    seen_blobs = set()
     total = 0
+    for root, _dirs, files in os.walk(blobs_root):     # спершу blobs/ — джерело істини
+        for name in files:
+            fp = os.path.join(root, name)
+            if os.path.islink(fp):
+                continue
+            try:
+                size = os.path.getsize(fp)
+            except OSError:
+                continue
+            total += size
+            fingerprint = _content_fingerprint(fp, size)
+            if fingerprint is not None:
+                seen_blobs.add(fingerprint)
     for root, _dirs, files in os.walk(path):
+        if os.path.commonpath([os.path.abspath(root), blobs_root]) == blobs_root:
+            continue                                    # blobs/ вже пораховано вище
         for name in files:
             fp = os.path.join(root, name)
             if os.path.islink(fp):
                 continue                       # symlink-и не рахуємо (двійник blob)
             try:
-                total += os.path.getsize(fp)
+                size = os.path.getsize(fp)
             except OSError:
-                pass
+                continue
+            fingerprint = _content_fingerprint(fp, size)
+            if fingerprint is not None and fingerprint in seen_blobs:
+                continue                       # дереференсована копія blob-а
+            total += size
     return total
 
 

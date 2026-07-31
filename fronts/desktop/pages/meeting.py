@@ -10,6 +10,7 @@ feature/meeting-ui (Б2). Джерела вибираються в Налашт�
 Уся робота з аудіо-залізом і диском — у контролері (app.py) та ядрі наради
 (whisper_core.meeting); тут — лише Qt.
 """
+import logging
 import time
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
     QToolButton, QPushButton,
 )
 
-from ..glass import GlassButton, RecButton, StatusTag
+from ..glass import FlowLayout, GlassButton, RecButton, StatusTag
 from ..empty_state import EmptyState
 from ..i18n import tr
 from .. import theme
@@ -47,6 +48,8 @@ def _audit_journal_lines(events, labels):
             continue
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ev.get("ts", 0)))
         label = labels.get(ev.get("type"), ev.get("type", ""))
+        if callable(label):
+            label = label(ev)
         lines.append(f"[{stamp}] {label}")
     return lines
 
@@ -264,6 +267,31 @@ class IntegrityVerifyWorker(QThread):
         self.done.emit(res)
 
 
+class MixSaveWorker(QThread):
+    """feature/save-mix-balance: звести доріжки з поточним балансом мікшера у
+    фоні — наради тривають годинами, WAV читання/запис не має морозити UI.
+    Один прохід без проміжних кроків (numpy-мікс), тож поступ — той самий
+    невизначений QProgressBar(0, 0), що в ProtocolDialog (protocol_ui.py),
+    а не відсоткова смужка."""
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, controller, session_id, output, volumes, parent=None):
+        super().__init__(parent)
+        self._controller = controller
+        self._session_id = session_id
+        self._output = output
+        self._volumes = volumes
+
+    def run(self):
+        try:
+            result = self._controller.save_meeting_mix(
+                self._session_id, self._output, self._volumes)
+            self.finished_ok.emit(str(result))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MeetingPage(QWidget):
     def __init__(self, controller):
         super().__init__()
@@ -318,12 +346,35 @@ class MeetingPage(QWidget):
         self._on_pending_plaintext(
             int(getattr(controller, "_meeting_plaintext_count", 0)))
 
+        # Ризик 1 (аудит 30.07): чесно показуємо, з якого САМЕ пристрою піде
+        # запис системного звуку, ДО старту — і попереджаємо окремо, якщо
+        # мультимедійний дефолт розходиться з роллю «для зв'язку» (де найчастіше
+        # й опиняється звук Teams/Meet).
+        self._device_note = QLabel()
+        self._device_note.setProperty("muted", True)
+        self._device_note.setWordWrap(True)
+        self._device_note.hide()
+        root.addWidget(self._device_note)
+        self._refresh_device_note()
+
         # Налаштування наради — ДРУГОРЯДНІ: сховані під розкривачкою, щоб не
         # перекривати головну кнопку запису (аудит Миколи 22.07). Увесь наявний
         # функціонал (діаризація, модель ШІ) лишається досяжним у розкритому стані.
         # Тумблер «Записувати й екран» прибрано раніше (зауваж. 3): запис екрана має
         # окремий пункт nav_screen. Ядро meeting_screen (cfg + контролер) лишається.
         root.addWidget(self._build_settings_disclosure())
+
+        # E-бекграунд-докачка (аудит 31.07.2026): список моделей реактивно
+        # оновлюється на події DownloadManager — НЕЗАЛЕЖНО від того, чи
+        # відкрите зараз вікно поступу (могло бути закрите/згорнуте в фон
+        # хвилини тому). Без цього картка моделі мовчки лишалась би «не
+        # завантажена» після фонового завершення.
+        from ..download_manager import DownloadManager
+        dlmgr = DownloadManager.instance()
+        dlmgr.started.connect(self._on_download_manager_event)
+        dlmgr.finished_ok.connect(self._on_download_manager_event)
+        dlmgr.failed.connect(self._on_download_manager_event)
+        dlmgr.cancelled.connect(self._on_download_manager_event)
 
         consent = QLabel(tr("meeting_consent"))
         consent.setProperty("muted", True)
@@ -348,7 +399,9 @@ class MeetingPage(QWidget):
         self._scroll = scroll            # feature/global-search: прокрутка до картки
 
         empty = EmptyState("fa6s.users", tr("meeting_empty_title"),
-                           tr("meeting_empty_hint"))
+                           tr("meeting_empty_hint"),
+                           button_text=tr("meeting_start"), on_click=self._on_toggle)
+        self._empty = empty
         self._stack = QStackedWidget()
         self._stack.addWidget(empty)     # 0 — порожній стан
         self._stack.addWidget(scroll)    # 1 — стрічка
@@ -384,7 +437,13 @@ class MeetingPage(QWidget):
     def _build_settings_disclosure(self) -> QWidget:
         """Розкривна секція «Налаштування наради» (аудит Миколи 22.07): у спокої
         згорнута — головна дія (кнопка запису) не тоне під панеллю. Клік по
-        заголовку зі стрілкою розкриває/згортає весь наявний функціонал."""
+        заголовку зі стрілкою розкриває/згортає весь наявний функціонал.
+
+        Канон побудови сторінок 30.07 п.3: живий тест власника показав, що
+        тонкий QToolButton-рядок із дрібною стрілкою людина, яка бачить
+        застосунок вперше, просто не знаходить. property("disclosure") дає
+        йому постійну (не лише на hover) видиму межу й більше поле натискання
+        (theme.py QSS) — тепер це явна кнопка, а не підпис збоку."""
         host = QWidget()
         v = QVBoxLayout(host)
         v.setContentsMargins(0, 0, 0, 0)
@@ -397,6 +456,7 @@ class MeetingPage(QWidget):
         toggle.setArrowType(Qt.RightArrow)
         toggle.setCursor(Qt.PointingHandCursor)
         toggle.setAccessibleName(tr("meeting_settings"))
+        toggle.setProperty("disclosure", True)
         panel = self._build_meeting_settings_panel()
         # Розкрита панель вища за вільне місце сторінки на 1080p (мінімум панелі
         # ~825px проти ~700 вільних): без прокрутки колонка тисне вміст НИЖЧЕ за
@@ -433,7 +493,7 @@ class MeetingPage(QWidget):
         grid = QGridLayout(panel); grid.setContentsMargins(16, 12, 16, 12)
         grid.setHorizontalSpacing(12); grid.setVerticalSpacing(12); grid.setColumnStretch(1, 1)
         sources_note = QLabel(tr("meeting_sources_in_settings")); sources_note.setProperty("muted", True); sources_note.setWordWrap(True); grid.addWidget(sources_note, 0, 0, 1, 2)
-        # рядок 1 — запис екрана під час наради (виправлення 1: без цього чекбокса
+        # рядок 1 — запис екрана під час наради (фікс 1: без цього чекбокса
         # meeting_screen_enabled не вмикав ЖОДЕН продакшн-UI, тож кнопка «Дивитися
         # відео» на картці наради ніколи не з'являлась для нового профілю). Лейбл на
         # осі (кол.0), чекбокс у колонці контролів (кол.1), пояснення — під ним.
@@ -561,6 +621,12 @@ class MeetingPage(QWidget):
             if resolved is not None:
                 yield resolved, by_id.get(mid)
 
+    def _on_download_manager_event(self, *_args):
+        """DownloadManager.{started,finished_ok,failed,cancelled} → список
+        моделей завжди відображає актуальний стан, навіть якщо жодне вікно
+        поступу зараз не відкрите (E-бекграунд-докачка, аудит 31.07.2026)."""
+        self._refresh_model_list()
+
     def _refresh_model_list(self):
         while self._model_list_box.count():
             item = self._model_list_box.takeAt(0)
@@ -576,7 +642,7 @@ class MeetingPage(QWidget):
         label = tr(resolved.label_key) if resolved.label_key else resolved.label
         frame = QFrame(); frame.setProperty("glasspanel", True)
         # низ 16 (не 12): рамкована danger-кнопка в нижньому рядку інакше
-        # візуально торкалась межі картки (знахідка суду 22.07)
+        # візуально торкалась межі картки (знахідка рецензії 22.07)
         lay = QVBoxLayout(frame); lay.setContentsMargins(16, 12, 16, 16); lay.setSpacing(8)
         top = QHBoxLayout(); top.setSpacing(12)
         # Підписи картки — WrapLabel: назва моделі й пояснення переносяться, і
@@ -589,10 +655,16 @@ class MeetingPage(QWidget):
             top.addWidget(StatusTag("done", tr("protocol_model_active")))
         lay.addLayout(top)
         ready = resolved.available()
+        from ..download_manager import DownloadManager
+        downloading = (resolved.downloadable and not ready
+                      and DownloadManager.instance().is_downloading(resolved.model_path.parent))
         parts = []
         if resolved.approx_size_bytes:
             parts.append(_human_size(resolved.approx_size_bytes))
-        parts.append(tr("protocol_model_ready") if ready else tr("protocol_model_missing"))
+        if downloading:
+            parts.append(tr("protocol_model_downloading_status"))
+        else:
+            parts.append(tr("protocol_model_ready") if ready else tr("protocol_model_missing"))
         info = WrapLabel(" · ".join(parts)); info.setProperty("muted", True); info.setWordWrap(True)
         lay.addWidget(info)
         if resolved.hint_key:
@@ -632,11 +704,18 @@ class MeetingPage(QWidget):
         #    версій: чесний ручний шлях, коли автор перезалив ваги);
         #  • «Видалити модель» — вторинна danger-кнопка з підтвердженням (не голий
         #    ghost-текст без рамки).
-        if resolved.downloadable and not ready:
+        if resolved.downloadable and not ready and not downloading:
             dl = QPushButton(tr("protocol_model_download")); dl.setProperty("accent", True)
             dl.setAccessibleName(f"{tr('protocol_model_download')}: {label}")
             dl.clicked.connect(lambda _=False, r=resolved, c=custom: self._download_model(r, c))
             act.addWidget(dl)
+        if downloading:
+            # Захист від повторного запуску (§3.2 спеки): замість другої
+            # кнопки «Завантажити» — приєднання до наявного поступу.
+            view = QPushButton(tr("protocol_model_view_progress"))
+            view.setAccessibleName(f"{tr('protocol_model_view_progress')}: {label}")
+            view.clicked.connect(lambda _=False, r=resolved, c=custom: self._open_download_dialog(r, c))
+            act.addWidget(view)
         if ready and not is_active:
             make = QPushButton(tr("protocol_model_make_active"))
             make.setAccessibleName(f"{tr('protocol_model_make_active')}: {label}")
@@ -692,20 +771,23 @@ class MeetingPage(QWidget):
         self._open_download_dialog(resolved, custom, force=False)
 
     def _open_download_dialog(self, resolved, custom, *, force=False):
-        """Модальна докачка (stage → атомарна підміна), спільна для першого
-        завантаження й «Завантажити заново» (force=True). Consent/підтвердження
-        лишаються у викликачів — тут лише сам процес завантаження й оновлення
-        списку моделей після нього."""
+        """Фонова докачка (E-бекграунд-докачка, аудит 31.07.2026): вікно
+        поступу НЕмодальне — show(), не exec(). Список моделей оновлюється
+        реактивно через сигнали DownloadManager (підписка в __init__), а НЕ
+        одразу після цього виклику — завантаження може тривати довго після
+        того, як ця функція повернула керування."""
         from .protocol_ui import ProtocolModelDownloadDialog
         target = resolved.model_path.parent
+        label = tr(resolved.label_key) if resolved.label_key else resolved.label
         if custom is not None:
             dlg = ProtocolModelDownloadDialog(target, custom=custom, force=force,
-                                              parent=self)
+                                              label=label, parent=self)
         else:
             dlg = ProtocolModelDownloadDialog(target, preset_id=resolved.id,
-                                              force=force, parent=self)
-        dlg.exec()
-        self._refresh_model_list()
+                                              force=force, label=label, parent=self)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _delete_downloaded(self, resolved, label=""):
         # Деструктив (аудит 22.07 + канон DESIGN-SYSTEM §1.5): видалення завантаженого
@@ -719,7 +801,7 @@ class MeetingPage(QWidget):
         self._refresh_model_list()
 
     def _redownload_model(self, resolved, custom, label=""):
-        """Виправлення 2: ручне оновлення вже завантаженої моделі — коли автор
+        """Фікс 2: ручне оновлення вже завантаженої моделі — коли автор
         перезалив ваги (напр. Gemma 4 GGUF із оновленим chat template). Без API
         версій. STAGED-заміна: качаємо свіжий файл у stage й атомарно підмінюємо
         лише ПІСЛЯ успішної звірки — стара модель (5–7 ГБ) ЖИВА увесь час докачки;
@@ -764,9 +846,10 @@ class MeetingPage(QWidget):
         dlg = HFModelDialog(self)
         if dlg.exec() != QDialog.Accepted or not dlg.result_data:
             return
-        repo, fname = dlg.result_data
+        repo, fname, revision, sha256 = dlg.result_data
         cm = mm.CustomModel(id=mm.new_custom_id(), label=f"{repo} · {fname}",
-                            kind=mm.CUSTOM_KIND_HF, repo_id=repo, filename=fname)
+                            kind=mm.CUSTOM_KIND_HF, repo_id=repo, filename=fname,
+                            revision=revision, sha256=sha256)
         self._append_custom_model(cm)
 
     def _append_custom_model(self, cm):
@@ -816,6 +899,32 @@ class MeetingPage(QWidget):
                 pass
         self._refresh_model_list()
 
+    def _guard_model_ready(self, title, on_ready):
+        """Активна модель ШІ ще не готова: якщо саме зараз якісно
+        завантажується у фоні — чесний прогрес з опцією авто-старту (§5
+        спеки), а НЕ мовчазна відмова чи технічна помилка через кілька
+        хвилин «генерації». Якщо просто не завантажена — направляємо до
+        Налаштувань наради. Повертає True, якщо виклик має ЗУПИНИТИСЬ (ми
+        вже показали діалог/повідомлення); False — модель готова, можна йти далі."""
+        from whisper_core.protocol import model_manager as mm, service
+        from whisper_core import paths, config as cfgmod
+        custom = cfgmod.protocol_custom_models(self.controller.cfg)
+        preset_id = getattr(self.controller.cfg, "protocol_model", "fast")
+        if service.model_available(preset_id, paths.protocol_models_dir(), custom):
+            return False
+        resolved = mm.resolve(preset_id, paths.protocol_models_dir(), custom)
+        if resolved is not None and resolved.downloadable:
+            from ..download_manager import DownloadManager
+            target = resolved.model_path.parent
+            if DownloadManager.instance().is_downloading(target):
+                from .protocol_ui import ModelDownloadWaitDialog
+                dlg = ModelDownloadWaitDialog(target, on_ready=on_ready, parent=self)
+                dlg.show()
+                dlg.raise_(); dlg.activateWindow()
+                return True
+        _meeting_warn(self, title, tr("meeting_protocol_need_model"))
+        return True
+
     def _create_protocol(self, session_id):
         """Відкрити діалог генерації протоколу для завершеної наради."""
         from .protocol_ui import ProtocolDialog
@@ -825,6 +934,9 @@ class MeetingPage(QWidget):
         if not service.backend_available():
             _meeting_warn(self, tr("protocol_dialog_title"),
                           tr("protocol_backend_missing"))
+            return
+        if self._guard_model_ready(tr("protocol_dialog_title"),
+                                   lambda: self._create_protocol(session_id)):
             return
         utterances = self.controller.read_meeting_utterances(session_id)
         if not utterances:
@@ -857,6 +969,9 @@ class MeetingPage(QWidget):
         if not service.backend_available():
             _meeting_warn(self, tr("qa_dialog_title"),
                           tr("protocol_backend_missing"))
+            return
+        if self._guard_model_ready(tr("qa_dialog_title"),
+                                   lambda: self._ask_meeting(session_id, player)):
             return
         utterances = self.controller.read_meeting_utterances(session_id)
         if not utterances:
@@ -924,7 +1039,7 @@ class MeetingPage(QWidget):
             self._diar_count.blockSignals(False)
         self._diar_status.setText(tr("set_diarization_ready"))
     def _on_screen_record_toggle(self, on):
-        # Виправлення 1: вмикає запис екрана під час наради (screen.mp4 поряд із
+        # Фікс 1: вмикає запис екрана під час наради (screen.mp4 поряд із
         # аудіо). Контролер зберігає прапорець; meeting_start його читає.
         self.controller.set_meeting_screen_enabled(bool(on))
     def _on_diarization_toggle(self, on):
@@ -995,6 +1110,14 @@ class MeetingPage(QWidget):
         self._storage_warning.setWordWrap(True)
         self._storage_warning.hide()
         lay.addWidget(self._storage_warning)
+
+        # Ризик 5 (аудит 30.07): вартовий тиші системної доріжки — не зупиняє
+        # запис, лише попереджає, поки нараду ще можна врятувати.
+        self._silence_warning = QLabel()
+        self._silence_warning.setProperty("badge", "error")
+        self._silence_warning.setWordWrap(True)
+        self._silence_warning.hide()
+        lay.addWidget(self._silence_warning)
 
         # смужка мікрофона (завжди) + смужка системного звуку (лише «Онлайн-дзвінок»)
         self._mic_level = LevelMeter(
@@ -1135,9 +1258,9 @@ class MeetingPage(QWidget):
             # реальний перехід у «recording» зробить сигнал meeting_state
 
     def _add_bookmark(self):
-        title, accepted = QInputDialog.getText(self, tr("meeting_bookmark"), tr("meeting_bookmark_title"))
-        if accepted:
-            self.controller.add_meeting_bookmark(title)
+        # Жодного модального діалогу під час запису (спека, розд. 2.2): клік
+        # миттєво фіксує момент без підпису; підпис можна додати пізніше.
+        self.controller.add_meeting_bookmark()
 
     def _on_cancel(self):
         # Симетрично з видаленням завершеної наради (_confirm_delete): живий запис
@@ -1171,7 +1294,7 @@ class MeetingPage(QWidget):
         # у processing тумблер вимкнено (не можна стартувати новий, поки йде обробка)
         self._rec_btn.setEnabled(not (processing or postprocessing))
         self._rec_caption.setEnabled(not (processing or postprocessing))
-        # Ревізія №2: чекбокс запису екрана діє лише з НАСТУПНОЇ наради, тож
+        # Рецензія №2: чекбокс запису екрана діє лише з НАСТУПНОЇ наради, тож
         # поки сесія активна (запис/обробка) — вимикаємо його з поясненням, а
         # після завершення вертаємо (доступний + звичайна підказка).
         busy = recording or processing or postprocessing
@@ -1186,6 +1309,8 @@ class MeetingPage(QWidget):
 
         if recording:
             self._storage_warning.hide()
+            self._silence_warning.hide()
+            self._audio_note.hide()
             self._rec_started = time.time()
             self._update_timer()
             self._tick.start()
@@ -1196,11 +1321,16 @@ class MeetingPage(QWidget):
             tip = tr("meeting_stop")
         else:
             self._tick.stop()
+            self._refresh_device_note()
             tip = tr("meeting_start")
         if processing:
             self._live_badge.set_state("busy", tr("meeting_badge_preparing_audio"))
         self._rec_btn.setToolTip(tip)
         self._rec_btn.setAccessibleName(tip)
+        # порожній стан: кнопка першого кроку віддзеркалює круглу кнопку запису
+        self._empty.button.setText(tip)
+        self._empty.button.setAccessibleName(tip)
+        self._empty.button.setEnabled(not (processing or postprocessing))
 
     def _on_audio_ready(self, session_id: str):
         """WAV зібрано (до розшифровки) → диктофон-режим: «Відкрити аудіо».
@@ -1217,6 +1347,17 @@ class MeetingPage(QWidget):
     def _on_audio_state(self, _track: str, state: str):
         """Нефатальний статус просто на live-картці; глобальний toast робить
         controller. Після успішного reconnect прибираємо підтвердження самі."""
+        if state == "silence":
+            # Ризик 5: НЕ зупиняємо запис, лише окремий видимий банер.
+            self._silence_warning.setText(tr("meeting_sys_silence_warning"))
+            self._silence_warning.show()
+            return
+        if state == "silence_resolved":
+            # Суддівське зауваження 30.07: звук зрештою з'явився — банер, що
+            # тиша триває, уже неправдивий, ховаємо його самі (а не чекаємо
+            # наступного старту/стопу наради).
+            self._silence_warning.hide()
+            return
         if state == "failed":
             # С1: одна доріжка відпала — решта пишуть далі; якщо це остання,
             # картку сховає _on_session_done. Нотатку тримаємо видимою.
@@ -1240,10 +1381,9 @@ class MeetingPage(QWidget):
         self._ui_state = "idle"
         self.refresh()
 
-    def _on_storage_warning(self, session_id: str, elapsed: float):
-        """ENOSPC: помітний банер лишається на live-картці, запис не зупиняємо."""
-        minute = max(1, int(float(elapsed) // 60) + 1)
-        self._storage_warning.setText(tr("meeting_storage_full", minute=minute))
+    def _on_storage_warning(self, session_id: str, elapsed: float, message: str):
+        """Помітний банер лишається на live-картці, запис не зупиняємо."""
+        self._storage_warning.setText(message)
         self._storage_warning.show()
 
     def _on_pending_plaintext(self, count: int):
@@ -1268,6 +1408,52 @@ class MeetingPage(QWidget):
         self._config_corrupt_warning.setText(text)
         self._config_corrupt_warning.setAccessibleName(text)
         self._config_corrupt_warning.show()
+
+    def _refresh_device_note(self):
+        """Показати назву пристрою, з якого ФАКТИЧНО піде запис системного
+        звуку — ДО старту наради (ризик 1). Не оновлюється саме посеред
+        активної наради (жива підписка на зміну пристрою — окрема, більша
+        робота, тут свідомо не робимо): актуальне лише на момент показу
+        сторінки й переходу в idle."""
+        if getattr(self, "_ui_state", "idle") == "recording":
+            return  # не смикати підпис під час активного запису
+        self._device_note.hide()
+        try:
+            from whisper_core.config import meeting_source_set
+            want_sys = "sys" in meeting_source_set(self.controller.cfg)
+        except Exception:
+            want_sys = False
+        if not want_sys:
+            return
+        try:
+            from whisper_core.meeting import capture as mcapture
+            console = mcapture.default_loopback()
+        except Exception:
+            console = None
+        console_name = (console or {}).get("name") if console else None
+        if not console_name:
+            self._device_note.setText(tr("meeting_no_loopback"))
+            self._device_note.setProperty("badge", "error")
+            self._device_note.setProperty("muted", False)
+        else:
+            try:
+                comm_name = mcapture.default_communications_device_name()
+            except Exception:
+                comm_name = None
+            text = tr("meeting_active_device", name=console_name)
+            if comm_name and comm_name != console_name:
+                text += " " + tr("meeting_device_role_mismatch", comm=comm_name)
+                # theme.py стилізує лише badge=error серед статичних QLabel —
+                # мисматч пристроїв достатньо важливий, щоб не губитись muted-текстом.
+                self._device_note.setProperty("badge", "error")
+                self._device_note.setProperty("muted", False)
+            else:
+                self._device_note.setProperty("badge", "")
+                self._device_note.setProperty("muted", True)
+            self._device_note.setText(text)
+        self._device_note.style().unpolish(self._device_note)
+        self._device_note.style().polish(self._device_note)
+        self._device_note.show()
 
     def _on_error(self, session_id: str, message: str):
         self._live_host.hide()
@@ -1305,6 +1491,7 @@ class MeetingPage(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._refresh_config_warning()
+        self._refresh_device_note()
         self.refresh()
 
     def hideEvent(self, event):
@@ -1312,7 +1499,7 @@ class MeetingPage(QWidget):
         self._stop_players()
         super().hideEvent(event)
 
-    def _stop_players(self):
+    def _stop_players(self, session_id=None):
         for pl in self._players:
             try:
                 pl.stop()
@@ -1321,7 +1508,8 @@ class MeetingPage(QWidget):
         self._players = []
         clear_plain = getattr(self.controller, "_clear_meeting_plain_cache", None)
         if callable(clear_plain):
-            clear_plain()
+            return clear_plain(session_id)
+        return True
 
     def refresh(self):
         """Перебудувати стрічку карток із диска (list_meetings уже позначає
@@ -1516,7 +1704,12 @@ class MeetingPage(QWidget):
 
     def _add_processing_controls(self, lay, session_id, meta, has_audio):
         """Окрема явна ASR-команда; стан запису тут уже завершений. Кнопка
-        «Обробити нараду»; у процесі — сусідній прогрес-бар і «Скасувати»."""
+        «Отримати текст наради» — головна дія готової картки (канон побудови
+        сторінок 30.07 п.1-2): називає результат, а не процес, і намальована
+        як справжня accent-кнопка (QPushButton), а не GlassButton — той свій
+        [accent="true"] QSS ігнорує (малює все сам у paintEvent) і візуально
+        не відрізнявся від сусідніх кнопок, тому власник її не помічав. У
+        процесі — сусідній прогрес-бар і «Скасувати»."""
         status = QLabel()
         status.setWordWrap(True)
         status.setProperty("muted", True)
@@ -1539,8 +1732,16 @@ class MeetingPage(QWidget):
         cancel.hide()
         lay.addWidget(cancel)
 
-        process = GlassButton(tr("meeting_process"))
+        # Плаский QPushButton (НЕ GlassButton): GlassButton малює все сам у
+        # paintEvent і QSS [accent="true"] на нього не лягає (лишається
+        # непомітним склом, як сусідні кнопки) — саме це власник назвав
+        # "кнопочка ховається" (живий тест 30.07). QPushButton[accent] реально
+        # заливається золотим (theme.py). Вище й жирніше сусідніх — головна
+        # дія готової картки, решта (назва, звільнити місце, видалити) — другорядні.
+        process = QPushButton(tr("meeting_process"))
         process.setProperty("accent", True)
+        process.setProperty("primaryAction", True)  # theme.py: більший/жирніший акцент
+        process.setCursor(Qt.PointingHandCursor)
         process.setAccessibleName(tr("meeting_process"))
         process.setObjectName(f"meetingProcessButton-{session_id}")
         process.clicked.connect(
@@ -1671,19 +1872,38 @@ class MeetingPage(QWidget):
         player = self._add_audio_player(lay, session_id, meta)
         self._add_video_button(lay, session_id, meta)
 
+        # Живий тест власника 30.07: бейдж «аудіо готове» + плеєр, що грає
+        # запис, ОДНОЧАСНО з текстом «У записі немає звуку» — бо порожній
+        # `text` завжди підставляв повідомлення про тишу, навіть коли
+        # розшифрування ще ЖОДНОГО разу не запускали. Три різні стани:
+        #   - ще не обробляли (status "ready"/"running"/"cancelled"/"failed")
+        #     → чесна підказка натиснути кнопку обробки;
+        #   - обробили (status "complete"/"partial") і текст порожній → це
+        #     єдиний стан, де підтверджено, що ASR не знайшов слів;
+        #   - є текст → показуємо текст (нижче).
+        # Розрізнити (а) і (б) можна ЛИШЕ за meta.processing["status"]: інших
+        # ознак завершеності обробки в даних наради нема.
+        proc_status = (getattr(meta, "processing", {}) or {}).get(
+            "status") or "ready"
+        if proc_status in ("complete", "partial"):
+            empty_placeholder = tr("meeting_error_silence")
+        else:
+            empty_placeholder = tr("meeting_transcript_pending")
+
         class TranscriptViewer(QLabel):
-            def __init__(self, txt, utts, plr, parent=None):
+            def __init__(self, txt, utts, plr, placeholder, parent=None):
                 super().__init__(parent)
                 self._text = txt
                 self._utterances = utts
                 self._player = plr
                 self._last_idx = -1
-                
+                self._placeholder = placeholder
+
                 self.setWordWrap(True)
                 self.setTextInteractionFlags(Qt.TextBrowserInteraction)
                 self.setOpenExternalLinks(False)
                 self.linkActivated.connect(self._on_anchor)
-                self.setText(txt or tr("meeting_error_silence"))
+                self.setText(txt or placeholder)
                 
                 if self._player:
                     self._player.position_changed.connect(self._on_pos)
@@ -1759,18 +1979,22 @@ class MeetingPage(QWidget):
                 else:
                     super().setText(self._base_html)
 
-        body = TranscriptViewer(text, utterances, player)
+        body = TranscriptViewer(text, utterances, player, empty_placeholder)
         body._text = text
         lay.addWidget(body)
 
 
         # feature/protocol-enrich: Smart Chapters — розділи наради з protocol.md
         # як клікабельні чіпи; клік стрибає вбудований плеєр на таймкод розділу.
+        # Підпис і чіпи — окремі рядки: FlowLayout переносить чіпи на новий
+        # рядок замість розпирання картки за межі вікна (діагноз 2026-07-30 №1,
+        # той самий контейнер і для chaprow/markrow/segrow нижче).
         chapters = self._protocol_chapters(session_id)
         if chapters and player is not None:
-            chaprow = QHBoxLayout(); chaprow.setSpacing(8)
+            chapcol = QVBoxLayout(); chapcol.setSpacing(4)
             caption = QLabel(tr("meeting_chapters")); caption.setProperty("formlabel", True)
-            chaprow.addWidget(caption)
+            chapcol.addWidget(caption)
+            chaprow = FlowLayout(spacing=8)
             for start, _end, ctitle in chapters:
                 label = f"{self._stamp(start)} · {ctitle}" if ctitle else self._stamp(start)
                 chip = GlassButton(label)
@@ -1779,32 +2003,34 @@ class MeetingPage(QWidget):
                 chip.clicked.connect(
                     lambda _=False, p=player, t=float(start): p.play_from(t))
                 chaprow.addWidget(chip)
-            chaprow.addStretch(); lay.addLayout(chaprow)
+            chapcol.addLayout(chaprow); lay.addLayout(chapcol)
 
         # Мітки — короткі клікабельні переходи до «домовились Х».
         bookmarks = getattr(meta, "bookmarks", getattr(meta, "marks", [])) or []
         if bookmarks and player is not None:
-            markrow = QHBoxLayout(); markrow.setSpacing(8)
-            markrow.addWidget(QLabel(tr("meeting_bookmarks")))
+            markcol = QVBoxLayout(); markcol.setSpacing(4)
+            markcol.addWidget(QLabel(tr("meeting_bookmarks")))
+            markrow = FlowLayout(spacing=8)
             for item in bookmarks:
                 stamp = float(item.get("timestamp", 0))
                 label = item.get("title") or self._stamp(stamp)
                 btn = GlassButton(f"{self._stamp(stamp)} · {label}")
                 btn.clicked.connect(lambda _=False, p=player, t=stamp: p.play_from(t))
                 markrow.addWidget(btn)
-            markrow.addStretch(); lay.addLayout(markrow)
+            markcol.addLayout(markrow); lay.addLayout(markcol)
 
         # Структурні сегменти мають start/end: це і є маркери в транскрипті.
         utterances = self.controller.read_meeting_utterances(session_id)
         if utterances and player is not None:
-            segrow = QHBoxLayout(); segrow.setSpacing(8)
-            segrow.addWidget(QLabel(tr("meeting_timestamps")))
+            segcol = QVBoxLayout(); segcol.setSpacing(4)
+            segcol.addWidget(QLabel(tr("meeting_timestamps")))
+            segrow = FlowLayout(spacing=8)
             for utterance in utterances[:12]:
                 btn = GlassButton(self._stamp(float(utterance.start)))
                 btn.setToolTip(utterance.text)
                 btn.clicked.connect(lambda _=False, b=btn, sid=session_id, u=utterance, p=player: self._segment_menu(b, sid, u, p))
                 segrow.addWidget(btn)
-            segrow.addStretch(); lay.addLayout(segrow)
+            segcol.addLayout(segrow); lay.addLayout(segcol)
         names = getattr(meta, "speaker_names", {}) or {}
         if names:
             rename_row = QHBoxLayout()
@@ -1844,8 +2070,9 @@ class MeetingPage(QWidget):
             protocol.setAccessibleName(tr("meeting_protocol_create"))
             model_ready = self.controller.protocol_model_ready()
             protocol.setEnabled(bool(model_ready and text))
-            fm_p = protocol.fontMetrics()
-            protocol.setMinimumWidth(fm_p.horizontalAdvance(tr("meeting_protocol_create")) + 70)
+            # sizeHint() (glass.py) вже гарантує запас під текст — жорсткий
+            # setMinimumWidth тут лише додавав ширини понад потрібне й посилював
+            # переповнення ряду (діагноз 2026-07-30 №1).
             if not model_ready:
                 protocol.setToolTip(tr("meeting_protocol_need_model"))
             else:
@@ -1858,8 +2085,6 @@ class MeetingPage(QWidget):
                               icon=qta.icon("fa6s.circle-question", color=theme.GOLD))
             ask.setAccessibleName(tr("meeting_qa_ask"))
             ask.setEnabled(bool(model_ready and text))
-            fm_a = ask.fontMetrics()
-            ask.setMinimumWidth(fm_a.horizontalAdvance(tr("meeting_qa_ask")) + 70)
             if not model_ready:
                 ask.setToolTip(tr("meeting_protocol_need_model"))
             else:
@@ -1871,8 +2096,6 @@ class MeetingPage(QWidget):
         # 3. Випадаюче меню «Експортувати в…»
         exp_btn = GlassButton(tr("meeting_export_menu"))
         exp_btn.setAccessibleName(tr("meeting_export_menu"))
-        fm_e = exp_btn.fontMetrics()
-        exp_btn.setMinimumWidth(fm_e.horizontalAdvance(tr("meeting_export_menu")) + 44)
 
         export_menu = QMenu(exp_btn)
 
@@ -1943,7 +2166,12 @@ class MeetingPage(QWidget):
 
             def _apply_edit(new, b=body, sid=session_id):
                 b._text = new
-                b.setText(new or tr("meeting_error_silence"))
+                # Порожній текст ТУТ — людина щойно сама стерла його в
+                # редакторі (панель видима лише коли текст уже існував), не
+                # "звуку немає": звук точно був, вона щойно правила його
+                # транскрипт. "meeting_error_silence" тут брехало б так само,
+                # як у порожній картці до обробки (див. коментар вище).
+                b.setText(new or tr("meeting_transcript_cleared"))
                 self.controller.write_meeting_transcript(sid, new)
 
             panel = TranscriptEditPanel(
@@ -1996,6 +2224,21 @@ class MeetingPage(QWidget):
             player = InlinePlayer(tracks[master_track])
         self._players.append(player)
         lay.addWidget(player)
+
+        # feature/save-mix-balance: мікшер лише для прослуховування — власник
+        # хоче ЗАФІКСУВАТИ підняту тиху доріжку файлом. Кнопка є ЛИШЕ біля
+        # панелі мікшера (2+ доріжки); одна доріжка/файл-мікс — балансувати
+        # нічого, там лишається звичайний InlinePlayer без кнопки.
+        if should_show_track_panel(len(order)):
+            mix_row = QHBoxLayout()
+            save_mix = GlassButton(tr("meeting_mix_save"))
+            save_mix.setAccessibleName(tr("meeting_mix_save"))
+            save_mix.clicked.connect(
+                lambda _=False, sid=session_id, p=player: self._save_mix(sid, p))
+            mix_row.addWidget(save_mix)
+            mix_row.addStretch()
+            lay.addLayout(mix_row)
+
         edit = GlassButton(tr("audioedit_open"))
         panel = {"widget": None, "track": None}
 
@@ -2075,7 +2318,9 @@ class MeetingPage(QWidget):
         (screen.webm, старі наради — screen.mp4). Відкриває вбудований відеоплеєр
         тим самим діалогом, що й сторінка «Запис екрана». Аудіодоріжки наради
         передаємо у плеєр, щоб екран (німе відео) грав синхронно з mic/sys, а
-        панель мікшера керувала звуком."""
+        панель мікшера керувала звуком. Розшифровку (utterances) передаємо теж —
+        feature/meeting-video-text (етап 2): плеєр показує її поруч із відео
+        замість окремого монологу-QLabel на картці."""
         try:
             video = self.controller.meeting_screen_video(session_id)
         except Exception:
@@ -2087,12 +2332,18 @@ class MeetingPage(QWidget):
         except Exception:
             tracks = {}
         specs = [(t, self._track_label(t, meta), tracks[t]) for t in tracks]
+        try:
+            utterances = self.controller.read_meeting_utterances(session_id)
+        except Exception:
+            utterances = None
+        speaker_names = getattr(meta, "speaker_names", {}) or {} if meta else {}
         from ..video_player import VideoPlayerDialog
         row = QHBoxLayout()
         watch = GlassButton(tr("screen_play"))
         watch.setAccessibleName(tr("screen_play"))
         watch.clicked.connect(
-            lambda _=False, p=video, a=specs: VideoPlayerDialog.open_for(self, p, a))
+            lambda _=False, p=video, a=specs, u=utterances, s=speaker_names:
+            VideoPlayerDialog.open_for(self, p, a, utterances=u, speaker_names=s))
         row.addWidget(watch)
         row.addStretch()
         lay.addLayout(row)
@@ -2148,6 +2399,91 @@ class MeetingPage(QWidget):
             motion.toast(self, tr("meeting_export_done"))
         except Exception:
             motion.toast(self, tr("meeting_export_fail"))
+
+    def _save_mix(self, session_id, player):
+        """feature/save-mix-balance: зберегти зведення з ПОТОЧНИМ балансом мікшера
+        плеєра (гучність/mute/соло, що чує зараз користувач) в окремий WAV поруч.
+        Оригінали й журнал цілісності не чіпаються — контролер лише читає доріжки
+        й фіксує подію exported з коефіцієнтами (app.py: save_meeting_mix)."""
+        try:
+            volumes = player.get_effective_volumes()
+        except Exception:
+            motion.toast(self, tr("meeting_mix_fail"))
+            return
+        default_name = f"{session_id}-зведення-з-балансом.wav"
+        out, _ = QFileDialog.getSaveFileName(
+            self, tr("meeting_mix_save"), default_name, "*.wav")
+        if not out:
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("meeting_mix_save"))
+        dlg.setModal(True)
+        dlay = QVBoxLayout(dlg)
+        status = QLabel(tr("meeting_mix_saving"))
+        status.setWordWrap(True)
+        dlay.addWidget(status)
+        bar = QProgressBar()
+        bar.setTextVisible(False)
+        bar.setRange(0, 0)               # тривалість невідома наперед (довгі наради)
+        dlay.addWidget(bar)
+
+        worker = MixSaveWorker(self.controller, session_id, out, volumes, self)
+
+        def _ok(path):
+            dlg.accept()
+            self._show_mix_saved(path)
+
+        def _fail(msg):
+            dlg.reject()
+            logging.warning("Не вдалося зберегти зведення з балансом: %s", msg)
+            motion.toast(self, tr("meeting_mix_fail"))
+
+        worker.finished_ok.connect(_ok)
+        worker.failed.connect(_fail)
+        # Воркер живе на self, щоб не був зібраний GC до завершення (той самий
+        # прийом, що IntegrityVerifyWorker вище).
+        self._mix_save_worker = worker
+        worker.start()
+        dlg.exec()
+
+    def _show_mix_saved(self, path: str):
+        """Чесне повідомлення після збереження: де лежить файл + нагадування про
+        похідний статус (недоторканність оригіналів), з дією «Показати в теці»."""
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("meeting_mix_save"))
+        box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        box.setText(tr("meeting_mix_saved", path=path))
+        try:
+            import qtawesome as qta
+            box.setIconPixmap(qta.icon("fa6s.circle-check", color=theme.GOLD).pixmap(40, 40))
+        except Exception:
+            pass
+        show_folder = box.addButton(
+            tr("recact_show_in_folder"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Ok).setText(tr("dialog_ok"))
+        box.exec()
+        if box.clickedButton() is show_folder:
+            self._reveal_in_folder(path)
+
+    @staticmethod
+    def _reveal_in_folder(path) -> None:
+        """Відкрити Провідник із виділеним файлом (Windows); поза Windows або
+        при збої — просто відкрити теку. Той самий прийом, що
+        DesktopApp.show_screen_recording_in_folder (app.py), але для довільного
+        шляху, обраного користувачем через «Зберегти зведення»."""
+        import subprocess
+        import sys
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        p = Path(path)
+        if sys.platform.startswith("win") and p.is_file():
+            try:
+                subprocess.Popen(["explorer", "/select,", str(p)])
+                return
+            except OSError:
+                logging.exception("Не вдалося відкрити провідник із виділенням %s", p)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.parent)))
 
     def _fill_pending_card(self, lay, session_id, status):
         btns = QHBoxLayout()
@@ -2349,6 +2685,11 @@ class MeetingPage(QWidget):
             audit_log.EVENT_EDITED: tr("meeting_audit_edited"),
             audit_log.EVENT_EXPORTED: tr("meeting_audit_exported"),
             audit_log.EVENT_REVIEWED: tr("meeting_audit_reviewed"),
+            audit_log.EVENT_RECOVERED: lambda event: tr(
+                "meeting_audit_recovered",
+                bytes=(event.get("note") or {}).get("discarded_bytes", 0),
+                sha=(event.get("note") or {}).get("discarded_sha256", "—"),
+            ),
         }
 
         def _body(head, audio_sha):
@@ -2400,6 +2741,13 @@ class MeetingPage(QWidget):
             return
         if self.controller.meeting_add_review(session_id, name):
             self.refresh()
+        else:
+            # Порожнє ім'я — контролер свідомо відхиляє підпис (evidence-plus:
+            # обов'язкове поле). Людина мусить дізнатись, що НІЧОГО не зафіксовано.
+            logging.warning(
+                "Підтвердження перегляду наради %s відхилено: порожнє ім'я/посада", session_id)
+            _meeting_warn(
+                self, tr("meeting_review_title"), tr("meeting_review_name_required"))
 
     def _export_evidence(self, session_id):
         """feature/evidence-plus: скласти доказовий пакет (zip) для комісії/слідчого.
@@ -2429,9 +2777,34 @@ class MeetingPage(QWidget):
                 self, tr("meeting_card_delete"), tr("meeting_delete_confirm")):
             # СПЕРШУ спинити плеєри (stop звільняє mic.wav/sys.wav — інакше
             # rmtree сесії падає з WinError 32), ПОТІМ видаляти
-            self._stop_players()
-            self.controller.delete_meeting(session_id)
+            plain_cleanup_ok = self._stop_players(session_id)
+            failures = list(self.controller.delete_meeting(session_id) or ())
+            # Нарада переїхала в кошик (delete_meeting): controller запам'ятав
+            # шлях, звідки її можна повернути — тост нижче кличе саме його,
+            # а не «останню видалену взагалі» (інша картка могла зникнути тим
+            # часом, поки цей тост іще на екрані).
+            trashed_dir = getattr(self.controller, "_last_trashed_meeting", None)
+            if plain_cleanup_ok is False:
+                failures.append("meeting_delete_step_plaintext")
             self.refresh()
+            if failures:
+                items = ", ".join(tr(key) for key in failures)
+                _meeting_warn(
+                    self,
+                    tr("meeting_card_delete"),
+                    tr("meeting_delete_partial", items=items),
+                )
+            elif trashed_dir is not None:
+                def _undo(td=trashed_dir):
+                    restored = self.controller.restore_meeting(td)
+                    self.refresh()
+                    if restored is None:
+                        # Кошик уже почистився (протух за 7 днів) або збій
+                        # диска — «Повернути» не мовчить, каже чесно.
+                        motion.toast(self, tr("meeting_trash_restore_fail"))
+                motion.undo_toast(
+                    self, tr("meeting_trash_toast"), _undo,
+                    undo_label=tr("meeting_trash_undo"))
 
     def sync_animations(self):
         """Застосувати живий animation-toggle до REC-кнопки (як у Диктуванні)."""

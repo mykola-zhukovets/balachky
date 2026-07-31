@@ -120,7 +120,7 @@ class WorkPreviewBranchTests(unittest.TestCase):
         controller, emitted = self._controller(paste_preview=False)
         profile = SimpleNamespace(history_path="hp", memory_enabled=False)
         with patch.object(desktop_app, "log_history", return_value=None), \
-             patch.object(desktop_app, "snapshot_clipboard", return_value="old"), \
+             patch.object(desktop_app, "begin_clipboard_restore", return_value="old"), \
              patch.object(desktop_app, "paste_text", return_value="ctrl_v") as pt, \
              patch.object(desktop_app, "restore_clipboard"):
             desktop_app.DesktopApp._work(controller, ["chunk"], profile, object())

@@ -27,7 +27,7 @@ import os
 import re
 import secrets
 import stat
-import tempfile
+import threading
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +38,8 @@ from .. import netlog   # доказова офлайновість: журна�
 _READY_MARKER = "READY"
 MODEL_FILENAME = "model.gguf"
 _SAFE_ID_RE = re.compile(r"^[a-z0-9_]+$")
+_INTEGRITY_CACHE = {}
+_INTEGRITY_CACHE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,7 @@ class ModelPreset:
     url: str                      # прямий resolve-URL GGUF на HuggingFace
     approx_size_bytes: int        # для consent-діалогу («буде завантажено ~N ГБ»)
     min_bytes: int                # захист від недокачаного/битого файлу
-    sha256: "str | None"          # звірка після завантаження (None → лише розмір)
+    sha256: "str | None"          # звірка після завантаження і перед запуском
     label_key: str                # назва пресета в UI
     hint_key: str                 # підказка про залізо (RAM/VRAM)
     license_name: str = ""        # ліцензія, як вказано на сторінці моделі
@@ -63,7 +65,8 @@ PRESETS: "dict[str, ModelPreset]" = {
     "fast": ModelPreset(
         id="fast",
         url=("https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/"
-             "resolve/main/gemma-4-E4B-it-Q4_K_M.gguf"),
+             "resolve/bfc15c382204943c3a8fff0c750b94ae2364d7a3/"
+             "gemma-4-E4B-it-Q4_K_M.gguf"),
         approx_size_bytes=4_977_171_584,
         min_bytes=4_900_000_000,
         sha256="85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
@@ -80,7 +83,8 @@ PRESETS: "dict[str, ModelPreset]" = {
         # нараді). Регістр repo-id критичний (12B, qat) — інакше 404. SHA-256 і розмір
         # звірено з живим файлом ТА з HF (HEAD X-Linked-ETag/-Size, 24.07.2026).
         url=("https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF/"
-             "resolve/main/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"),
+             "resolve/980b060c40a8539ac159e0501a3e0f66a6365af3/"
+             "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"),
         approx_size_bytes=6_716_356_800,
         min_bytes=6_600_000_000,
         sha256="90fd44e29e0d7cffeb0fd00dc73cfdab9ed0b0e95306ecf7821ea634c940c370",
@@ -151,18 +155,59 @@ def _verify(path: Path, min_bytes: int, sha256: "str | None") -> bool:
         return False
 
 
-def _available_dir(model_dir: Path, min_bytes: int) -> bool:
-    """ШВИДКА перевірка готовності теки (БЕЗ хешування): є READY-маркер і файл
-    цілий за розміром. SHA звіряється ОДИН раз при встановленні (наявність READY
-    — свідоцтво тієї звірки); повторне хешування 3-8 ГБ при кожному рендері
-    морозило б UI (урок судді — freeze на вкладці «Нарада»)."""
+def _integrity_fingerprint(path: Path, min_bytes: int):
+    """Метадані всіх asset-ів: кеш вважає файл незмінним, доки між перевірками
+    збігаються size і mtime_ns. Атакер із правом запису в теку голосу може зберегти
+    ці значення після підміни; повний захист вимагав би свідомо відкинутого заради
+    швидкості робочого шляху повторного SHA-хешування на кожне використання."""
+    if _is_reparse_point(path):
+        return None
+    try:
+        stat_result = path.stat()
+        if not path.is_file() or stat_result.st_size < min_bytes:
+            return None
+    except OSError:
+        return None
+    return stat_result.st_size, stat_result.st_mtime_ns
+
+
+def _forget_integrity_cache(path: Path) -> None:
+    path_scope = os.path.abspath(os.fspath(path))
+    with _INTEGRITY_CACHE_LOCK:
+        for scope in tuple(_INTEGRITY_CACHE):
+            if scope[0] == path_scope:
+                _INTEGRITY_CACHE.pop(scope, None)
+
+
+def _available_dir(model_dir: Path, min_bytes: int,
+                   sha256: "str | None" = None) -> bool:
+    """Перевірка готовності теки: є READY-маркер і файл проходить _verify.
+    Без sha256 це швидка перевірка для рендеру UI; з sha256 — повна звірка під
+    час встановлення або безпосередньо перед запуском sidecar-а."""
     model_dir = Path(model_dir)
     try:
         if not (model_dir / _READY_MARKER).is_file():
             return False
     except OSError:
         return False
-    return _verify(model_file(model_dir), min_bytes, None)
+    path = model_file(model_dir)
+    if not sha256:
+        return _verify(path, min_bytes, None)
+    scope = (
+        os.path.abspath(os.fspath(path)), int(min_bytes), sha256)
+    with _INTEGRITY_CACHE_LOCK:
+        fingerprint = _integrity_fingerprint(path, min_bytes)
+        if fingerprint is None:
+            _INTEGRITY_CACHE.pop(scope, None)
+            return False
+        cached = _INTEGRITY_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        valid = _verify(path, min_bytes, sha256)
+        if _integrity_fingerprint(path, min_bytes) != fingerprint:
+            return False
+        _INTEGRITY_CACHE[scope] = (fingerprint, valid)
+        return valid
 
 
 def model_available(model_dir, preset_id: str) -> bool:
@@ -170,77 +215,118 @@ def model_available(model_dir, preset_id: str) -> bool:
     return _available_dir(Path(model_dir), get_preset(preset_id).min_bytes)
 
 
-def _download(url: str, destination: Path, progress_cb=None, cancel_check=None) -> None:
+def partial_file(model_dir) -> Path:
+    """Детермінований шлях часткового файлу докачки (переживає перезапуск —
+    на відміну від старого anonymous tempfile.mkdtemp: E-бекграунд-докачка)."""
+    return Path(str(model_file(model_dir)) + ".part")
+
+
+def _download(url: str, destination_part: Path, progress_cb=None, cancel_check=None,
+              resume_from: int = 0) -> None:
+    """Качає (чи дозавантажує) файл у destination_part.
+
+    resume_from > 0 → шлемо ``Range: bytes={resume_from}-`` і дописуємо (``ab``).
+    Сервер не підтримав Range (не 206) → чесно перезаписуємо з нуля — часткові
+    байти могли належати іншій версії файлу.
+
+    Скасування (InterruptedError) НЕ чистить destination_part — виклик вирішує,
+    що робити з частковим файлом (явне «Скасувати» прибирає його,
+    закриття програми лишає для дозавантаження, §4 спеки)."""
     netlog.record_url(url, kind=netlog.MODEL, detail="llm")
+    headers = {}
+    mode = "wb"
+    received = 0
+    if resume_from > 0:
+        headers["Range"] = f"bytes={resume_from}-"
+        mode = "ab"
+        received = resume_from
+    request = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(url, timeout=30) as response, destination.open("wb") as out:
-            total, received = int(response.headers.get("Content-Length") or 0), 0
-            while True:
-                if cancel_check and cancel_check():
-                    raise InterruptedError()
-                part = response.read(1024 * 256)
-                if not part:
-                    break
-                out.write(part)
-                received += len(part)
-                if progress_cb:
-                    progress_cb(received, total)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            status = getattr(response, "status", None) or response.getcode()
+            if resume_from > 0 and status != 206:
+                # сервер не підтримав Range (чи файл на сервері змінився) —
+                # довіряти частковим байтам не можна, якщо повернув НЕ те, що
+                # ми просили (докачку); чесно перезаписуємо з нуля.
+                mode, received = "wb", 0
+            content_length = int(response.headers.get("Content-Length") or 0)
+            total = (received + content_length) if content_length else 0
+            with destination_part.open(mode) as out:
+                while True:
+                    if cancel_check and cancel_check():
+                        raise InterruptedError()
+                    part = response.read(1024 * 256)
+                    if not part:
+                        break
+                    out.write(part)
+                    received += len(part)
+                    if progress_cb:
+                        progress_cb(received, total)
     except InterruptedError:
-        destination.unlink(missing_ok=True)
         raise
     except Exception as exc:
-        destination.unlink(missing_ok=True)
         raise ModelDownloadError(f"Не вдалося завантажити модель: {exc}") from exc
+
+
+def discard_partial_download(model_dir) -> None:
+    """Прибрати частковий файл докачки (явне скасування користувачем — §1.3
+    спеки). Закриття програми посеред качання цю функцію НЕ викликає, тож
+    .part лишається на диску для дозавантаження після перезапуску (§4)."""
+    partial_file(model_dir).unlink(missing_ok=True)
 
 
 def _install_from_url(model_dir, url: str, min_bytes: int, sha256: "str | None",
                       progress_cb=None, cancel_check=None, force: bool = False) -> None:
-    """Докачати GGUF за URL у stage-теку, звірити розмір/SHA, атомарно активувати
-    + покласти маркер READY. Ідемпотентно: наявну валідну модель не чіпає.
-    Спільне ядро для пресетів (відомий SHA) і кастомних інтернет-моделей (SHA
-    невідомий → лише розмір).
+    """Докачати GGUF за URL у детермінований .part-файл поруч із моделлю,
+    звірити розмір/SHA, атомарно активувати + покласти маркер READY.
+    Ідемпотентно: наявну валідну модель не чіпає. Спільне ядро для пресетів і
+    власних інтернет-моделей із відомою SHA-256.
 
-    force=True («Завантажити заново»): пропускаємо idempotent-ранній вихід і
-    ЗАВЖДИ качаємо свіжий файл у stage. Старий target ЖИВИЙ увесь час докачки —
-    його підмінюємо лише ПІСЛЯ успішної звірки нового (backup-гілка нижче), тож
-    скасування чи збій verify лишають стару модель на місці."""
+    Дозавантаження (§4 спеки): .part — детермінований шлях (не анонімний
+    tempfile.mkdtemp), тож переживає перезапуск програми. Наступний виклик
+    (force чи ні) бачить наявний .part і докачує його з HTTP Range замість
+    качання з нуля; якщо сервер не підтримав Range або підсумкова звірка
+    (розмір+SHA) провалилась — .part прибирається і наступна спроба якісно
+    стартує з нуля (сам факт «якісно стартує» — наступний виклик, не цей).
+
+    force=True («Завантажити заново»): пропускаємо idempotent-ранній вихід,
+    але СТАРИЙ target ЖИВИЙ увесь час докачки — файл підміняємо лише ПІСЛЯ
+    успішної звірки нового (os.replace нижче); скасування чи збій verify
+    лишають стару модель на місці."""
     target = Path(model_dir)
-    if not force and _available_dir(target, min_bytes):
+    if not force and _available_dir(target, min_bytes, sha256):
         return
     if target.exists() and _is_reparse_point(target):
         raise ModelDownloadError("Тека моделі не може бути symlink або reparse point")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix="llm-", dir=target.parent))
+    target.mkdir(parents=True, exist_ok=True)
+    final_file = model_file(target)
+    part = partial_file(target)
+    if part.exists() and _is_reparse_point(part):
+        raise ModelDownloadError("Частковий файл докачки виявився reparse point")
+    resume_from = 0
     try:
-        staged_file = stage / MODEL_FILENAME
-        _download(url, staged_file, progress_cb, cancel_check)
-        if _is_reparse_point(staged_file):
-            raise ModelDownloadError("Завантажений файл виявився reparse point")
-        if not _verify(staged_file, min_bytes, sha256):
-            raise ModelDownloadError(
-                "Розмір або контрольна сума моделі не збігаються — файл неповний")
-        (stage / _READY_MARKER).write_text("ok", encoding="utf-8")
+        if part.is_file():
+            resume_from = part.stat().st_size
+    except OSError:
+        resume_from = 0
 
-        # Windows не має portable atomic directory-exchange: обидва rename
-        # атомарні в межах тому; за невдалого другого відновлюємо старий набір.
-        backup = None
-        if target.exists():
-            backup = stage.parent / f".{target.name}.previous-{next(tempfile._get_candidate_names())}"
-            os.replace(target, backup)
-        try:
-            os.replace(stage, target)
-        except Exception:
-            if backup is not None and backup.exists():
-                os.replace(backup, target)
-            raise
-        stage = None                     # успішно перенесено — finally не чистить
-        if backup is not None:
-            import shutil
-            shutil.rmtree(backup, ignore_errors=True)
-    finally:
-        if stage is not None:
-            import shutil
-            shutil.rmtree(stage, ignore_errors=True)
+    try:
+        _download(url, part, progress_cb, cancel_check, resume_from=resume_from)
+    except InterruptedError:
+        raise      # .part лишається — виклик (DownloadManager) вирішує долю
+    if _is_reparse_point(part):
+        raise ModelDownloadError("Завантажений файл виявився reparse point")
+    if not _verify(part, min_bytes, sha256):
+        # цілісність після (до)завантаження не зійшлася — битий .part не
+        # придатний навіть для наступної спроби дозавантаження, прибираємо,
+        # щоб наступний виклик почав якісно з нуля (§4.2 спеки).
+        part.unlink(missing_ok=True)
+        raise ModelDownloadError(
+            "Розмір або контрольна сума моделі не збігаються — файл неповний")
+    os.replace(part, final_file)
+    if not (target / _READY_MARKER).is_file():
+        (target / _READY_MARKER).write_text("ok", encoding="utf-8")
+    _forget_integrity_cache(final_file)
 
 
 def download_and_install(model_dir, preset_id: str, progress_cb=None,
@@ -256,6 +342,7 @@ def delete_model(model_dir) -> bool:
     """Видалити завантажену модель (звільнити ГБ). True — видалено."""
     import shutil
     model_dir = Path(model_dir)
+    _forget_integrity_cache(model_file(model_dir))
     if not model_dir.exists():
         return False
     shutil.rmtree(model_dir, ignore_errors=True)
@@ -277,6 +364,8 @@ CUSTOM_MIN_BYTES = 1024
 _ID_PREFIX = "custom_"
 # Ідентифікатор репозиторію в інтернеті: «власник/назва» (як на HuggingFace).
 _REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def is_gguf_name(name) -> bool:
@@ -287,6 +376,16 @@ def is_gguf_name(name) -> bool:
 def is_repo_id(value) -> bool:
     """Валідний ідентифікатор репозиторію «власник/назва»."""
     return bool(_REPO_ID_RE.match(str(value or "").strip()))
+
+
+def is_commit_revision(value) -> bool:
+    """Повний незмінний git commit для закріпленого resolve-URL."""
+    return bool(_COMMIT_RE.fullmatch(str(value or "").strip().lower()))
+
+
+def is_sha256(value) -> bool:
+    """Очікувана SHA-256 у канонічному hex-форматі."""
+    return bool(_SHA256_RE.fullmatch(str(value or "").strip().lower()))
 
 
 def new_custom_id() -> str:
@@ -305,6 +404,8 @@ class CustomModel:
     path: str = ""                # local: абсолютний шлях до .gguf
     repo_id: str = ""             # hf: власник/назва репозиторію
     filename: str = ""            # hf: ім'я GGUF-файлу в репозиторії
+    revision: str = ""            # hf: незмінний 40-символьний commit
+    sha256: str = ""              # hf: очікувана SHA-256 GGUF
     approx_size_bytes: int = 0    # для інформації в UI (0 → невідомо)
 
     def valid(self) -> bool:
@@ -313,14 +414,21 @@ class CustomModel:
         if self.kind == CUSTOM_KIND_LOCAL:
             return bool(self.path) and is_gguf_name(self.path)
         if self.kind == CUSTOM_KIND_HF:
-            return is_repo_id(self.repo_id) and is_gguf_name(self.filename)
+            return (
+                is_repo_id(self.repo_id)
+                and is_gguf_name(self.filename)
+                and is_commit_revision(self.revision)
+                and is_sha256(self.sha256)
+            )
         return False
 
     def to_json(self) -> str:
         return json.dumps({
             "id": self.id, "label": self.label, "kind": self.kind,
             "path": self.path, "repo_id": self.repo_id,
-            "filename": self.filename, "approx_size_bytes": self.approx_size_bytes,
+            "filename": self.filename, "revision": self.revision,
+            "sha256": self.sha256,
+            "approx_size_bytes": self.approx_size_bytes,
         }, ensure_ascii=False)
 
     @classmethod
@@ -344,26 +452,37 @@ class CustomModel:
             path=str(data.get("path", "")),
             repo_id=str(data.get("repo_id", "")).strip(),
             filename=str(data.get("filename", "")).strip(),
+            revision=str(data.get("revision", "")).strip().lower(),
+            sha256=str(data.get("sha256", "")).strip().lower(),
             approx_size_bytes=max(0, size),
         )
         if not cm.label:
             cm = cls(id=cm.id, label=cm.id, kind=cm.kind, path=cm.path,
                      repo_id=cm.repo_id, filename=cm.filename,
+                     revision=cm.revision, sha256=cm.sha256,
                      approx_size_bytes=cm.approx_size_bytes)
         return cm if cm.valid() else None
 
 
 def custom_hf_url(cm: "CustomModel") -> str:
-    """Прямий resolve-URL GGUF у репозиторії (гілка main)."""
-    return f"https://huggingface.co/{cm.repo_id}/resolve/main/{cm.filename}"
+    """Прямий resolve-URL GGUF на закріпленому commit репозиторію."""
+    if not cm.valid() or cm.kind != CUSTOM_KIND_HF:
+        raise ValueError("Власна інтернет-модель не має закріпленої версії або SHA-256")
+    return (
+        f"https://huggingface.co/{cm.repo_id}/resolve/"
+        f"{cm.revision}/{cm.filename}"
+    )
 
 
 def download_custom_hf(model_dir, cm: "CustomModel", progress_cb=None,
                        cancel_check=None, force: bool = False) -> None:
-    """Завантажити GGUF кастомної інтернет-моделі у власну підтеку (як пресет, але
-    без відомого розміру/SHA — лише мінімальна звірка цілості).
+    """Завантажити GGUF власної інтернет-моделі у власну підтеку та звірити SHA-256.
     force=True — перекачати навіть наявну модель (staged, старий файл живий)."""
-    _install_from_url(model_dir, custom_hf_url(cm), CUSTOM_MIN_BYTES, None,
+    # SHA-256 обов'язковий для HF-моделі (CustomModel.valid() вимагає
+    # is_sha256), тому передаємо його у звірку: інакше docstring обіцяв
+    # перевірку, якої не було, і підмінений файл потрібного розміру
+    # приймався мовчки.
+    _install_from_url(model_dir, custom_hf_url(cm), CUSTOM_MIN_BYTES, cm.sha256,
                       progress_cb, cancel_check, force=force)
 
 
@@ -388,6 +507,7 @@ class ResolvedModel:
     hint_key: str = ""            # пресети: i18n-ключ підказки про залізо
     _model_dir: "Path | None" = None
     _min_bytes: int = CUSTOM_MIN_BYTES
+    _sha256: "str | None" = None
 
     def available(self) -> bool:
         if self.kind == CUSTOM_KIND_LOCAL:
@@ -395,6 +515,15 @@ class ResolvedModel:
         if self._model_dir is None:
             return False
         return _available_dir(self._model_dir, self._min_bytes)
+
+    def integrity_available(self) -> bool:
+        """SHA-звірка перед sidecar-ом: раз на процес і після size/mtime зміни."""
+        if self.kind == CUSTOM_KIND_LOCAL:
+            return self.available()
+        if self._model_dir is None:
+            return False
+        return _available_dir(
+            self._model_dir, self._min_bytes, self._sha256)
 
 
 def resolve(active_id, model_root, custom_list=None) -> "ResolvedModel | None":
@@ -413,7 +542,8 @@ def resolve(active_id, model_root, custom_list=None) -> "ResolvedModel | None":
             id=aid, kind="preset", model_path=model_dir / MODEL_FILENAME,
             downloadable=True, approx_size_bytes=preset.approx_size_bytes,
             label_key=preset.label_key, hint_key=preset.hint_key,
-            _model_dir=model_dir, _min_bytes=preset.min_bytes)
+            _model_dir=model_dir, _min_bytes=preset.min_bytes,
+            _sha256=preset.sha256)
     for cm in custom_list or []:
         if cm.id != aid:
             continue
@@ -428,5 +558,5 @@ def resolve(active_id, model_root, custom_list=None) -> "ResolvedModel | None":
         return ResolvedModel(
             id=aid, kind=CUSTOM_KIND_HF, model_path=model_dir / MODEL_FILENAME,
             downloadable=True, approx_size_bytes=cm.approx_size_bytes,
-            label=cm.label, _model_dir=model_dir)
+            label=cm.label, _model_dir=model_dir, _sha256=cm.sha256)
     return None

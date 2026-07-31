@@ -112,8 +112,15 @@ class SearchPage(QWidget):
             self._stack.setCurrentIndex(0)
             return
         if not results:
-            self._empty_title.setText(tr("search_none_title"))
-            self._empty_hint.setText(tr("search_none_hint", query=query))
+            # аудит 31.07: нова людина без жодного диктування/наради бачить
+            # «Нічого не знайдено» на БУДЬ-ЯКИЙ запит — виглядає як застосунок
+            # не працює. Розрізняємо порожню базу від відсутності збігів.
+            if self._index is not None and not self._index.docs:
+                self._empty_title.setText(tr("search_nodata_title"))
+                self._empty_hint.setText(tr("search_nodata_hint"))
+            else:
+                self._empty_title.setText(tr("search_none_title"))
+                self._empty_hint.setText(tr("search_none_hint", query=query))
             self._count.setText("")
             self._stack.setCurrentIndex(0)
             return

@@ -38,6 +38,7 @@ import hashlib
 import logging
 import os
 import re
+import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -50,6 +51,8 @@ log = logging.getLogger(__name__)
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
 # Читаємо великими шматками — інсталятор може бути кількасот МБ.
 _CHUNK = 256 * 1024
+_INTEGRITY_CACHE = {}
+_INTEGRITY_CACHE_LOCK = threading.Lock()
 
 
 class UpdateError(Exception):
@@ -116,13 +119,59 @@ def is_downloaded(url: str, expected_sha256: str, dest_dir=None) -> bool:
         return False
 
 
-def installer_ready(url: str, dest_dir=None) -> "Path | None":
-    """Готовий (завантажений і вже SHA-перевірений) інсталятор для цього URL,
-    або None. Дешево — без повторного хешування: фінальний файл зʼявляється лише
-    через os.replace ПІСЛЯ успішної перевірки SHA-256, тож сама його наявність
-    гарантує цілість (на відміну від `is_downloaded`, який перехешовує)."""
+def _integrity_fingerprint(path: Path):
+    """Метадані всіх asset-ів: кеш вважає файл незмінним, доки між перевірками
+    збігаються size і mtime_ns. Атакер із правом запису в теку голосу може зберегти
+    ці значення після підміни; повний захист вимагав би свідомо відкинутого заради
+    швидкості робочого шляху повторного SHA-хешування на кожне використання."""
+    try:
+        stat_result = path.stat()
+        if not path.is_file():
+            return None
+    except OSError:
+        return None
+    return stat_result.st_size, stat_result.st_mtime_ns
+
+
+def _forget_integrity_cache(path: Path) -> None:
+    path_scope = os.path.abspath(os.fspath(path))
+    with _INTEGRITY_CACHE_LOCK:
+        for scope in tuple(_INTEGRITY_CACHE):
+            if scope[0] == path_scope:
+                _INTEGRITY_CACHE.pop(scope, None)
+
+
+def installer_ready(url: str, expected_sha256: str,
+                    dest_dir=None, *, rehash: bool = False) -> "Path | None":
+    """Готовий інсталятор лише якщо кеш ЗАРАЗ має очікуваний SHA-256.
+
+    Звичайна перевірка кешується за size/mtime. rehash=True навмисно обходить
+    кеш: файл міг бути пошкоджений або підмінений після атомарного завантаження,
+    але до фактичного запуску.
+    """
+    want = normalize_sha256(expected_sha256)
+    if not want:
+        return None
     final = local_installer_path(url, dest_dir)
-    return final if final.exists() else None
+    if rehash:
+        return final if is_downloaded(url, want, dest_dir) else None
+    scope = (os.path.abspath(os.fspath(final)), want)
+    with _INTEGRITY_CACHE_LOCK:
+        fingerprint = _integrity_fingerprint(final)
+        if fingerprint is None:
+            _INTEGRITY_CACHE.pop(scope, None)
+            return None
+        cached = _INTEGRITY_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return final if cached[1] else None
+        try:
+            valid = sha256_of(final) == want
+        except OSError:
+            return None
+        if _integrity_fingerprint(final) != fingerprint:
+            return None
+        _INTEGRITY_CACHE[scope] = (fingerprint, valid)
+        return final if valid else None
 
 
 def _require_https(url: str) -> None:
@@ -217,5 +266,6 @@ def download_installer(url: str, expected_sha256: str, *, progress=None,
             f"SHA-256 не збігся: очікували {want}, отримали {got}")
 
     os.replace(part, final)  # атомарний «реліз» готового файлу
+    _forget_integrity_cache(final)
     log.info("Оновлення завантажено й перевірено: %s", final)
     return final

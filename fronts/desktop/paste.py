@@ -20,9 +20,29 @@ import pyperclip
 from . import wininput
 
 _RESTORE_DELAY = 0.4   # с; негайне відновлення ламає вставку в повільних застосунках
+_PANIC_RESTORE_TIMEOUT = 0.25
+_restore_lock = threading.Lock()
+_restore_condition = threading.Condition(_restore_lock)
+_restore_timer = None
+_restore_expected = None
+_restore_delay = _RESTORE_DELAY
+_active_restore_operations = 0
+_session_original = None
+_restore_generation = 0
+_restore_blocked = False
+_restore_panic_barriers = 0
+_restore_callbacks_in_flight = 0
+_restore_operation_state = threading.local()
 
 # Сентинел: ціль — менеджер паролів, туди свідомо нічого не шлемо.
 PASTE_BLOCKED = "blocked"
+
+
+class _ClipboardRestoreSnapshot(str):
+    def __new__(cls, text: str, generation: int):
+        value = super().__new__(cls, text)
+        value.restore_generation = generation
+        return value
 
 
 def target_changed(pinned_hwnd, current_hwnd) -> bool:
@@ -69,6 +89,126 @@ def snapshot_clipboard() -> str:
         return pyperclip.paste()
     except Exception:
         return ""
+
+
+def begin_clipboard_restore() -> str:
+    """Почати paste-операцію, не прив'язуючи первинний оригінал до timer."""
+    global _restore_timer, _restore_expected
+    global _active_restore_operations, _session_original
+    while True:
+        with _restore_condition:
+            while _restore_blocked:
+                _restore_condition.wait()
+            timer = _restore_timer
+            active = _active_restore_operations
+            generation = _restore_generation
+        current = snapshot_clipboard()
+        with _restore_condition:
+            if (timer is not _restore_timer
+                    or active != _active_restore_operations
+                    or generation != _restore_generation
+                    or _restore_blocked):
+                continue
+            if active == 0:
+                if (timer is None
+                        or current != _restore_expected
+                        or _session_original is None):
+                    _session_original = current
+            elif _session_original is None:
+                _session_original = current
+            _active_restore_operations += 1
+            _restore_timer = None
+            _restore_expected = None
+            _restore_operation_state.generation = generation
+        if timer is not None:
+            timer.cancel()
+        return _ClipboardRestoreSnapshot(current, generation)
+
+
+def end_clipboard_restore() -> None:
+    """Завершити paste-операцію, яка не плануватиме відновлення буфера."""
+    global _restore_timer, _restore_expected
+    global _active_restore_operations, _session_original
+    timer = None
+    generation = getattr(
+        _restore_operation_state, "generation", _restore_generation)
+    with _restore_condition:
+        if generation != _restore_generation or _restore_blocked:
+            if hasattr(_restore_operation_state, "generation"):
+                del _restore_operation_state.generation
+            return
+        if _active_restore_operations:
+            _active_restore_operations -= 1
+            if _active_restore_operations == 0:
+                timer = _restore_timer
+                _restore_timer = None
+                _session_original = None
+                _restore_expected = None
+    if hasattr(_restore_operation_state, "generation"):
+        del _restore_operation_state.generation
+    if timer is not None:
+        timer.cancel()
+
+
+def cancel_clipboard_restore() -> None:
+    """Скасувати pending-відновлення, щоб timer не пережив нову вставку/вихід."""
+    with _restore_condition:
+        timer = _reset_restore_session_locked(invalidate=True)
+        _restore_condition.notify_all()
+    if hasattr(_restore_operation_state, "generation"):
+        del _restore_operation_state.generation
+    if timer is not None:
+        timer.cancel()
+
+
+def _reset_restore_session_locked(*, invalidate: bool):
+    global _restore_timer, _restore_expected
+    global _active_restore_operations, _session_original, _restore_generation
+    timer = _restore_timer
+    _restore_timer = None
+    _restore_expected = None
+    _active_restore_operations = 0
+    _session_original = None
+    if invalidate:
+        _restore_generation += 1
+    return timer
+
+
+def panic_clear_clipboard(clear_clipboard,
+                          timeout: float = _PANIC_RESTORE_TIMEOUT) -> bool:
+    """Інвалідувати restore-сесію, дочекатися callback і очистити буфер.
+
+    Нові restore-операції чекають, доки panic завершить очищення. False означає,
+    що або callback не завершився за timeout, або саме очищення не підтвердилось.
+    """
+    global _restore_blocked, _restore_panic_barriers
+    deadline = time.monotonic() + max(0.0, timeout)
+    with _restore_condition:
+        _restore_panic_barriers += 1
+        _restore_blocked = True
+        timer = _reset_restore_session_locked(invalidate=True)
+    if timer is not None:
+        timer.cancel()
+
+    barrier_complete = True
+    try:
+        with _restore_condition:
+            while _restore_callbacks_in_flight:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    barrier_complete = False
+                    break
+                _restore_condition.wait(remaining)
+        if not barrier_complete:
+            return False
+        cleared = clear_clipboard() is not False
+        return cleared
+    finally:
+        with _restore_condition:
+            _reset_restore_session_locked(invalidate=False)
+            _restore_panic_barriers -= 1
+            _restore_blocked = bool(_restore_panic_barriers)
+            _restore_condition.notify_all()
 
 
 # Command Mode: сентинел, який кладемо в буфер ПЕРЕД Ctrl+C, щоб відрізнити
@@ -124,14 +264,15 @@ def capture_selection(*, copy_delay: float = 0.12,
     return current or ""
 
 
-def paste_text(text: str, typing_fallback: bool = False):
+def paste_text(text: str, typing_fallback: bool = False,
+               owner_hwnd: int | None = None):
     """Кладе текст у буфер і доставляє його в активне вікно за політикою класу.
 
     → назва способу ('ctrl_v' | 'ctrl_shift_v' | 'type_unicode' | 'keyboard'),
       PASTE_BLOCKED (ціль — менеджер паролів), або None (жоден спосіб не вкинувся).
     """
     from whisper_core.win_hardening import set_clipboard_text_excluded
-    if not set_clipboard_text_excluded(text):
+    if not set_clipboard_text_excluded(text, owner_hwnd):
         pyperclip.copy(text)   # страхувальна сітка — робимо ПЕРШИМ, до будь-чого
 
     window_class, exe = wininput.get_foreground_info()
@@ -223,17 +364,139 @@ def undo_paste(count: int) -> bool:
     return wininput.send_backspaces(count)
 
 
-def restore_clipboard(previous: str, delay: float = _RESTORE_DELAY) -> None:
+def restore_clipboard(previous: str, delay: float = _RESTORE_DELAY,
+                      *, expected: str | None = None) -> None:
     """Повернути попередній ТЕКСТОВИЙ вміст буфера через delay с (щоб ціль устигла
     забрати вставку). Порожній previous не відновлюємо (нема чого / був не-текст).
-    Виконується у власному таймері — робочий потік не блокуємо."""
-    if not previous:
+    Відновлюємо лише якщо буфер досі містить expected: нове користувацьке
+    копіювання не затираємо. У процесі може бути лише один активний timer."""
+    global _restore_timer, _restore_expected, _restore_delay
+    global _active_restore_operations, _session_original
+    generation = getattr(
+        previous, "restore_generation", _restore_generation)
+    while True:
+        with _restore_condition:
+            if generation != _restore_generation or _restore_blocked:
+                return
+            replaced = _restore_timer
+        current = snapshot_clipboard() if replaced is not None else None
+        with _restore_condition:
+            if (replaced is not _restore_timer
+                    or generation != _restore_generation
+                    or _restore_blocked):
+                if generation != _restore_generation or _restore_blocked:
+                    return
+                continue
+            if _active_restore_operations:
+                _active_restore_operations -= 1
+            if _session_original is None:
+                _session_original = previous
+            original = _session_original
+            if replaced is not None and current == _restore_expected:
+                expected = _restore_expected
+            if not original:
+                _restore_timer = None
+                _restore_expected = None
+                if _active_restore_operations == 0:
+                    _session_original = None
+                timer = None
+                break
+            timer = _make_restore_timer(delay, generation)
+            _restore_timer = timer
+            _restore_expected = expected
+            _restore_delay = delay
+            break
+    if (hasattr(_restore_operation_state, "generation")
+            and _restore_operation_state.generation == generation):
+        del _restore_operation_state.generation
+    if replaced is not None:
+        replaced.cancel()
+    if timer is not None:
+        timer.start()
+
+
+def _make_restore_timer(delay: float, generation: int):
+    timer = None
+
+    def finish():
+        _finish_clipboard_restore(timer, generation)
+
+    timer = threading.Timer(delay, finish)
+    return timer
+
+
+def _finish_clipboard_restore(timer, generation: int) -> None:
+    global _restore_timer, _restore_expected, _session_original
+    global _restore_callbacks_in_flight
+    with _restore_condition:
+        if (timer is not _restore_timer
+                or generation != _restore_generation
+                or _restore_blocked):
+            return
+        expected = _restore_expected
+    current = snapshot_clipboard() if expected is not None else None
+    with _restore_condition:
+        if (timer is not _restore_timer
+                or generation != _restore_generation
+                or _restore_blocked):
+            return
+        if _active_restore_operations:
+            relay = _make_restore_timer(_restore_delay, generation)
+            _restore_timer = relay
+            _restore_expected = current if expected is not None else None
+            original = None
+        elif expected is not None and current != expected:
+            _restore_timer = None
+            _restore_expected = None
+            _session_original = None
+            relay = None
+            original = None
+        else:
+            relay = None
+            original = _session_original
+            if original is not None:
+                _restore_callbacks_in_flight += 1
+    if relay is not None:
+        relay.start()
         return
-    threading.Timer(delay, _safe_copy, args=(previous,)).start()
+    if original is None:
+        return
+    try:
+        if not _restore_copy_is_current(timer, generation):
+            return
+        copied = _safe_copy(original)
+        retry = None
+        with _restore_condition:
+            if (timer is _restore_timer
+                    and generation == _restore_generation
+                    and not _restore_blocked):
+                if copied:
+                    _restore_timer = None
+                    _restore_expected = None
+                    _session_original = None
+                    retry = None
+                else:
+                    retry = _make_restore_timer(_restore_delay, generation)
+                    _restore_timer = retry
+        if retry is not None:
+            retry.start()
+    finally:
+        with _restore_condition:
+            _restore_callbacks_in_flight -= 1
+            _restore_condition.notify_all()
 
 
-def _safe_copy(text: str) -> None:
+def _restore_copy_is_current(timer, generation: int) -> bool:
+    """Остання generation-перевірка безпосередньо перед clipboard write."""
+    with _restore_condition:
+        return (timer is _restore_timer
+                and generation == _restore_generation
+                and not _restore_blocked)
+
+
+def _safe_copy(text: str) -> bool:
     try:
         pyperclip.copy(text)
+        return True
     except Exception:
-        pass
+        return False

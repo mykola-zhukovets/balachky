@@ -1,4 +1,4 @@
-"""Фікс-хвиля 5.1 (суд хвилі 5): reverse-звʼязка ЛИШЕ через панель «Прослухати».
+"""Фікс-хвиля 5.1 (рецензія хвилі 5): reverse-звʼязка ЛИШЕ через панель «Прослухати».
 
 РЕАЛЬНІ шляхи (не ізольовані моки wrapper): спільний voice_edit_selection НЕ чіпає
 TTS (Б1); cancel діалогу не лишає застарілий стан (Б2); часткова правка — чесний
@@ -103,7 +103,7 @@ class TestPanelReverseFix(unittest.TestCase):
 
         ctrl = SimpleNamespace(
             mark_reverse_pause=mark, consume_reverse_index=consume,
-            # суд 5.3: play_text повертає "playing"; arm прив'язується до last_generation()
+            # рецензія 5.3: play_text повертає "playing"; arm прив'язується до last_generation()
             play_text=lambda t: (events.append(("play", t)), "playing")[1],
             last_generation=lambda: 1)
         notes = []
@@ -158,7 +158,7 @@ class TestPanelReverseFix(unittest.TestCase):
 
 
 class TestStaleResumeIndex(unittest.TestCase):
-    """БЛОКЕР 1 (суд 5.2): застарілий resume-індекс не може вистрілити пізніше —
+    """БЛОКЕР 1 (рецензія 5.2): застарілий resume-індекс не може вистрілити пізніше —
     прив'язка до генерації synth-запиту. Реальний шлях через ListenPanel.enqueue_chunk."""
 
     def _panel(self):
@@ -212,7 +212,7 @@ class TestStaleResumeIndex(unittest.TestCase):
         panel.enqueue_chunk(self._wav(), [], is_first=False)  # чанк 1 == resume → грає
         self.assertEqual(panel._cur_index, 1)
 
-    # --- суд 5.3: прив'язка arm до generation-токена наскрізно ------------------
+    # --- рецензія 5.3: прив'язка arm до generation-токена наскрізно ------------------
     def test_disarm_before_first_chunk_next_stream_from_start(self):
         # (а) arm для генерації 1 → потік 1 СКАСОВАНО ДО першого чанка (disarm) →
         # наступний НЕЗАЛЕЖНИЙ потік 2 грає З ПОЧАТКУ, не успадковує чужу позицію.
@@ -264,7 +264,7 @@ class TestStaleResumeIndex(unittest.TestCase):
 
 
 class TestPanelTextRaceGate(unittest.TestCase):
-    """БЛОКЕР 2 (суд 5.2): гонка підміни тексту панелі під час модального діалогу
+    """БЛОКЕР 2 (рецензія 5.2): гонка підміни тексту панелі під час модального діалогу
     правки — ревізія-гейт скасовує застосування правки до чужого тексту."""
 
     def _panel_ctl(self):

@@ -15,12 +15,12 @@ pyperclip==1.11.0
 numpy==2.4.6
 # Офлайн-діаризація системної доріжки нарад (Apache-2.0). onnxruntime пінимо
 # ЯВНО (а не покладаємось на резолвер): frozen залежить від версії DLL — при
-# апгрейді змінюємо ОБИДВА піни разом і переганяємо frozen-тести, бо нативні DLL версій мають залишатися сумісними.
+# апгрейді змінюємо ОБИДВА піни разом і переганяємо frozen-тести (див. дизайн §7).
 sherpa-onnx==1.13.4
 onnxruntime==1.27.0
 # Режим «Нарада»: захоплення екрана через ctypes, без зовнішніх DLL.
 mss==10.1.0
-av==18.0.0  # LGPL-збірка (BtbN win64-lgpl-shared, без x264/x265) — див. THIRD-PARTY-NOTICES.txt
+av==18.0.0  # LGPL-збірка (BtbN win64-lgpl-shared, без x264/x265) — див. THIRD-PARTY-NOTICES §1 і SWAP-PLAN
 # Local meeting storage encryption (AES-256-GCM/HKDF/scrypt).
 cryptography>=44,<49
 
@@ -44,7 +44,7 @@ packaging==26.2
 # Telegram bot (fronts/telegram, опційно)
 aiogram==3.29.1
 
-# --- Опційна постобробка тексту після STT ---
+# --- Постобробка тексту після STT (feature/punctuation-plus) — ОПЦІЙНО ---
 # Обидва кроки — opt-in і мають graceful degradation: якщо пакета немає, чекбокс
 # у Налаштуваннях лишається неактивним із поясненням, а build НЕ падає. Дані
 # (частотний словник, ONNX-модель) не вшиваються — качаються з UI за потреби.
@@ -54,26 +54,26 @@ symspellpy==6.10.0
 # який уже є в стеку sherpa-onnx). Розкоментуй, якщо потрібен цей крок:
 # punctuators==0.0.5
 
-# --- Опційні локальні ШІ-протоколи наради ---
+# --- AI-протокол наради (feature/protocol-activation) ---
 # Локальна LLM (Gemma 4 GGUF) у sidecar-підпроцесі (whisper_core.protocol.worker),
-# запакованому окремим balachky-protocol-worker.exe (balachky.spec). Opt-in із
-# graceful degradation: без пакета кнопка «Створити протокол» неактивна з підказкою,
-# build НЕ падає (worker.llama_available()→False → FakeBackend; spec guarded
-# find_spec). Ваги (~5-7 ГБ) не вшиваються — качаються з UI за згодою.
+# запакованому окремим balachky-protocol-worker.exe (balachky.spec). Ваги
+# (~5-7 ГБ) не вшиваються — качаються з UI за згодою.
 #
-# Не пініть цю важку залежність у спільному середовищі розробки.
-# Встановлюйте лише у спеціальному venv для складання релізу, звідки
+# У СПІЛЬНИЙ dev/frozen venv важку залежність НЕ пінимо (зачепила б 70+ worktree —
+# канон §2). Ставимо ЛИШЕ у СКЛАДАЛЬНИЙ venv (окрема тека поза репозиторієм), звідки
 # робиться реліз-білд — CPU-колесо (працює на будь-якому залізі; GPU-шлях опційний):
 #   pip install "llama-cpp-python==0.3.34" --extra-index-url \
 #     https://abetlen.github.io/llama-cpp-python/whl/cpu --only-binary=:all:
+# Точну версію закріплено у складальному файлі requirements-tts-build.txt.
 # llama-cpp-python==0.3.34  # у складальному venv (не в спільному); MIT (+ llama.cpp MIT)
 
-# HeavyModelCoordinator визначає доступний обсяг RAM через psutil,
+# feature/tts-listen (§3.3): HeavyModelCoordinator визначає RAM машини через psutil,
 # щоб не тримати STT і TTS резидентно разом на слабкому залізі (<12 ГБ). Без psutil
 # координатор fail-closed (ексклюзивний режим); явна залежність усуває це погіршення.
 psutil>=5.9
 
-# Словник вимови: генерація відмінкових форм для української мови через pymorphy3
-# (з підтвердженням користувача). Пряма залежність + українські дані окремим пакетом.
+# feature/tts-listen (§6.4): словник вимови — «поширити на відмінки?» генерує
+# відмінкові форми української через pymorphy3 (з підтвердженням користувача). Пряма
+# залежність + українські дані окремим пакетом.
 pymorphy3>=2.0
 pymorphy3-dicts-uk

@@ -103,7 +103,7 @@ class RewriteGeneratorTests(unittest.TestCase):
         self.assertEqual(self._gen().run("   ", "letter"), "")
 
     def test_fake_backend_rejected_not_stub(self):
-        """Блокер (урок судді): без llama worker бере FakeBackend (заглушка).
+        """Блокер (урок рецензента): без llama worker бере FakeBackend (заглушка).
         run() має підняти RewriteError «встановіть компонент», а НЕ повернути
         заглушку за успіх. Сайдкар прибрано у finally."""
         _make_ready_model(self.tmp)

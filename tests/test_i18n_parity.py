@@ -47,10 +47,18 @@ class Parity(unittest.TestCase):
                       if any(ch in str(v) for ch in bad))
         self.assertEqual(hits, [], f"EN має лише “ ”: {hits}")
 
-    def test_no_empty_values(self):
-        empty = sorted(k for k, v in {**UK, **EN}.items()
-                       if isinstance(v, str) and not v.strip())
-        self.assertEqual(empty, [], f"порожні рядки: {empty}")
+    def test_no_empty_values_except_intentional_english_brand_bottom(self):
+        empty = sorted(
+            (lang, key)
+            for lang, strings in STRINGS.items()
+            for key, value in strings.items()
+            if isinstance(value, str) and not value.strip()
+        )
+        self.assertEqual(
+            empty,
+            [("en", "brand_bottom")],
+            f"unexpected empty strings: {empty}",
+        )
 
 
 if __name__ == "__main__":

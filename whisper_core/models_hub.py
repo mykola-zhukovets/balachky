@@ -96,9 +96,15 @@ def get_models_hub_status(cfg: Config) -> list[ModelHubItem]:
 
     # 3. Protocol LLM (Протокол наради)
     proto_preset = cfg.protocol_model or "fast"
-    proto_models_dir = paths.protocol_models_dir()
-    proto_avail = protocol_mm.model_available(proto_models_dir, proto_preset)
-    proto_sz = get_dir_size(proto_models_dir)
+    # УВАГА: model_available(model_dir, preset_id) очікує ВЖЕ ГОТОВУ теку САМЕ
+    # цього пресета (root/preset_id), не спільний корінь усіх пресетів —
+    # інакше READY-маркер конкретної моделі ніколи не знаходився б (бачив би
+    # лише спільний корінь, де його нема), і ModelsHub мовчки показував би
+    # завантажену модель як «не завантажена» (знайдено аудитом 31.07.2026,
+    # разом зі спекою фонового завантаження).
+    proto_model_dir = paths.protocol_model_dir(proto_preset)
+    proto_avail = protocol_mm.model_available(proto_model_dir, proto_preset)
+    proto_sz = get_dir_size(proto_model_dir)
     if proto_preset == "fast":
         proto_key = "models_hub_preset_gemma_fast"
         proto_param = ""

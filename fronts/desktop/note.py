@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .crash import anonymize_path
 from .glass import GlassButton, RecButton
 from .i18n import tr
 from . import theme   # нічний режим: локальний стиль редактора теж перечитує палітру
@@ -191,7 +192,7 @@ class NoteWindow(QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.controller.note_text())
         except OSError:
-            logging.exception("Не вдалося зберегти нотатку у %s", path)
+            logging.exception("Не вдалося зберегти нотатку у %s", anonymize_path(path))
             self.controller.tray.notify(tr("note_save_fail"))
             return
         import os

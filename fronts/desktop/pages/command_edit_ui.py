@@ -145,21 +145,46 @@ class CommandEditDialog(QDialog):
         lay.addLayout(btns)
 
         self._input.setFocus()
+        # E-бекграунд-докачка (аудит 31.07.2026): готовність реактивна — модель
+        # могла завершити якісно завантажуватись у фоні, поки цей діалог
+        # відкритий (чи навпаки, саме зараз якраз качається деінде).
+        from ..download_manager import DownloadManager
+        self._dlmgr = DownloadManager.instance()
+        self._dlmgr.started.connect(self._on_download_manager_event)
+        self._dlmgr.finished_ok.connect(self._on_download_manager_event)
+        self._dlmgr.failed.connect(self._on_download_manager_event)
+        self._dlmgr.cancelled.connect(self._on_download_manager_event)
         self._check_ready()
 
     # ------------------------------------------------------------ готовність
+    def _on_download_manager_event(self, *_args):
+        self._check_ready()
+
+    def _resolve_active(self):
+        from whisper_core.protocol import model_manager as mm
+        from whisper_core import paths
+        root = self._model_root if self._model_root is not None else paths.protocol_models_dir()
+        return mm.resolve(self._preset_id, root, self._custom_models)
+
     def _check_ready(self):
-        """Проактивно: без бекенда llama або без завантаженої моделі — чесний стан
-        із кнопкою завантаження, а не мовчазна заглушка при спробі виконати."""
+        """Проактивно: без бекенда llama, без завантаженої моделі чи саме зараз
+        якраз якісно завантажується у фоні — чесний стан, а не мовчазна
+        заглушка при спробі виконати."""
         from whisper_core.protocol import service
         if not service.backend_available():
             self._set_blocked(tr("cmdedit_backend_missing"), download=False)
             return
-        if not service.model_available(self._preset_id, self._model_root,
-                                       self._custom_models):
-            self._set_blocked(tr("cmdedit_model_missing"), download=True)
+        if service.model_available(self._preset_id, self._model_root,
+                                   self._custom_models):
+            self._set_ready()
             return
-        self._set_ready()
+        resolved = self._resolve_active()
+        if resolved is not None and resolved.downloadable:
+            from ..download_manager import DownloadManager
+            if DownloadManager.instance().is_downloading(resolved.model_path.parent):
+                self._set_downloading()
+                return
+        self._set_blocked(tr("cmdedit_model_missing"), download=True)
 
     def _set_blocked(self, message, *, download: bool):
         self._status.setText(message); self._status.show()
@@ -168,6 +193,14 @@ class CommandEditDialog(QDialog):
         if self._mic is not None:
             self._mic.setEnabled(False)
         self._download.setVisible(download)
+
+    def _set_downloading(self):
+        self._status.setText(tr("cmdedit_model_downloading")); self._status.show()
+        self._run.setEnabled(False)
+        self._input.setEnabled(False)
+        if self._mic is not None:
+            self._mic.setEnabled(False)
+        self._download.hide()          # вже качається — друга кнопка не потрібна
 
     def _set_ready(self):
         self._status.hide()
@@ -180,7 +213,6 @@ class CommandEditDialog(QDialog):
 
     def _on_download(self):
         from whisper_core.protocol import model_manager as mm
-        from whisper_core import paths
         from .protocol_ui import ProtocolModelDownloadDialog, _human_size
         pid = self._preset_id
         size = _human_size(mm.PRESETS[pid].approx_size_bytes)
@@ -188,9 +220,13 @@ class CommandEditDialog(QDialog):
                 self, tr("protocol_model_consent_title"),
                 tr("protocol_model_consent_body", size=size)) != QMessageBox.Yes:
             return
-        dlg = ProtocolModelDownloadDialog(paths.protocol_model_dir(pid), pid, self)
-        dlg.exec()
-        self._check_ready()
+        resolved = self._resolve_active()
+        if resolved is None:
+            return
+        label = tr(resolved.label_key) if resolved.label_key else resolved.label
+        dlg = ProtocolModelDownloadDialog(resolved.model_path.parent, preset_id=pid,
+                                          label=label, parent=self)
+        dlg.show(); dlg.raise_(); dlg.activateWindow()
 
     # -------------------------------------------------------------- диктування
     def _on_mic(self):
@@ -294,6 +330,22 @@ class CommandEditDialog(QDialog):
         w.cancel()
         _reap_worker(w)
 
+    def _detach_download_manager(self):
+        mgr = getattr(self, "_dlmgr", None)
+        if mgr is None:
+            return
+        for sig in (mgr.started, mgr.finished_ok, mgr.failed, mgr.cancelled):
+            try:
+                sig.disconnect(self._on_download_manager_event)
+            except (RuntimeError, TypeError):
+                pass
+
     def reject(self):
         self._detach()
+        self._detach_download_manager()
         super().reject()
+
+    def accept(self):
+        self._detach()
+        self._detach_download_manager()
+        super().accept()

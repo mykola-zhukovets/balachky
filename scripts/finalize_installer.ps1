@@ -3,7 +3,7 @@
 # Навіщо. Inno Setup дає просто BalachkySetup-<версія>.exe, а публікуємо ми
 # BalachkySetup-<версія>-<перші 8 символів контрольної суми>.exe — щоб файл було
 # видно, який саме, і щоб людина могла звірити його не читаючи опису релізу.
-# Досі це робилося руками й ніде не було записано кроком: суд перед публікацією
+# Досі це робилося руками й ніде не було записано кроком: рецензія перед публікацією
 # 25.07 знайшов, що документи обіцяють назву з контрольною сумою, а жоден скрипт
 # її не робить. Ручний крок перед публікацією — це крок, який колись забудуть.
 #
@@ -15,10 +15,10 @@
 #   5. друкує готові рядки для опису релізу й для дорожньої карти.
 #
 # Виклик:  powershell -File scripts\finalize_installer.ps1
-#          powershell -File scripts\finalize_installer.ps1 -Suffix "beta"
+#          powershell -File scripts\finalize_installer.ps1 -Suffix "custom"
 
 param(
-    [string]$Suffix = "beta",
+    [string]$Suffix = "",
     [string]$OutputDir = "installer\Output"
 )
 
@@ -44,10 +44,12 @@ if ($exe.BaseName -match '-[0-9A-F]{8}$') {
 $hash = (Get-FileHash -Algorithm SHA256 -Path $exe.FullName).Hash
 $short = $hash.Substring(0, 8)
 
-# BalachkySetup-1.2.3.exe → BalachkySetup-1.2.3-beta-999594BC.exe
+# BalachkySetup-1.2.3-beta.exe → BalachkySetup-1.2.3-beta-F19111EF.exe
 $version = $exe.BaseName -replace '^BalachkySetup-', ''
 $parts = @("BalachkySetup", $version)
-if ($Suffix) { $parts += $Suffix }
+if ($Suffix -and -not $version.EndsWith("-$Suffix", [StringComparison]::OrdinalIgnoreCase)) {
+    $parts += $Suffix
+}
 $parts += $short
 $newName = ($parts -join '-') + '.exe'
 $newPath = Join-Path $exe.DirectoryName $newName

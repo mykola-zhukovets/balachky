@@ -8,6 +8,7 @@
 """
 import ctypes
 import sys
+from ctypes import wintypes
 
 import shiboken6
 from PySide6.QtCore import (
@@ -44,7 +45,12 @@ def _system_animations_ok() -> bool:
         if sys.platform == "win32":
             try:
                 val = ctypes.c_int(1)
-                ctypes.windll.user32.SystemParametersInfoW(
+                user32 = ctypes.windll.user32
+                user32.SystemParametersInfoW.argtypes = (
+                    wintypes.UINT, wintypes.UINT, ctypes.c_void_p,
+                    wintypes.UINT)
+                user32.SystemParametersInfoW.restype = wintypes.BOOL
+                user32.SystemParametersInfoW(
                     0x1042, 0, ctypes.byref(val), 0)   # SPI_GETCLIENTAREAANIMATION
                 _system_ok = bool(val.value)
             except Exception:
@@ -236,6 +242,7 @@ class HoverLift(QObject):
         self._w = target
         self._t = 0.0                     # 0 спокій … 1 повний підйом
         self._home_y = None               # y у спокої (свіжий на кожен вхід)
+        self._self_move = False           # move() зроблений нами, не layout-ом
         self._shadow = None
         self._anim = QVariantAnimation(self)
         self._anim.valueChanged.connect(self._apply)
@@ -244,7 +251,7 @@ class HoverLift(QObject):
 
     def eventFilter(self, _obj, event):
         et = event.type()
-        # Ревізія №2: якщо елемент опинився ВСЕРЕДИНІ контейнера, що вже має
+        # Рецензія №2: якщо елемент опинився ВСЕРЕДИНІ контейнера, що вже має
         # lift (картка-плитка), власний підйом дав би подвійний рух (кнопка в
         # наведеній картці підстрибувала б на 6px). Тож щойно виявляємо lift-
         # предка (потрапляння в картку / показ) — знімаємо власний підйом.
@@ -257,6 +264,20 @@ class HoverLift(QObject):
                 self._start(1.0)
         elif et == QEvent.Type.Leave:
             self._start(0.0)
+        elif (et == QEvent.Type.Move and self._t > 0.001
+                and not self._self_move
+                and getattr(self._w, "_press_anim", None) is None):
+            # ^ press() анімує geometry тієї самої кнопки — без цієї умови
+            # кожен клік під наведенням зсував би «дім» на тимчасову позицію
+            # натиску і кнопка дрейфувала вгору по ~3px назавжди (рецензія 31.07).
+            # Живий випадок 31.07 (Запис екрана): картка перебудувалась під
+            # нерухомим курсором — Enter прилетів ДО першої розкладки, «дім»
+            # запам'ятався з y=0, і кнопку «Видалити» жбурнуло в чужі
+            # координати (обрізана в шапці картки). Move НЕ від нас = layout
+            # розставив по-справжньому: беремо нову позицію за дім і
+            # застосовуємо підйом уже від неї.
+            self._home_y = self._w.y()
+            self._apply(self._t)
         return False                      # не поглинаємо — enterEvent/glow працюють далі
 
     def _dismantle(self) -> None:
@@ -297,18 +318,46 @@ class HoverLift(QObject):
         self._w.setGraphicsEffect(sh)
         self._shadow = sh
 
+    def _alive(self) -> bool:
+        """Чи живий ще підопічний віджет (і його тінь).
+
+        Анімація переживає віджет: Qt може знищити C++-об'єкт (закрили
+        діалог, перебудували сторінку), а таймер QVariantAnimation ще
+        встигає штовхнути valueChanged — і звернення до мертвого об'єкта
+        валить УСЮ програму з RuntimeError від libshiboken. Саме це
+        сталося при збереженні назви наради 30.07.2026.
+
+        Той самий захист уже стояв у анімаціях прокрутки нижче в цьому
+        файлі (див. _clear_scroll_anim) — але сюди його свого часу не
+        поширили. Тепер стоїть на кожному шляху, що торкається віджета.
+        """
+        if not shiboken6.isValid(self._w):
+            return False
+        if self._shadow is not None and not shiboken6.isValid(self._shadow):
+            self._shadow = None
+        return True
+
     def _apply(self, v) -> None:
+        if not self._alive():
+            self._anim.stop()
+            return
         self._t = float(v)
         if self._shadow is not None:
             self._shadow.setBlurRadius(self.BLUR * self._t)
             self._shadow.setOffset(0.0, self.Y_OFFSET * self._t)
         if self._home_y is not None:
-            self._w.move(self._w.x(),
-                         int(round(self._home_y - self.RISE * self._t)))
+            self._self_move = True
+            try:
+                self._w.move(self._w.x(),
+                             int(round(self._home_y - self.RISE * self._t)))
+            finally:
+                self._self_move = False
 
     def _on_finished(self) -> None:
         # завершення виходу (t≈0): зняти тінь і повернути точну позицію layout-у
         if self._t > 0.001:
+            return
+        if not self._alive():
             return
         if self._shadow is not None:
             self._w.setGraphicsEffect(None)   # 0 offscreen-ефектів у спокої

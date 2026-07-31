@@ -135,7 +135,7 @@ class TestRevisionStop(unittest.TestCase):
 
 
 class TestLiveStreamIntegration(unittest.TestCase):
-    """БЛОКЕР 1 суду: ЖИВА зв'язка controller→panel→highlighter. Наявний
+    """БЛОКЕР 1 рецензії: ЖИВА зв'язка controller→panel→highlighter. Наявний
     test-компонент тестує highlighter ізольовано з ручними даними; тут — реальний
     потік чанків з контролера в панель: nav ◀/▶ стрибає між реченнями, гранулярність
     «речення» підсвічує ціле речення, _sentence_starts не порожній."""
@@ -189,7 +189,8 @@ class TestLiveStreamIntegration(unittest.TestCase):
 
         rv = SimpleNamespace(id="v", engine_kind="fake",
                              manifest_path=_tf.mkdtemp(), languages=("uk",),
-                             available=lambda: True)
+                             available=lambda: True,
+                             integrity_available=lambda: True)
         cfg = SimpleNamespace(tts_enabled=True, tts_voice_uk="v",
                               tts_voice_en="v", ui_language="uk")
         captured = []
@@ -256,7 +257,7 @@ class TestReverseResume(unittest.TestCase):
 
 
 class TestPanelDoubleClickFix(unittest.TestCase):
-    """Хвіст суду хв.4: double-click по слову в караоке-панелі → діалог вимови з
+    """Хвіст рецензії хв.4: double-click по слову в караоке-панелі → діалог вимови з
     передзаповненим словом (не лише ручний fix_word)."""
 
     def test_double_click_routes_to_on_fix_word(self):

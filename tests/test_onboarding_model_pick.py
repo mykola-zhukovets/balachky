@@ -106,6 +106,17 @@ class OnboardingModelPickTests(unittest.TestCase):
         snap = _snapshot_dir(Path(self.link_hub))
         for name in FILES:
             self.assertFalse(os.path.islink(snap / name), name)
+        # Аудит 30.07 (Дефект 1): модель уже готова, але крок «Додаткові
+        # можливості» ВСЕ ОДНО показується (раніше тут одразу приймалось).
+        self.assertEqual(wizard._stack.currentIndex(), 4)
+        self.assertNotEqual(wizard.result(), onboarding.QDialog.DialogCode.Accepted)
+
+        # людина нічого там не обирає — лише тоді майстер завершується.
+        # accept() показує чесний підсумок (QMessageBox) — тут його мокуємо,
+        # бо цей тест про лікування symlink-знімка, не про текст підсумку.
+        with patch("whisper_core.cuda_runtime.gpu_present", return_value=False), \
+                patch.object(onboarding.QMessageBox, "information"):
+            wizard._skip_extra()
         self.assertEqual(wizard.result(), onboarding.QDialog.DialogCode.Accepted)
 
 

@@ -6,8 +6,10 @@ import tempfile
 import threading
 import time
 import unittest
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -70,7 +72,8 @@ def _live_temps():
 def _rv(available=True, langs=("uk",)):
     return SimpleNamespace(id="styletts2_ua", engine_kind="styletts2",
                            manifest_path=tempfile.mkdtemp(prefix="voice-"),
-                           languages=langs, available=lambda: available)
+                           languages=langs, available=lambda: available,
+                           integrity_available=lambda: available)
 
 
 def _combine(wavs, out):
@@ -110,6 +113,32 @@ def _wait(ctrl, timeout=5):
 
 
 class TestGuards(unittest.TestCase):
+    def test_integrity_check_runs_only_in_worker_thread(self):
+        caller_thread = threading.get_ident()
+        integrity_threads = []
+        integrity_checked = threading.Event()
+
+        def check_integrity():
+            integrity_threads.append(threading.get_ident())
+            integrity_checked.set()
+            return True
+
+        rv = SimpleNamespace(
+            id="styletts2_ua", engine_kind="styletts2",
+            manifest_path="manifest.json",
+            languages=("uk",), available=lambda: True,
+            integrity_available=check_integrity)
+        ctrl, _sc, _events = _make_controller(
+            resolve=lambda vid, lang: rv)
+
+        self.assertEqual(
+            ctrl.play_text("Привіт світ українською тут"), "playing")
+        self.assertNotIn(caller_thread, integrity_threads)
+        self.assertTrue(integrity_checked.wait(2), "worker не перевірив голос")
+        _wait(ctrl)
+        self.assertTrue(integrity_threads)
+        self.assertNotIn(caller_thread, integrity_threads)
+
     def test_disabled_blocks(self):
         toasts = []
         ctrl, _sc, _ = _make_controller(enabled=False, toast=toasts.append)
@@ -126,6 +155,49 @@ class TestGuards(unittest.TestCase):
             resolve=lambda vid, lang: _rv(available=False), toast=toasts.append)
         self.assertEqual(ctrl.play_text("Привіт світ українською тут"), "no_voice")
         self.assertIn("tts_no_voice_hint", toasts)
+
+    def test_pre_use_gate_rejects_incomplete_and_corrupt_voice_directory(self):
+        root = Path(tempfile.mkdtemp(prefix="controller-integrity-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        good_a, good_b = b"trusted-a", b"trusted-b"
+        preset = voices.VoicePreset(
+            id="styletts2_ua", engine_kind="styletts2", languages=("uk",),
+            files=(
+                ("https://example.invalid/a", "a.bin", len(good_a),
+                 sha256(good_a).hexdigest()),
+                ("https://example.invalid/b", "b.bin", len(good_b),
+                 sha256(good_b).hexdigest()),
+            ),
+            approx_size_bytes=len(good_a) + len(good_b),
+            label_key="k", hint_key="k")
+
+        def populate(case, voice_dir):
+            if case == "empty":
+                return
+            (voice_dir / "READY").write_text("ok", encoding="utf-8")
+            (voice_dir / "a.bin").write_bytes(good_a)
+            if case == "corrupt_sha":
+                (voice_dir / "b.bin").write_bytes(b"x" * len(good_b))
+
+        with mock.patch.dict(
+                voices.VOICE_PRESETS, {preset.id: preset}, clear=False):
+            for case in ("empty", "missing_file", "corrupt_sha"):
+                with self.subTest(case=case):
+                    voice_dir = root / preset.id
+                    __import__("shutil").rmtree(voice_dir, ignore_errors=True)
+                    voice_dir.mkdir()
+                    populate(case, voice_dir)
+                    toasts = []
+                    ctrl, sidecar, _events = _make_controller(
+                        resolve=lambda vid, lang: voices.resolve(
+                            vid, lang, root=root),
+                        toast=toasts.append)
+
+                    result = ctrl.play_text("Прочитай це українське речення")
+                    _wait(ctrl)
+                    self.assertEqual(result, "playing")
+                    self.assertIn("tts_no_voice_hint", toasts)
+                    self.assertEqual(sidecar.loaded, [])
 
     def test_language_mismatch(self):
         toasts = []
@@ -218,7 +290,7 @@ class TestLatestWinsRejectBusy(unittest.TestCase):
         self.assertEqual(events["exported"], [])
 
     def test_no_plaintext_temp_leak(self):
-        # БЛОКЕР суду §8.9: 3 послідовні «Прослухати» → максимум 1 жива temp-тека
+        # БЛОКЕР рецензії §8.9: 3 послідовні «Прослухати» → максимум 1 жива temp-тека
         # одночасно; після stop() → 0. (регрес блокера 6 Хвилі 1)
         _TEMP_REGISTRY.clear()
         ctrl, _sc, _ = _make_controller()

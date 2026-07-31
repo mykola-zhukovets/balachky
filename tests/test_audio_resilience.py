@@ -225,6 +225,7 @@ class AudioResilienceTests(unittest.TestCase):
 
         with patch.object(recorder_module, "sd", fake_sd):
             recorder = Recorder(100, input_device="A")
+            self.addCleanup(recorder.close)
             recorder.start()
             old = recorder._stream
             with patch.object(recorder_module, "sleep", during_retry):
@@ -270,6 +271,7 @@ class AudioResilienceTests(unittest.TestCase):
 
         with patch.object(recorder_module, "sd", FakeSD()):
             recorder = Recorder(100, input_device="A")
+            self.addCleanup(recorder.close)
             recorder.start()
             old_callback = recorder._stream.callback
 
@@ -285,6 +287,41 @@ class AudioResilienceTests(unittest.TestCase):
             self.assertFalse(recorder._recovery_requested.is_set())
             self.assertIsNone(recorder._recovery_generation)
             recorder.close()
+
+    def test_missing_selected_microphone_reports_default_fallback_on_recording_start(self):
+        class FakeStream:
+            active = False
+
+            def start(self):
+                self.active = True
+
+            def stop(self):
+                self.active = False
+
+            def close(self):
+                self.active = False
+
+        class FakeSD:
+            @staticmethod
+            def query_devices():
+                return [{"name": "Laptop microphone", "max_input_channels": 1}]
+
+            @staticmethod
+            def InputStream(**kwargs):
+                self.assertIsNone(kwargs["device"])
+                return FakeStream()
+
+        states = []
+        with patch.object(recorder_module, "sd", FakeSD()):
+            recorder = Recorder(
+                100, input_device="Disconnected headset",
+                on_audio_state=states.append)
+            self.addCleanup(recorder.close)
+            self.assertEqual(states, [])              # до запису не тривожимо
+            recorder.start()
+            recorder.start()                         # один fallback, не спам
+
+        self.assertEqual(states, ["fallback"])
 
     def test_existing_constructor_calls_remain_valid(self):
         """Нові hooks optional: старі recorder/capture виклики не змінюються."""

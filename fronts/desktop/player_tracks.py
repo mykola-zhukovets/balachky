@@ -405,6 +405,14 @@ class TrackMixerPanel(QWidget):
             c.audio.setVolume(
                 effective_volume(c.user_volume, c.enabled, c.solo, any_solo))
 
+    def get_effective_volumes(self) -> dict:
+        """Поточний баланс мікшера: {ключ_доріжки: effective_volume} — той самий
+        коефіцієнт, що йде в QAudioOutput.setVolume(). Основа для «Зберегти
+        зведення»: файл звучить так само, як користувач чув під час прослуховування."""
+        any_solo = any(c.solo for c in self.channels)
+        return {c.key: effective_volume(c.user_volume, c.enabled, c.solo, any_solo)
+                for c in self.channels}
+
 
 # ─────────────────────── багатодоріжковий аудіоплеєр ───────────────────────
 class MultiTrackPlayer(QWidget):
@@ -505,6 +513,10 @@ class MultiTrackPlayer(QWidget):
         self._group.stop()
         self._pending_position = None
         self._fragment_end = None
+
+    def get_effective_volumes(self) -> dict:
+        """Поточний баланс мікшера панелі — для «Зберегти зведення» (feature/save-mix-balance)."""
+        return self._panel.get_effective_volumes()
 
     def seek_ms(self, ms: int) -> None:
         """Перемотати всі доріжки (клік по хвилі/таймкоду транскрипту)."""

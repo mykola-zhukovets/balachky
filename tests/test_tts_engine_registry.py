@@ -64,7 +64,7 @@ class TestRegistry(unittest.TestCase):
 
 
 class TestStyleTts2Durations(unittest.TestCase):
-    """Чиста обробка виходу duration-предиктора (numpy, без torch). Мутація суду
+    """Чиста обробка виходу duration-предиктора (numpy, без torch). Мутація рецензії
     (прибраний .reshape(-1)) лишалася зеленою офлайн — torch-гілку synthesize()
     покриває лише real-engine golden, що скіпається без стека воркера."""
 

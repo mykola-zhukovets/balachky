@@ -7,6 +7,7 @@
 
 # Публічний репозиторій програми.
 GITHUB_URL = "https://github.com/mykola-zhukovets/balachky"
+ISSUE_URL = GITHUB_URL + "/issues/new"
 
 # Сторінка автора в X (Twitter). Адресу підтвердив власник 25.07.
 X_URL = "https://x.com/zukovec20653"

@@ -137,7 +137,7 @@ class TestQAGeneratorRun(unittest.TestCase):
         self.assertTrue(g.available())
 
     def test_fake_backend_rejected_not_shown_as_answer(self):
-        """Блокер (урок судді): без llama worker бере FakeBackend, чий вихід —
+        """Блокер (урок рецензента): без llama worker бере FakeBackend, чий вихід —
         позначка. run() має відхилити її як QAError з UA-повідомленням «встановіть
         компонент», а НЕ повернути заглушку за відповідь."""
         _make_ready_model(self.tmp)

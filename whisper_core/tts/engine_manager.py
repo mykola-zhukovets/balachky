@@ -25,14 +25,17 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from whisper_core import paths
+from packaging.version import InvalidVersion, Version
+
+from whisper_core import netlog, paths
 from whisper_core.paths import safe_under
+from whisper_core.version import DISPLAY_VERSION
 
 _log = logging.getLogger("balachky.tts.engine_manager")
 
 SIGNING_PREFIX = b"Balachky tts engine manifest v1\x00"
 UNSIGNED_FIELDS = ("signature", "signature_key_id")
-CURRENT_APP_VERSION = "1.2.3"
+CURRENT_APP_VERSION = DISPLAY_VERSION
 EXPECTED_PROTOCOL_VERSION = 1
 DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/mykola-zhukovets/balachky-tts-engine/main/engine_manifest.json"
 
@@ -140,10 +143,10 @@ def verify_manifest_signature(manifest: dict) -> None:
 
 
 def parse_version_tuple(v_str: str) -> tuple[int, ...]:
-    """Парсинг версії "1.2.3" у кортеж (1, 2, 3)."""
+    """Числовий release-сегмент версії, незалежно від суфікса каналу."""
     try:
-        return tuple(int(x) for x in str(v_str).strip().split("."))
-    except ValueError:
+        return Version(str(v_str).strip()).release
+    except InvalidVersion:
         return (0, 0, 0)
 
 
@@ -217,7 +220,9 @@ def check_disk_space(extracted_size_bytes: int, archive_size_bytes: int = 0, tar
 
 def fetch_engine_manifest(url: str = DEFAULT_MANIFEST_URL) -> dict:
     """Завантажити маніфест рушія з мережі за URL (БЛОКЕР 4)."""
-    req = urllib.request.Request(url, headers={"User-Agent": "BalachkyApp/1.2.3"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": f"BalachkyApp/{DISPLAY_VERSION}"})
+    netlog.record_url(url, kind=netlog.MODEL, detail="tts-engine-manifest")
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = resp.read()
@@ -246,6 +251,7 @@ def download_file(url: str, dest_path: Path, expected_size: int | None = None,
             mode = "ab"
 
     req = urllib.request.Request(url, headers=headers)
+    netlog.record_url(url, kind=netlog.MODEL, detail="tts-engine-archive")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             status = resp.status

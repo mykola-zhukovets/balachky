@@ -24,8 +24,11 @@ symspellpy — ОПЦІЙНА залежність: якщо пакета нем
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import logging
+import os
 import re
+import threading
 from pathlib import Path
 
 # Коротші слова «виправляти» надто ризиковано (легко перескочити на інше слово).
@@ -36,6 +39,8 @@ MAX_EDIT_DISTANCE = 2
 # Послідовність літер, з'єднаних апострофом («комп'ютер», «п'ять») — один токен.
 # Цифри та підкреслення не чіпаємо (це не слова природної мови).
 _WORD_RE = re.compile(r"[^\W\d_]+(?:['’ʼ][^\W\d_]+)*", re.UNICODE)
+_INTEGRITY_CACHE = {}
+_INTEGRITY_CACHE_LOCK = threading.Lock()
 
 
 def symspell_available() -> bool:
@@ -46,18 +51,53 @@ def symspell_available() -> bool:
         return False
 
 
-def dictionary_available(dict_path) -> bool:
-    """Чи завантажено файл частотного словника (непорожній звичайний файл)."""
+def _integrity_fingerprint(path: Path):
+    """Метадані всіх asset-ів: кеш вважає файл незмінним, доки між перевірками
+    збігаються size і mtime_ns. Атакер із правом запису в теку голосу може зберегти
+    ці значення після підміни; повний захист вимагав би свідомо відкинутого заради
+    швидкості робочого шляху повторного SHA-хешування на кожне використання."""
     try:
-        p = Path(dict_path)
-        return p.is_file() and p.stat().st_size > 0
+        stat_result = path.stat()
+        if not path.is_file() or stat_result.st_size <= 0:
+            return None
     except OSError:
-        return False
+        return None
+    return stat_result.st_size, stat_result.st_mtime_ns
 
 
-def available(dict_path) -> bool:
+def dictionary_available(dict_path, expected_sha256=None) -> bool:
+    """Чи завантажено файл частотного словника (непорожній звичайний файл)."""
+    p = Path(dict_path)
+    if not expected_sha256:
+        return _integrity_fingerprint(p) is not None
+    expected = expected_sha256.lower()
+    scope = (os.path.abspath(os.fspath(p)), expected)
+    with _INTEGRITY_CACHE_LOCK:
+        fingerprint = _integrity_fingerprint(p)
+        if fingerprint is None:
+            _INTEGRITY_CACHE.pop(scope, None)
+            return False
+        cached = _INTEGRITY_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        try:
+            checksum = hashlib.sha256()
+            with p.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    checksum.update(block)
+            valid = checksum.hexdigest() == expected
+        except OSError:
+            return False
+        if _integrity_fingerprint(p) != fingerprint:
+            return False
+        _INTEGRITY_CACHE[scope] = (fingerprint, valid)
+        return valid
+
+
+def available(dict_path, expected_sha256=None) -> bool:
     """Крок готовий до роботи: є і пакет symspellpy, і завантажений словник."""
-    return symspell_available() and dictionary_available(dict_path)
+    return (symspell_available()
+            and dictionary_available(dict_path, expected_sha256))
 
 
 def _match_case(original: str, replacement: str) -> str:
@@ -101,11 +141,12 @@ class Corrector:
         return _WORD_RE.sub(lambda m: self._correct_word(m.group(0), protected), text)
 
 
-def load_corrector(dict_path):
+def load_corrector(dict_path, expected_sha256=None):
     """Побудувати Corrector із частотного словника. → None, якщо symspellpy нема
     або словник не читається (виклик безпечний навіть без встановленого пакета —
     саме тому імпорт symspellpy лінивий)."""
-    if not symspell_available():
+    if (not symspell_available()
+            or not dictionary_available(dict_path, expected_sha256)):
         return None
     # Увесь ланцюг (import → SymSpell() → load_dictionary) під одним try: словник
     # може бути фізично пошкоджений так, що load кидає НЕ OSError (напр. під час

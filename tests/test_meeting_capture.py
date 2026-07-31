@@ -2,7 +2,6 @@
 device-резолвери тестуємо з фейковим PyAudio, а watchdog/рівень/втрату пристрою —
 на фейковому stream з інжектованим годинником (без реального аудіо і без потоків)."""
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -70,6 +69,22 @@ class LoopbackResolveTests(unittest.TestCase):
             self.assertIsNone(capture.default_loopback())
 
 
+class CommunicationsDeviceTests(unittest.TestCase):
+    """default_communications_device_name(): роль WASAPI «для зв'язку», яку
+    PyAudioWPatch не віддає взагалі (аудит 30.07, ризик 1) — дістаємо напряму
+    через ctypes/COM. Чесна межа: поза Windows — завжди None, без здогадів."""
+
+    def test_returns_none_off_windows(self):
+        with patch("sys.platform", "linux"):
+            self.assertIsNone(capture.default_communications_device_name())
+
+    def test_never_raises_and_returns_str_or_none(self):
+        # На цій машині Windows — результат залежить від живого COM/аудіо, тож
+        # перевіряємо лише контракт (тип), а не конкретне ім'я пристрою.
+        result = capture.default_communications_device_name()
+        self.assertTrue(result is None or isinstance(result, str))
+
+
 class InputResolveTests(unittest.TestCase):
     def _fake(self):
         # той самий мік присутній на MME (host 0) і WASAPI (host 5) + loopback
@@ -123,14 +138,17 @@ class _FakeStream:
 
 
 def _stream(*, kind="mic", channels=1, sink=None, on_stall=None,
-            on_device_lost=None, on_sink_error=None, on_audio=None):
+            on_device_lost=None, on_sink_error=None, on_audio=None,
+            on_silence=None, on_silence_resolved=None):
     cs = CaptureStream(
         kind=kind, device_index=0, channels=channels, rate=48000,
         sink=sink or (lambda pcm: None),
         on_stall=on_stall or (lambda: None),
         on_device_lost=on_device_lost or (lambda exc: None),
         on_sink_error=on_sink_error,
-        on_audio=on_audio)
+        on_audio=on_audio,
+        on_silence=on_silence,
+        on_silence_resolved=on_silence_resolved)
     return cs
 
 
@@ -192,6 +210,124 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(cs.frames_written, 4)
         cs._check_stall(now=100.1)                   # свіжа мітка → без stall
         self.assertEqual(stalls, [])
+
+
+class SilenceWatchdogTests(unittest.TestCase):
+    """Вартовий тиші системної доріжки (аудит 30.07, ризик 5): попереджає ОДИН
+    раз, якщо за SILENCE_WARN_SECONDS доріжка не принесла жодного реального
+    ненульового блока. Донабита gap-fill тиша НЕ рахується за «почутий звук»."""
+
+    def test_all_zero_track_warns_once_after_threshold(self):
+        warned = []
+        cs = _stream(channels=1, on_silence=lambda: warned.append(1))
+        cs._t0 = 0.0
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS - 0.1)
+        self.assertEqual(warned, [])                 # ще рано — не спамимо завчасно
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS)
+        self.assertEqual(len(warned), 1)
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS + 30)
+        self.assertEqual(len(warned), 1)              # один епізод — без повторів
+
+    def test_real_audio_before_threshold_prevents_warning(self):
+        # реальний (не gap-fill) блок зі звуком — heard_sound=True; поріг мовчить
+        warned = []
+        cs = _stream(channels=1, on_silence=lambda: warned.append(1))
+        cs._t0 = 0.0
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS + 5)
+        self.assertEqual(warned, [])
+
+    def test_gap_fill_zeros_do_not_count_as_heard_sound(self):
+        # _fill_gap пише тишу напряму через sink, МИНАЮЧИ _update_level —
+        # вартовий і далі мусить вважати доріжку «нечутою»
+        cs = _stream(channels=1)
+        cs._t0 = 0.0
+        cs._fill_gap(now=5.0, exact=True)             # донабиває тишу за 5 с
+        self.assertFalse(cs._heard_sound)
+
+    def test_real_silent_block_read_does_not_count_as_heard_sound(self):
+        # справжній кадр з мовчазного loopback (усі нулі, прийшов через read())
+        # теж не має рахуватись «почутим звуком» — інакше вартовий ніколи не
+        # спрацює на «слухаємо не той пристрій».
+        warned = []
+        cs = _stream(channels=1, on_silence=lambda: warned.append(1))
+        cs._stream = _FakeStream([np.zeros(4, dtype=np.float32).tobytes()])
+        cs._running = True
+        cs._t0 = 0.0
+        cs._pump(now=0.0)
+        self.assertFalse(cs._heard_sound)
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS)
+        self.assertEqual(len(warned), 1)
+
+    def test_real_sound_after_warning_fires_resolved_once(self):
+        """Суддівське зауваження 30.07: попередження мусить мати «слід
+        завершення» — коли після спрацювання приходить перший реальний звук,
+        on_silence_resolved летить рівно один раз (банер ховається)."""
+        warned = []
+        resolved = []
+        cs = _stream(channels=1, on_silence=lambda: warned.append(1),
+                     on_silence_resolved=lambda: resolved.append(1))
+        cs._t0 = 0.0
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS)   # спрацювало
+        self.assertEqual(len(warned), 1)
+        self.assertEqual(resolved, [])                        # ще нема звуку
+
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())
+        self.assertEqual(len(resolved), 1)                    # звук прийшов → зникло
+
+        # наступні блоки (тиша чи звук) НЕ повторюють resolved — немає флікеру
+        cs._update_level(np.zeros(128, dtype=np.float32).tobytes())
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())
+        self.assertEqual(len(resolved), 1)
+
+    def test_sound_before_warning_never_triggers_resolved(self):
+        """Якщо звук прийшов ДО того, як попередження взагалі показали
+        (_silence_notified лишається False) — resolved не потрібен, попередження
+        просто ніколи не спрацює (test_real_audio_before_threshold_prevents_warning)."""
+        resolved = []
+        cs = _stream(channels=1, on_silence_resolved=lambda: resolved.append(1))
+        cs._t0 = 0.0
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS + 5)
+        self.assertEqual(resolved, [])
+
+    def test_pause_between_replies_does_not_flicker_after_resolved(self):
+        """Реальний сценарій: репліка з'являється й зникає (пауза між
+        репліками) ПІСЛЯ того, як банер уже сховано. Немає повторного
+        показу/ховання — heard_sound залишається True назавжди."""
+        warned = []
+        resolved = []
+        cs = _stream(channels=1, on_silence=lambda: warned.append(1),
+                     on_silence_resolved=lambda: resolved.append(1))
+        cs._t0 = 0.0
+        cs._check_silence(now=capture.SILENCE_WARN_SECONDS)
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())   # репліка
+        self.assertEqual(len(resolved), 1)
+        # пауза (нулі), потім ще одна репліка — сторожа мовчить: попередження
+        # не з'являється знову, бо _heard_sound уже True
+        for _ in range(5):
+            cs._check_silence(now=capture.SILENCE_WARN_SECONDS + 60)
+        cs._update_level(np.zeros(128, dtype=np.float32).tobytes())
+        cs._update_level(np.ones(128, dtype=np.float32).tobytes())
+        self.assertEqual(len(warned), 1)
+        self.assertEqual(len(resolved), 1)
+
+
+class DeviceBusyErrorTests(unittest.TestCase):
+    """Розпізнавання виключного режиму WASAPI (аудит 30.07, ризик 6): чітке
+    повідомлення замість загального «не вдалося ініціалізувати»."""
+
+    def test_recognizes_known_exclusive_mode_markers(self):
+        for text in (
+            "AUDCLNT_E_DEVICE_IN_USE",
+            "[Errno -9999] Unanticipated host error: 0x8889000A",
+            "The device is already in use by another application.",
+        ):
+            self.assertTrue(capture.is_device_busy_error(DeviceLost(text)), text)
+
+    def test_generic_error_is_not_flagged_busy(self):
+        self.assertFalse(capture.is_device_busy_error(
+            DeviceLost("Пристрій не знайдено")))
 
 
 class NonBlockingReadTests(unittest.TestCase):
@@ -319,6 +455,79 @@ class SinkFailureTests(unittest.TestCase):
         self.assertEqual(got, [data])
         self.assertEqual(cs.frames_written, 4)
 
+    def test_persistent_non_enospc_error_reaches_user_callback_once(self):
+        warnings = []
+
+        def denied(_pcm):
+            raise PermissionError("access denied")
+
+        cs = _stream(sink=denied, on_sink_error=lambda exc, elapsed: warnings.append(
+            (exc, elapsed)))
+        cs._stream = _FakeStream([np.ones(4, dtype=np.float32).tobytes()])
+        cs._running = True
+        cs._t0 = 10.0
+
+        with self.assertLogs(level="ERROR"):
+            cs._pump(now=20.0)                        # разовий збій — без тосту
+        cs._pump(now=21.0)
+        self.assertEqual(warnings, [])
+        cs._pump(now=22.0)                            # стійкий збій → UI callback
+        cs._pump(now=23.0)                            # той самий епізод не спамить
+
+        self.assertTrue(cs._running)
+        self.assertEqual(len(warnings), 1)
+        self.assertIsInstance(warnings[0][0], PermissionError)
+        self.assertEqual(warnings[0][1], 12.0)
+
+    def test_alternating_sink_failures_warn_about_fifty_percent_loss_once(self):
+        warnings = []
+        calls = {"total": 0, "failed": 0}
+
+        def alternating_sink(_pcm):
+            calls["total"] += 1
+            if calls["total"] % 2:
+                calls["failed"] += 1
+                raise PermissionError("access denied")
+
+        cs = _stream(sink=alternating_sink,
+                     on_sink_error=lambda exc, elapsed: warnings.append((exc, elapsed)))
+        data = np.ones(capture.READ_BLOCK, dtype=np.float32).tobytes()
+        cs._stream = _FakeStream([data])
+        cs._running = True
+        cs._t0 = 0.0
+
+        with self.assertLogs(level="ERROR"):
+            for block in range(400):
+                cs._pump(now=block / 1000)
+
+        self.assertEqual(calls, {"total": 400, "failed": 200})
+        self.assertEqual(cs.frames_written, 819200)
+        self.assertEqual(len(warnings), 1)
+        self.assertIsInstance(warnings[0][0], PermissionError)
+
+    def test_one_or_two_isolated_sink_failures_do_not_warn(self):
+        warnings = []
+        calls = {"n": 0}
+
+        def twice_flaky_sink(_pcm):
+            calls["n"] += 1
+            if calls["n"] in (1, 301):
+                raise PermissionError("access denied")
+
+        cs = _stream(sink=twice_flaky_sink,
+                     on_sink_error=lambda exc, elapsed: warnings.append((exc, elapsed)))
+        data = np.ones(capture.READ_BLOCK, dtype=np.float32).tobytes()
+        cs._stream = _FakeStream([data])
+        cs._running = True
+        cs._t0 = 0.0
+
+        with self.assertLogs(level="ERROR"):
+            for block in range(400):
+                cs._pump(now=block / 1000)
+
+        self.assertEqual(calls["n"], 400)
+        self.assertEqual(warnings, [])
+
 
 class SharedClockTests(unittest.TestCase):
     def test_three_tracks_fill_from_one_clock_origin(self):
@@ -357,6 +566,7 @@ class DeviceLostTests(unittest.TestCase):
         cs._running = True
         cs._t0 = 0.0
         cs._pump(now=65.0)
+        self.assertEqual(len(warnings), 1)  # ENOSPC минає віконний поріг
         cs._pump(now=66.0)  # той самий епізод не спамить UI
         self.assertTrue(cs._running)
         self.assertEqual(len(warnings), 1)

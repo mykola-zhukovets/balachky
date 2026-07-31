@@ -85,6 +85,9 @@ class _Slider(QWidget):
 
     moved = Signal(float)
 
+    #: крок перемотки/гучності на Key_Left/Key_Right (5% діапазону)
+    _KEY_STEP = 0.05
+
     def __init__(self, *, eyebrow=False, height=16, parent=None):
         super().__init__(parent)
         self._value = 0.0
@@ -93,6 +96,7 @@ class _Slider(QWidget):
         self.setFixedHeight(height)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def set_fraction(self, frac: float) -> None:
         """Оновити позицію ззовні (плеєр рухається) — без сигналу moved.
@@ -131,6 +135,28 @@ class _Slider(QWidget):
             self._value = self._value_at(event.position().x())
             self.update()
             self.moved.emit(self._value)
+
+    def keyPressEvent(self, event):
+        """Клавіатурна перемотка: ←/→ — крок _KEY_STEP; Home/End — краї."""
+        key = event.key()
+        if key == Qt.Key_Left:
+            self._set_value(self._value - self._KEY_STEP)
+        elif key == Qt.Key_Right:
+            self._set_value(self._value + self._KEY_STEP)
+        elif key == Qt.Key_Home:
+            self._set_value(0.0)
+        elif key == Qt.Key_End:
+            self._set_value(1.0)
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
+
+    def _set_value(self, v: float) -> None:
+        v = 0.0 if v < 0 else 1.0 if v > 1 else float(v)
+        self._value = v
+        self.update()
+        self.moved.emit(self._value)
 
     def paintEvent(self, _event):
         p = QPainter(self)
@@ -258,6 +284,7 @@ class InlinePlayer(QWidget):
         row.addWidget(self._time)
 
         self._seek = _Slider()
+        self._seek.setAccessibleName(tr("player_position"))
         self._seek.moved.connect(self._on_seek)
         row.addWidget(self._seek, stretch=1)
 
@@ -277,6 +304,7 @@ class InlinePlayer(QWidget):
         self._vol_btn.clicked.connect(self._toggle_mute)
         row.addWidget(self._vol_btn)
         self._vol = _Slider(eyebrow=True)
+        self._vol.setAccessibleName(tr("player_volume"))
         self._vol.setFixedWidth(72)
         self._vol.set_fraction(0.9)
         self._vol.moved.connect(self._on_volume)

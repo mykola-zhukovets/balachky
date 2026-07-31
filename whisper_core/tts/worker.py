@@ -189,13 +189,13 @@ def synthesize_stream(engine, msg: dict, emit, is_cancelled) -> None:
     wav_dir = msg.get("wav_dir") or ""
     want_timings = bool(msg.get("want_timings"))
     # source_start_cp (editor-anchor) НЕ застосовуємо у воркері — вертаємо fragment-
-    # relative; anchor додає БАТЬКО (§3.2, ревізія). Поле лишається в IPC для parent.
+    # relative; anchor додає БАТЬКО (§3.2, рецензія). Поле лишається в IPC для parent.
     speed = 1.0                                   # синтез ЗАВЖДИ 1.0; темп — у плеєрі (§8.4)
     text = msg.get("text", "")
 
     # want_timings → offset-ТОЧНИЙ спліт (караоке raw-координати) + offset-зберігаючий
     # cap першого чанку (TTFS < 0.5 c гарантований і для playback з караоке — блокер
-    # суду: «Прослухати» завжди йде через want_timings=True). Без караоке — звичайний
+    # рецензії: «Прослухати» завжди йде через want_timings=True). Без караоке — звичайний
     # спліт із cap.
     if want_timings:
         chunks = apply_first_chunk_cap_spans(split_sentences_spans(text))
@@ -234,7 +234,7 @@ def synthesize_stream(engine, msg: dict, emit, is_cancelled) -> None:
         if want_timings and res.token_durations and res.phoneme_to_word:
             from . import timings as _t
             word_raw_spans = _t.normalized_word_raw_spans(norm_res)
-            # FRAGMENT-relative (§3.2, ревізія): додаємо лише offset речення в
+            # FRAGMENT-relative (§3.2, рецензія): додаємо лише offset речення в
             # ФРАГМЕНТІ, НЕ editor-anchor. Karaoke Хвилі 2 працює в КОПІЇ ListenPanel
             # (anchor=0). Editor-anchor (source_start_cp) додає БАТЬКО, якщо колись
             # підсвічуватиме повний документ — так synthesis і editor coordinate
@@ -256,7 +256,7 @@ def make_engine(engine_kind: str, manifest_path: str):
     """Створити й завантажити рушій. FakeTtsEngine — ЛИШЕ за тестовою env-змінною
     ENV_FAKE_BACKEND; у ПРОДІ (без неї) збій завантаження рушія (немає torch/моделі)
     підіймає EngineLoadError, яку воркер повертає як IPC `error` — НІКОЛИ тиха
-    заглушка за успіх (критична ревізія: відсутня модель ≠ тиша)."""
+    заглушка за успіх (рецензія, критично: відсутня модель ≠ тиша)."""
     from .engines import create_engine
     if os.environ.get(ENV_FAKE_BACKEND):
         eng = create_engine("fake")

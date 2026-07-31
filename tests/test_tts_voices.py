@@ -1,12 +1,30 @@
 """Хвиля 1: менеджер голосів — мовна логіка, resolve без фолбеку, LANGUAGE_MISMATCH."""
+import hashlib
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests._isolation import reset_process_caches
 from whisper_core.tts import voices as V
+
+
+def _temp_root(test_case, prefix):
+    owner = tempfile.TemporaryDirectory(prefix=prefix)
+    root = Path(owner.name)
+    test_case._temp_owners = getattr(test_case, "_temp_owners", [])
+    test_case._temp_owners.append(owner)
+
+    def assert_removed():
+        test_case.assertFalse(root.exists(), f"тест лишив тимчасову теку {root}")
+
+    test_case.addCleanup(assert_removed)
+    test_case.addCleanup(owner.cleanup)
+    return root
 
 
 class TestDefaults(unittest.TestCase):
@@ -26,7 +44,7 @@ class TestDefaults(unittest.TestCase):
 
 class TestResolve(unittest.TestCase):
     def setUp(self):
-        self.root = tempfile.mkdtemp(prefix="voices-")
+        self.root = _temp_root(self, "voices-")
 
     def test_unknown_id_returns_none(self):
         self.assertIsNone(V.resolve("немає_такого", "uk", root=self.root))
@@ -73,7 +91,8 @@ class TestDetectLanguage(unittest.TestCase):
 
 class TestDownloadInstall(unittest.TestCase):
     def setUp(self):
-        self.root = tempfile.mkdtemp(prefix="voices-dl-")
+        reset_process_caches()
+        self.root = _temp_root(self, "voices-dl-")
 
     def test_unknown_voice_raises(self):
         with self.assertRaises(V.VoiceDownloadError):
@@ -88,15 +107,19 @@ class TestDownloadInstall(unittest.TestCase):
         self.assertFalse(V.voice_available("styletts2_ua", root=self.root))
 
     def test_voice_available_true_when_ready(self):
-        # фабрикуємо встановлений голос: READY + усі файли пресета потрібного розміру
+        payload = b"trusted-ready-voice"
+        preset = V.VoicePreset(
+            id="styletts2_ua", engine_kind="styletts2", languages=("uk",),
+            files=(("https://example.invalid/voice.bin", "voice.bin",
+                    len(payload), hashlib.sha256(payload).hexdigest()),),
+            approx_size_bytes=len(payload), label_key="k", hint_key="k")
         vdir = Path(self.root) / "styletts2_ua"
         vdir.mkdir(parents=True)
         (vdir / "READY").write_text("ok")
-        for (_u, fn, min_bytes, _s) in V.VOICE_PRESETS["styletts2_ua"].files:
-            fp = vdir / fn
-            fp.parent.mkdir(parents=True, exist_ok=True)
-            fp.write_bytes(b"\x00" * (int(min_bytes) + 1))
-        self.assertTrue(V.voice_available("styletts2_ua", root=self.root))
+        (vdir / "voice.bin").write_bytes(payload)
+        with mock.patch.dict(
+                V.VOICE_PRESETS, {preset.id: preset}, clear=False):
+            self.assertTrue(V.voice_available("styletts2_ua", root=self.root))
 
     def test_delete_voice(self):
         vdir = Path(self.root) / "styletts2_ua"
@@ -106,7 +129,7 @@ class TestDownloadInstall(unittest.TestCase):
         self.assertFalse(vdir.exists())
 
     def test_corrupted_content_rejected(self):
-        # мутація суду: зіпсований sha-пін тієї САМОЇ довжини лишав 283 passed. Тут
+        # мутація рецензії: зіпсований sha-пін тієї САМОЇ довжини лишав 283 passed. Тут
         # мокаємо мережу вмістом правильної довжини, але НЕвірним sha → _verify_file
         # відхиляє → VoiceDownloadError, тека голосу НЕ створена (не тиха каліч).
         import hashlib
@@ -129,6 +152,73 @@ class TestDownloadInstall(unittest.TestCase):
             V.VOICE_PRESETS.clear()
             V.VOICE_PRESETS.update(orig_presets)
         self.assertFalse((Path(self.root) / "styletts2_ua").exists())
+
+
+class TestPreUseIntegrityCache(unittest.TestCase):
+    def setUp(self):
+        reset_process_caches()
+        self.root = _temp_root(self, "voices-integrity-")
+        self.payload = b"trusted-voice"
+        self.preset = V.VoicePreset(
+            id="styletts2_ua", engine_kind="styletts2", languages=("uk",),
+            files=(("https://example.invalid/voice.bin", "voice.bin",
+                    len(self.payload), hashlib.sha256(self.payload).hexdigest()),),
+            approx_size_bytes=len(self.payload), label_key="k", hint_key="k")
+        self.vdir = self.root / self.preset.id
+        self.vdir.mkdir()
+        (self.vdir / "READY").write_text("ok", encoding="utf-8")
+        (self.vdir / "voice.bin").write_bytes(self.payload)
+
+    def test_integrity_cache_isolated_by_voice_path(self):
+        trusted_root = self.root / "trusted"
+        corrupt_root = self.root / "corrupt"
+        trusted_dir = trusted_root / self.preset.id
+        corrupt_dir = corrupt_root / self.preset.id
+        trusted_dir.mkdir(parents=True)
+        corrupt_dir.mkdir(parents=True)
+        for voice_dir in (trusted_dir, corrupt_dir):
+            (voice_dir / "READY").write_text("ok", encoding="utf-8")
+
+        trusted_path = trusted_dir / "voice.bin"
+        corrupt_path = corrupt_dir / "voice.bin"
+        trusted_path.write_bytes(self.payload)
+        corrupt_path.write_bytes(self.payload[::-1])
+        stamp = 1_700_000_000_000_000_000
+        os.utime(trusted_path, ns=(stamp, stamp))
+        os.utime(corrupt_path, ns=(stamp, stamp))
+        self.assertEqual(
+            V._integrity_fingerprint(trusted_dir, self.preset),
+            V._integrity_fingerprint(corrupt_dir, self.preset))
+
+        with mock.patch.dict(
+                V.VOICE_PRESETS, {self.preset.id: self.preset}, clear=False):
+            self.assertTrue(
+                V.voice_available(self.preset.id, root=trusted_root))
+            self.assertFalse(
+                V.voice_available(self.preset.id, root=corrupt_root))
+
+    def test_repeated_integrity_check_does_not_rehash_unchanged_file(self):
+        real_hasher = V.hashlib.sha256
+        calls = []
+
+        def counted_hasher(*args, **kwargs):
+            calls.append(True)
+            return real_hasher(*args, **kwargs)
+
+        with mock.patch.dict(
+                V.VOICE_PRESETS, {self.preset.id: self.preset}, clear=False), \
+                mock.patch.object(V.hashlib, "sha256", side_effect=counted_hasher):
+            self.assertTrue(V.voice_available(self.preset.id, root=self.root))
+            self.assertTrue(V.voice_available(self.preset.id, root=self.root))
+            voice_file = self.vdir / "voice.bin"
+            old_stat = voice_file.stat()
+            voice_file.write_bytes(b"x" * len(self.payload))
+            os.utime(
+                voice_file,
+                ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns + 2_000_000_000))
+            self.assertFalse(V.voice_available(self.preset.id, root=self.root))
+
+        self.assertEqual(len(calls), 2)
 
 
 class TestPresetPins(unittest.TestCase):
@@ -175,7 +265,8 @@ class TestNestedStage(unittest.TestCase):
     """download_and_install кладе вкладені шляхи (mkdir parent) і блокує небезпечні."""
 
     def setUp(self):
-        self.root = tempfile.mkdtemp(prefix="voices-nest-")
+        reset_process_caches()
+        self.root = _temp_root(self, "voices-nest-")
 
     def test_nested_filename_staged_and_verified(self):
         # підмінюємо мережу: пишемо байти замість завантаження
@@ -251,7 +342,7 @@ class TestCustomVoice(unittest.TestCase):
     def test_from_pack_validates_security(self):
         # безпечний pack → CustomVoice; небезпечний → VoicePackError (з security.py)
         import json as _json
-        d = tempfile.mkdtemp(prefix="pack-")
+        d = _temp_root(self, "pack-")
         (Path(d) / "voice.json").write_text(_json.dumps({
             "schema": 1, "kind": "sherpa", "label": "Мій голос",
             "languages": ["uk"], "files": {"model": "m.onnx", "tokens": "t.txt"},
@@ -268,11 +359,11 @@ class TestCustomVoice(unittest.TestCase):
             V.custom_voice_from_pack(d)
 
     def test_custom_styletts2_rejected(self):
-        # БЛОКЕР 2 суду: власний styletts2-pack ВІДХИЛЯЄТЬСЯ на ДОДАВАННІ (обходить
+        # БЛОКЕР 2 рецензії: власний styletts2-pack ВІДХИЛЯЄТЬСЯ на ДОДАВАННІ (обходить
         # weights_only через бібліотеку). Причина = tts_voice_custom_engine.
         import json as _json
         from whisper_core.tts.security import VoicePackError
-        d = tempfile.mkdtemp(prefix="pack-st-")
+        d = _temp_root(self, "pack-st-")
         (Path(d) / "voice.json").write_text(_json.dumps({
             "schema": 1, "kind": "styletts2", "label": "Мій", "languages": ["uk"],
             "files": {"model": "m.safetensors"}, "sample_rate": 24000}),
@@ -285,7 +376,7 @@ class TestCustomVoice(unittest.TestCase):
     def test_custom_radtts_rejected(self):
         import json as _json
         from whisper_core.tts.security import VoicePackError
-        d = tempfile.mkdtemp(prefix="pack-rt-")
+        d = _temp_root(self, "pack-rt-")
         (Path(d) / "voice.json").write_text(_json.dumps({
             "schema": 1, "kind": "radtts", "label": "Мій", "languages": ["uk"],
             "files": {"model": "m.pt"}, "sample_rate": 44100}), encoding="utf-8")

@@ -94,6 +94,7 @@ class ConfigTests(unittest.TestCase):
 class _FakeHook:
     """Замінник MouseHook: фіксує аргументи конструктора й виклики start/stop."""
     start_result = True
+    stop_result = True
     constructed = 0
 
     def __init__(self, button, on_press, on_release):
@@ -110,6 +111,7 @@ class _FakeHook:
 
     def stop(self):
         self.stopped = True
+        return self.stop_result
 
 
 def _controller(button, existing_hook=None):
@@ -132,6 +134,7 @@ class ApplyMousePttTests(unittest.TestCase):
 
     def setUp(self):
         _FakeHook.start_result = True
+        _FakeHook.stop_result = True
         _FakeHook.constructed = 0
 
     def test_enabled_starts_hook_on_hotkey_signals(self):
@@ -158,6 +161,21 @@ class ApplyMousePttTests(unittest.TestCase):
         self.assertIsNone(ctl.mouse_hook)
         self.assertEqual(_FakeHook.constructed, 0)  # новий хук не створювався
 
+    def test_unconfirmed_stop_keeps_existing_hook_reference(self):
+        from fronts.desktop.app import DesktopApp
+        old = _FakeHook("x1", None, None)
+        old.stop_result = False
+        _FakeHook.constructed = 0
+        ctl = _controller("none", existing_hook=old)
+
+        with self.assertLogs(level="WARNING") as cm:
+            DesktopApp._apply_mouse_ptt(ctl)
+
+        self.assertTrue(old.stopped)
+        self.assertIs(ctl.mouse_hook, old)
+        self.assertEqual(_FakeHook.constructed, 0)
+        self.assertIn("не підтверджено", "\n".join(cm.output))
+
     def test_change_button_restarts_hook(self):
         from fronts.desktop.app import DesktopApp
         old = _FakeHook("x1", None, None)
@@ -183,6 +201,78 @@ class ApplyMousePttTests(unittest.TestCase):
 class LiveHookTests(unittest.TestCase):
     """Реальне встановлення/зняття WH_MOUSE_LL — без жодних кліків."""
 
+    def test_stop_keeps_callback_guard_when_thread_is_still_alive(self):
+        MouseHook._unconfirmed_stop = None
+        self.addCleanup(setattr, MouseHook, "_unconfirmed_stop", None)
+        hook = MouseHook("x1", on_press=lambda: None, on_release=lambda: None)
+        join_calls = []
+        thread_alive = [True]
+        alive_thread = SimpleNamespace(
+            join=join_calls.append,
+            is_alive=lambda: thread_alive[0],
+        )
+        callback_guard = object()
+        hook._thread = alive_thread
+        hook._thread_id = None
+        hook._hook = 0x1234
+        hook._proc = callback_guard
+        hook._ok = True
+
+        created_threads = []
+
+        def make_thread(**_kwargs):
+            created_threads.append(True)
+            return SimpleNamespace(start=lambda: None)
+
+        replacement = MouseHook(
+            "x2", on_press=lambda: None, on_release=lambda: None)
+        replacement._ready = SimpleNamespace(
+            clear=lambda: None,
+            wait=lambda _timeout: None,
+        )
+
+        with patch.object(mh.sys, "platform", "win32"), \
+                patch.object(mh.threading, "Thread", side_effect=make_thread):
+            stop_ok = hook.stop()
+            restart_ok = hook.start()
+            replacement_ok = replacement.start()
+
+        self.assertIs(stop_ok, False)
+        self.assertEqual(join_calls, [3.0])
+        self.assertIs(hook._thread, alive_thread)
+        self.assertIs(hook._proc, callback_guard)
+        self.assertEqual(hook._hook, 0x1234)
+        self.assertTrue(hook._ok)
+        self.assertTrue(hook._stop_unconfirmed)
+        self.assertIs(MouseHook._unconfirmed_stop, hook)
+        self.assertFalse(restart_ok)
+        self.assertFalse(replacement_ok)
+        self.assertEqual(created_threads, [])
+
+        thread_alive[0] = False
+        hook._ready = SimpleNamespace(
+            clear=lambda: None,
+            wait=lambda _timeout: None,
+        )
+        recovered_threads = []
+
+        def make_recovered_thread(**_kwargs):
+            recovered_threads.append(True)
+            return SimpleNamespace(
+                start=lambda: setattr(hook, "_ok", True))
+
+        with patch.object(mh.sys, "platform", "win32"), \
+                patch.object(
+                    mh.threading, "Thread", side_effect=make_recovered_thread):
+            recovered_ok = hook.start()
+
+        self.assertTrue(recovered_ok)
+        self.assertEqual(recovered_threads, [True])
+        self.assertIsNone(MouseHook._unconfirmed_stop)
+        self.assertIsNot(hook._thread, alive_thread)
+        self.assertIsNone(hook._hook)
+        self.assertIsNone(hook._proc)
+
     def test_install_and_unhook(self):
         if sys.platform != "win32":
             self.skipTest("WH_MOUSE_LL лише на Windows")
@@ -194,7 +284,7 @@ class LiveHookTests(unittest.TestCase):
             self.assertIsNotNone(hook._hook)   # SetWindowsHookExW повернув хендл
             self.assertTrue(hook._ok)
         finally:
-            hook.stop()
+            self.assertTrue(hook.stop())
         self.assertIsNone(hook._thread)        # потік хука коректно завершився
         self.assertFalse(hook._ok)
 
@@ -211,10 +301,11 @@ class LastErrorDiagnosticTests(unittest.TestCase):
         # хук не піднімали: підставляємо фейковий потік і завідомо НЕІСНУЮЧИЙ tid
         # (непарний, не кратний 4 → не буває реальним thread id), тож
         # PostThreadMessageW гарантовано провалиться і виставить LastError.
-        hook._thread = SimpleNamespace(join=lambda _t: None)
+        hook._thread = SimpleNamespace(join=lambda _t: None,
+                                       is_alive=lambda: False)
         hook._thread_id = 0x7FFFFFFF
         with self.assertLogs(level="WARNING") as cm:
-            hook.stop()
+            self.assertTrue(hook.stop())
         msg = "\n".join(cm.output)
         self.assertIn("PostThreadMessage", msg)
         m = re.search(r"err=(\d+)", msg)

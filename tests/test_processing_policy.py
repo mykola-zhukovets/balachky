@@ -38,7 +38,7 @@ class PolicyMatrix(unittest.TestCase):
             self.assertTrue(flag)
         # document_rewrite=False: генеративного переписування локальною LLM у
         # конвеєрі ще нема (спека §11 стадія 3), тож не заявляємо його прапорцем,
-        # який ніхто не читає (блокер суду — «тихий no-op під виглядом фічі»).
+        # який ніхто не читає (блокер рецензії — «тихий no-op під виглядом фічі»).
         self.assertFalse(p.document_rewrite)
 
     def test_source_text_selection(self):

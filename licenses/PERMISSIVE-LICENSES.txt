@@ -1,10 +1,12 @@
 PERMISSIVE AND WEAK-COPYLEFT LICENSE TEXTS
 Consolidated license file for the "Balachky" desktop application.
-See THIRD-PARTY-NOTICES.txt in the application root for the component index.
+See THIRD-PARTY-NOTICES.txt beside this file's licenses directory in _internal
+for the component index.
 
-Each section below reproduces the license text of one bundled python package,
-verbatim, from the installed package (dist-info) or from its upstream
-repository where the wheel does not ship a license text.
+Each section below reproduces an audited package's license text verbatim from
+the installed package (dist-info) or from its upstream repository where the
+wheel does not ship a license text. Historical sections explicitly say when a
+component is no longer bundled.
 
 
 ==============================================================================
@@ -1256,7 +1258,9 @@ SOFTWARE.
 PyAV (python wrapper only) 18.0.0
 SPDX-License-Identifier: BSD-3-Clause
 Upstream: https://github.com/PyAV-Org/PyAV
-NOTE: This BSD-3-Clause license covers ONLY the PyAV python wrapper. The FFmpeg build bundled inside the wheel (av.libs) is GPL - see section 1 of THIRD-PARTY-NOTICES.txt.
+NOTE: This BSD-3-Clause license covers ONLY the PyAV python wrapper.
+The FFmpeg build bundled inside the wheel (av\*.dll) is LGPL-3.0-or-later;
+see section 1 of THIRD-PARTY-NOTICES.txt and licenses\LGPL-3.0.txt.
 ==============================================================================
 
 Copyright retained by original committers. All rights reserved.
@@ -1410,7 +1414,10 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 PyMsgBox 2.0.1
 SPDX-License-Identifier: GPL-3.0-or-later (declared) / BSD-3-Clause (text shipped in wheel)
 Upstream: https://github.com/asweigart/pymsgbox
-NOTE: UPSTREAM INCONSISTENCY: package metadata declares 'GPLv3+', but the wheel ships the BSD-3-Clause text reproduced below. Treated conservatively as GPL-3.0-or-later (full GPL-3.0 text: LICENSE file in the application root). See THIRD-PARTY-NOTICES.txt, section 1.
+NOTE: NOT BUNDLED. This historical audit record is retained because package
+metadata declares 'GPLv3+' while the wheel ships the BSD-3-Clause text
+reproduced below. PyMsgBox is excluded by balachky.spec; no GPL-3.0 text is
+claimed as part of the distribution. See THIRD-PARTY-NOTICES.txt, section 1.
 ==============================================================================
 
 Copyright (c) 2014, Al Sweigart
@@ -1589,7 +1596,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 Upstream: https://github.com/asweigart/mouseinfo
 ==============================================================================
 
-No license text shipped in the wheel. GPLv3+ per package metadata; full GPL-3.0 text: LICENSE file in the application root. See THIRD-PARTY-NOTICES.txt, section 1.
+NOT BUNDLED. No license text shipped in the wheel; package metadata declares
+GPLv3+. MouseInfo is excluded by balachky.spec, so no GPL-3.0 text is claimed
+as part of the distribution. See THIRD-PARTY-NOTICES.txt, section 1.
 
 
 ==============================================================================
@@ -3758,6 +3767,91 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+
+======================================================================
+MarkupSafe 3.0.3
+SPDX: BSD-3-Clause
+Upstream: https://github.com/pallets/markupsafe
+Source: markupsafe-3.0.3.dist-info/licenses/LICENSE.txt
+======================================================================
+
+Copyright 2010 Pallets
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1.  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+2.  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+3.  Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+======================================================================
+pydantic-core 2.46.4
+SPDX: MIT
+Upstream: https://github.com/pydantic/pydantic-core
+Source: pydantic_core-2.46.4.dist-info/licenses/LICENSE
+======================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2022 Samuel Colvin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+======================================================================
+llama-cpp-python 0.3.34
+SPDX: MIT
+Upstream: https://github.com/abetlen/llama-cpp-python
+Source: llama_cpp_python-0.3.34.dist-info/licenses/LICENSE.md
+======================================================================
+
+MIT License
+
+Copyright (c) 2023 Andrei Betlen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 NOTE: the ASIO-enabled PortAudio variant (libportaudio64bit-asio.dll, which
 embeds the proprietary Steinberg ASIO SDK) is excluded from this

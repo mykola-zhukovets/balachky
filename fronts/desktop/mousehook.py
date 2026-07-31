@@ -80,6 +80,10 @@ class MouseHook:
     подію в чергу GUI-потоку, тож логіка hold/toggle виконується там само, де й
     для клавіатури."""
 
+    # Lifecycle start()/stop() та цей cross-instance guard викликаються лише
+    # з GUI-потоку; hook-thread лише обробляє WinAPI message loop.
+    _unconfirmed_stop = None
+
     def __init__(self, button: str, on_press, on_release):
         self._button = button            # "x1" | "x2"
         self._on_press = on_press
@@ -90,6 +94,7 @@ class MouseHook:
         self._proc = None                # ЖИВЕ посилання на HOOKPROC (GC-guard)
         self._ready = threading.Event()  # виставляється після спроби SetWindowsHookEx
         self._ok = False                 # хук справді встановлено
+        self._stop_unconfirmed = False
 
     def start(self) -> bool:
         """Підняти потік із хуком; блокує до результату SetWindowsHookEx.
@@ -97,9 +102,24 @@ class MouseHook:
         if sys.platform != "win32":
             return False
         if self._thread is not None:
-            return self._ok
+            if not self._stop_unconfirmed:
+                return self._ok
+            if self._thread.is_alive():
+                logging.warning("mouse-ptt: повторний запуск відхилено — "
+                                "зупинку попереднього хука не підтверджено")
+                return False
+            self._clear_stopped_state()
+        unconfirmed = type(self)._unconfirmed_stop
+        if unconfirmed is not None:
+            guarded_thread = unconfirmed._thread
+            if guarded_thread is not None and guarded_thread.is_alive():
+                logging.warning("mouse-ptt: новий хук відхилено — зупинку "
+                                "попереднього хука не підтверджено")
+                return False
+            unconfirmed._clear_stopped_state()
         self._ready.clear()
         self._ok = False
+        self._stop_unconfirmed = False
         self._thread = threading.Thread(target=self._run, name="mouse-ptt-hook",
                                         daemon=True)
         self._thread.start()
@@ -112,6 +132,8 @@ class MouseHook:
         # SetWindowsHookExW, а не завжди 0 (плаский windll.user32 її не оновлює).
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         kernel32 = ctypes.windll.kernel32
+        kernel32.GetCurrentThreadId.argtypes = ()
+        kernel32.GetCurrentThreadId.restype = wintypes.DWORD
         self._thread_id = kernel32.GetCurrentThreadId()
 
         HOOKPROC = ctypes.WINFUNCTYPE(
@@ -148,6 +170,10 @@ class MouseHook:
             ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT,
             wintypes.UINT, wintypes.UINT]
         user32.PeekMessageW.restype = ctypes.c_int
+        user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
+        user32.TranslateMessage.restype = wintypes.BOOL
+        user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
+        user32.DispatchMessageW.restype = LRESULT
         kernel32.GetModuleHandleW.restype = wintypes.HMODULE
         kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 
@@ -171,12 +197,13 @@ class MouseHook:
         user32.UnhookWindowsHookEx(self._hook)
         self._hook = None
 
-    def stop(self):
+    def stop(self) -> bool:
         """Зупинити хук: WM_QUIT у чергу потоку → GetMessage поверне 0 → цикл
-        вийде і зніме хук; чекаємо потік із таймаутом (daemon — не блокуємо вихід)."""
+        вийде і зніме хук; чекаємо потік із таймаутом (daemon — не блокуємо
+        вихід). True — зупинку підтверджено, False — потік іще живий."""
         t = self._thread
         if t is None:
-            return
+            return True
         tid = self._thread_id
         if tid is not None:
             # use_last_error=True — щоб ctypes.get_last_error() нижче дав реальний
@@ -189,7 +216,22 @@ class MouseHook:
                 logging.warning("mouse-ptt: PostThreadMessage(WM_QUIT) не вдався "
                                 "(err=%s)", ctypes.get_last_error())
         t.join(3.0)
+        if t.is_alive():
+            self._stop_unconfirmed = True
+            type(self)._unconfirmed_stop = self
+            logging.warning("mouse-ptt: потік хука не завершився за 3 с; "
+                            "стан і GC-guard збережено")
+            return False
+        self._clear_stopped_state()
+        return True
+
+    def _clear_stopped_state(self):
+        """Очистити lifecycle-стан лише після підтвердженої смерті потоку."""
         self._thread = None
         self._thread_id = None
+        self._hook = None
         self._proc = None
         self._ok = False
+        self._stop_unconfirmed = False
+        if type(self)._unconfirmed_stop is self:
+            type(self)._unconfirmed_stop = None

@@ -1,107 +1,41 @@
-# Windows warning during installation · Попередження Windows під час встановлення
+# Попередження Windows під час встановлення
 
-**English** · [Українська](#українська)
+Під час першого запуску інсталятора програми “Балачки” Windows може показати синє вікно із попередженням:
 
-## English
+> **Windows захистила ваш ПК**
+> Захисник Microsoft SmartScreen запобіг запуску невпізнаної програми.
 
-### Why Windows shows this warning
+Це **не є помилкою** і **не свідчить про наявність вірусів**. Так Windows реагує на нові файли, які ще не накопичили масових завантажень і тимчасово не мають платного цифрового підпису.
 
-The Balachky v1.2.3-beta installer is not digitally signed. Windows SmartScreen may therefore show “Windows protected your PC” and identify the publisher as unknown.
+## Чому виникає це попередження
 
-This warning means that Windows cannot verify a trusted publisher signature for this file. It does not, by itself, prove that the installer is harmful or safe.
+У Windows вбудовано захисну систему SmartScreen, яка перевіряє файли за базою відомих програм. Бета-версія `v1.2.3-beta` є публічним випуском для тестування і наразі розповсюджується без цифрового підпису коду (цифровий підпис буде додано у майбутніх релізах). Тому SmartScreen попереджає, що програма є **невідомою** для системи. Це застереження стосується відсутності цифрової репутації файла, а не його небезпечності.
 
-### Before you continue
+## Покрокова інструкція щодо запуску
 
-Only use the installer from the [official Balachky v1.2.3-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta):
+1. Переконайтеся, що Ви завантажили файл інсталятора **виключно з офіційної сторінки випусків** на GitHub. Не запускайте файли, отримані зі сторонніх джерел або месенджерів.
+2. За бажанням Ви можете перевірити контрольну суму **SHA-256** завантаженого файла (інструкцію наведено нижче).
+3. У синьому вікні попередження натисніть текстове посилання **“Детальніше”** (More info).
+4. У нижній частині вікна з'явиться кнопка **“Виконати попри це”** (Run anyway) — натисніть її.
+5. Після цього стандартне встановлення програми продовжиться.
 
-`BalachkySetup-1.2.3-beta-F19111EF.exe`
+Якщо кнопку **“Виконати попри це”** не видно одразу, обов'язково натисніть напис **“Детальніше”** — кнопка з'явиться під текстом застереження.
 
-Do not run a copy received through a messenger, file-sharing site, or another unofficial source.
+## Як перевірити контрольну суму SHA-256
 
-If you want to verify the download, compare its SHA-256 with the value published for this exact release:
+Контрольна сума — це унікальний цифровий відбиток файла. Якщо обчислена сума збігається з оприлюдненою на сторінці випуску, Ви маєте гарантію, що завантажений файл є оригінальним і не зазнав змін.
 
-`F19111EFC61FBA327148E1AC29AFB339E838556663FF73300290DCC6B5D7082F`
+Для випуску `v1.2.3-beta` перевірте файл `BalachkySetup-1.2.3-beta-F19111EF.exe` розміром `166 573 976` байтів (`158,9 МБ`). Очікувана контрольна сума: `F19111EFC61FBA327148E1AC29AFB339E838556663FF73300290DCC6B5D7082F`.
 
-### Check SHA-256 in PowerShell
+1. Натисніть комбінацію **Win + R**, введіть команду `powershell` та натисніть Enter.
+2. Виконайте команду (вкажіть точний шлях до завантаженого інсталятора):
+   ```powershell
+   Get-FileHash "$env:USERPROFILE\Downloads\BalachkySetup-1.2.3-beta-F19111EF.exe" -Algorithm SHA256
+   ```
+3. Порівняйте отримане значення із контрольною сумою, вказаною біля випуску на GitHub. Регістр літер значення не має.
 
-1. Open the folder containing the installer in File Explorer.
-2. Right-click an empty area in the folder and choose “Open in Terminal”, or open PowerShell separately.
-3. Run the command below with the actual path to your downloaded file:
+Якщо контрольні суми збігаються, файл є повністю автентичним. Якщо значення відрізняються, не запускайте файл та завантажте його повторно з офіційної сторінки.
 
-```powershell
-Get-FileHash "C:\path\to\BalachkySetup-1.2.3-beta-F19111EF.exe" -Algorithm SHA256
-```
+## Запитання та повідомлення про проблеми
 
-4. Compare the complete result with the SHA-256 above.
-
-If the values differ, do not run the file. Delete it and download the installer again from the official release page.
-
-A matching SHA-256 means that the downloaded bytes match the file identified by the published hash. A hash does not verify the author on its own and is not a guarantee that a file is safe.
-
-The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/f19111efc61fba327148e1ac29afb339e838556663ff73300290dcc6b5d7082f/detection) for this exact file. This is additional information, not a safety guarantee.
-
-### Run the installer
-
-Continue only if you intended to install Balachky and are satisfied that you downloaded the expected file.
-
-1. In the SmartScreen window, select “More info”.
-2. Check that the app name is the installer you downloaded.
-3. Select “Run anyway” to continue.
-
-If the file name, source, or SHA-256 is not what you expected, close the warning and do not run the file.
-
-For ordinary bugs or installation problems, use [GitHub Issues](https://github.com/mykola-zhukovets/balachky/issues). Report security problems privately through **Security → Report a vulnerability** in the repository.
-
----
-
-<a id="українська"></a>
-
-## Українська
-
-### Чому Windows показує це попередження
-
-Інсталятор Балачок v1.2.3-beta не має цифрового підпису. Тому Windows SmartScreen може показати повідомлення “Windows захистила Ваш ПК” і вказати невідомого видавця.
-
-Це попередження означає, що Windows не може перевірити довірений підпис видавця для цього файла. Саме по собі воно не доводить, що інсталятор шкідливий або безпечний.
-
-### Перед продовженням
-
-Використовуйте інсталятор лише з [офіційної сторінки випуску Балачок v1.2.3-beta](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.3-beta):
-
-`BalachkySetup-1.2.3-beta-F19111EF.exe`
-
-Не запускайте копію, отриману через месенджер, файловий обмінник або інше неофіційне джерело.
-
-Щоб перевірити завантаження, порівняйте SHA-256 файла зі значенням, опублікованим саме для цього випуску:
-
-`F19111EFC61FBA327148E1AC29AFB339E838556663FF73300290DCC6B5D7082F`
-
-### Як перевірити SHA-256 у PowerShell
-
-1. Відкрийте в Провіднику папку із завантаженим інсталятором.
-2. Клацніть правою кнопкою миші у вільному місці та оберіть “Відкрити в Терміналі” або окремо відкрийте PowerShell.
-3. Виконайте команду нижче, підставивши справжній шлях до завантаженого файла:
-
-```powershell
-Get-FileHash "C:\шлях\до\BalachkySetup-1.2.3-beta-F19111EF.exe" -Algorithm SHA256
-```
-
-4. Порівняйте повний результат зі значенням SHA-256 вище.
-
-Якщо значення відрізняються, не запускайте файл. Видаліть його й завантажте інсталятор знову з офіційної сторінки випуску.
-
-Збіг SHA-256 означає, що завантажені байти відповідають файлу, для якого опубліковано цей хеш. Сам по собі хеш не підтверджує автора й не гарантує безпечності файла.
-
-У записі перевірки випуску від 26 липня 2026 року для цього точного файла зазначено [0 виявлень серед 65 рушіїв VirusTotal](https://www.virustotal.com/gui/file/f19111efc61fba327148e1ac29afb339e838556663ff73300290dcc6b5d7082f/detection). Це додаткова інформація, а не гарантія безпеки.
-
-### Як запустити інсталятор
-
-Продовжуйте лише тоді, коли Ви справді хотіли встановити Балачки й переконалися, що завантажили очікуваний файл.
-
-1. У вікні SmartScreen оберіть “Докладніше”.
-2. Перевірте, що вказано назву завантаженого Вами інсталятора.
-3. Оберіть “Виконати попри все”, щоб продовжити.
-
-Якщо назва файла, джерело або SHA-256 не відповідають очікуваним, закрийте попередження й не запускайте файл.
-
-Про звичайні помилки або проблеми зі встановленням повідомляйте в [GitHub Issues](https://github.com/mykola-zhukovets/balachky/issues). Проблеми безпеки надсилайте приватно через **Security → Report a vulnerability** у репозиторії.
+Якщо у Вас виникають запитання щодо встановлення або Ви виявили помилку під час використання бета-версії, будь ласка, повідомте про це на сторінці [GitHub Issues](https://github.com/mykola-zhukovets/balachky/issues).

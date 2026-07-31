@@ -20,13 +20,66 @@ punctuators — ОПЦІЙНА залежність (тягне onnxruntime, я�
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import logging
+import os
+import shutil
+import tempfile
+import time
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import netlog   # доказова офлайновість: журнал вихідних з'єднань
 
-# Ідентифікатор моделі в HuggingFace-хабі (punctuators.from_pretrained).
+_log = logging.getLogger(__name__)
+
+# Публічний ідентифікатор моделі для сумісності з наявними налаштуваннями.
 MODEL_NAME = "pcs_47lang"
+MODEL_REVISION = "1b9d51fc7989ebc61e844d407d9dadd08ff4ba28"
+MODEL_REPO = "1-800-BAD-CODE/punct_cap_seg_47_language"
+
+
+@dataclass(frozen=True)
+class ModelAsset:
+    url: str
+    filename: str
+    size: int
+    sha256: str
+
+
+MODEL_ASSETS = (
+    ModelAsset(
+        url=(f"https://huggingface.co/{MODEL_REPO}/resolve/{MODEL_REVISION}/"
+             "punct_cap_seg_47lang.onnx"),
+        filename="punct_cap_seg_47lang.onnx",
+        size=232986305,
+        sha256=(
+            "640d91c06b7cc5b3e065c12a7097188378aad3bc11568ff1d72c4c0a2acb0df4"),
+    ),
+    ModelAsset(
+        url=(f"https://huggingface.co/{MODEL_REPO}/resolve/{MODEL_REVISION}/"
+             "spe_unigram_64k_lowercase_47lang.model"),
+        filename="spe_unigram_64k_lowercase_47lang.model",
+        size=1186519,
+        sha256=(
+            "1bc15b6e5fd80dfac9999582ce3efcad2ac1f7cf4e0e9769b329f5de9ca5af47"),
+    ),
+)
+
+# Конфіг малий і стабільний; тримаємо його в застосунку, а не створюємо третю
+# мережеву точку. Файли моделі й токенізатора лишаються пінованими та хешованими.
+_CONFIG_TEXT = """languages:
+  [af, am, ar, bg, bn, de, el, en, es, et, fa, fi, fr, gu, hi, hr, hu, id,
+   is, it, ja, kk, kn, ko, ky, lt, lv, mk, ml, mr, nl, or, pa, pl, ps, pt,
+   ro, ru, rw, so, sr, sw, ta, te, tr, uk, zh]
+max_length: 128
+pre_labels: ["<NULL>", "¿"]
+post_labels:
+  ["<NULL>", ".", ",", "?", "？", "，", "。", "、", "・", "।", "؟", "،",
+   ";", "።", "፣", "፧"]
+"""
 # Маркер локальної готовності: кладемо його поруч зі скачаною моделлю, щоб
 # перевіряти доступність без імпорту важкого пакета й без мережі.
 _READY_MARKER = "READY"
@@ -41,9 +94,13 @@ def punctuators_available() -> bool:
 
 
 def model_available(model_dir) -> bool:
-    """Чи завантажено модель у задану теку (за маркером готовності)."""
+    """Швидка UI-перевірка: маркер і файли очікуваного розміру на місці."""
     try:
-        return (Path(model_dir) / _READY_MARKER).is_file()
+        target = Path(model_dir)
+        return ((target / _READY_MARKER).is_file()
+                and all((target / asset.filename).is_file()
+                        and (target / asset.filename).stat().st_size == asset.size
+                        for asset in MODEL_ASSETS))
     except OSError:
         return False
 
@@ -56,14 +113,20 @@ def available(model_dir) -> bool:
 def load_model(model_dir):
     """Завантажити ONNX-модель пунктуатора з локальної теки. → None, якщо пакета
     немає або модель недоступна (виклик безпечний навіть без пакета)."""
-    if not available(model_dir):
+    target = Path(model_dir)
+    _recover_previous(target)
+    if not available(target) or not _assets_valid(target):
         return None
     try:
-        from punctuators.models import PunctCapSegModelONNX
-        # HF-кеш моделі спрямовуємо в нашу локальну теку (без окремого кешу
-        # HuggingFace у профілі користувача).
-        return PunctCapSegModelONNX.from_pretrained(
-            MODEL_NAME, cache_dir=str(model_dir), local_files_only=True)
+        from punctuators.models.punc_cap_seg_model import (
+            PunctCapSegConfigONNX, PunctCapSegModelONNX)
+        config = PunctCapSegConfigONNX(
+            directory=str(model_dir),
+            spe_filename="spe_unigram_64k_lowercase_47lang.model",
+            model_filename="punct_cap_seg_47lang.onnx",
+            config_filename="config.yaml",
+        )
+        return PunctCapSegModelONNX(config)
     except Exception:
         return None
 
@@ -72,29 +135,131 @@ class PunctuatorDownloadError(RuntimeError):
     pass
 
 
+def _sha256_of(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            checksum.update(block)
+    return checksum.hexdigest()
+
+
+def _asset_valid(target: Path, asset: ModelAsset) -> bool:
+    path = target / asset.filename
+    try:
+        return (path.is_file() and path.stat().st_size == asset.size
+                and _sha256_of(path) == asset.sha256)
+    except OSError:
+        return False
+
+
+def _assets_valid(target: Path) -> bool:
+    return all(_asset_valid(target, asset) for asset in MODEL_ASSETS)
+
+
+def _replace_with_retry(source: Path, destination: Path, attempts: int = 3) -> None:
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(0.05)
+
+
+def _recover_previous(target: Path) -> bool:
+    """Відновити найновіший цілісний backup, якщо активація лишила target відсутнім."""
+    if target.exists():
+        return False
+    try:
+        candidates = sorted(
+            target.parent.glob(".punctuator.prev-*"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True)
+    except OSError:
+        return False
+    for backup in candidates:
+        if not model_available(backup) or not _assets_valid(backup):
+            continue
+        try:
+            _replace_with_retry(backup, target)
+        except OSError:
+            _log.warning(
+                "Не вдалося відновити попередню модель пунктуатора з %s",
+                backup, exc_info=True)
+            continue
+        _log.warning("Відновлено попередню модель пунктуатора з %s", backup)
+        return True
+    return False
+
+
+def _download_asset(asset: ModelAsset, destination: Path, progress_cb=None,
+                    cancel_check=None) -> None:
+    netlog.record_url(asset.url, kind=netlog.MODEL, detail="punctuation")
+    request = urllib.request.Request(
+        asset.url, headers={"User-Agent": "Balachky/punctuator"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response, \
+                destination.open("wb") as output:
+            received = 0
+            while True:
+                if cancel_check and cancel_check():
+                    raise InterruptedError()
+                block = response.read(256 * 1024)
+                if not block:
+                    break
+                output.write(block)
+                received += len(block)
+                if progress_cb:
+                    progress_cb(received, asset.size)
+    except InterruptedError:
+        raise
+    except Exception as exc:
+        raise PunctuatorDownloadError(
+            f"Не вдалося завантажити модель пунктуатора: {exc}") from exc
+
+
 def download_and_install(model_dir, progress_cb=None, cancel_check=None) -> None:
     """Докачати ONNX-модель пунктуатора у задану теку й позначити готовність.
 
-    Завантаження робить сам пакет punctuators (from_pretrained тягне модель у
-    cache_dir через huggingface_hub). progress_cb/cancel_check приймаємо заради
-    єдиного інтерфейсу з рештою завантажень, але HF-хаб не дає покрокового
-    прогресу тут, тож вони наразі не використовуються. Уже готова модель — no-op."""
+    Завантажуємо рівно два файли закріпленої ревізії, перевіряємо точний розмір
+    і SHA-256 кожного, тоді атомарно активуємо теку."""
     target = Path(model_dir)
-    if model_available(target):
+    if model_available(target) and _assets_valid(target):
         return
     if not punctuators_available():
         raise PunctuatorDownloadError(
             "Пакет punctuators не встановлено — компонент недоступний")
-    target.mkdir(parents=True, exist_ok=True)
-    netlog.record("huggingface.co", kind=netlog.MODEL, allowed=True,
-                  detail="punctuation")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(
+        prefix="punctuator-", dir=target.parent))
+    backup = None
     try:
-        from punctuators.models import PunctCapSegModelONNX
-        PunctCapSegModelONNX.from_pretrained(MODEL_NAME, cache_dir=str(target))
-    except Exception as exc:
-        raise PunctuatorDownloadError(
-            f"Не вдалося завантажити модель пунктуатора: {exc}") from exc
-    (target / _READY_MARKER).write_text("ok", encoding="utf-8")
+        for asset in MODEL_ASSETS:
+            destination = stage / asset.filename
+            _download_asset(
+                asset, destination, progress_cb, cancel_check)
+            if not _asset_valid(stage, asset):
+                raise PunctuatorDownloadError(
+                    f"Розмір або контрольна сума не збігаються: {asset.filename}")
+        (stage / "config.yaml").write_text(_CONFIG_TEXT, encoding="utf-8")
+        (stage / _READY_MARKER).write_text("ok", encoding="utf-8")
+        if target.exists():
+            backup = target.parent / (
+                f".punctuator.prev-{next(tempfile._get_candidate_names())}")
+            os.replace(target, backup)
+        try:
+            os.replace(stage, target)
+        except Exception:
+            if backup is not None and backup.exists():
+                _replace_with_retry(backup, target)
+            raise
+        stage = None
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        if stage is not None:
+            shutil.rmtree(stage, ignore_errors=True)
 
 
 def apply_punctuation(text: str, model, language: str = "uk") -> str:

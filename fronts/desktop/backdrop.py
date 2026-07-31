@@ -4,6 +4,7 @@
 DWM-виклики успішні; будь-яка помилка → False → вікно лишається твердим.
 """
 import ctypes
+from ctypes import wintypes
 
 DWMWA_SYSTEMBACKDROP_TYPE = 38   # Win11 22H2+
 DWMSBT_MAINWINDOW = 2            # Mica
@@ -19,6 +20,12 @@ def enable_mica(hwnd: int) -> bool:
     якщо обидва виклики повернули S_OK (0); інакше тихий фолбек у клієнта."""
     try:
         dwm = ctypes.windll.dwmapi
+        dwm.DwmExtendFrameIntoClientArea.argtypes = (
+            wintypes.HWND, ctypes.POINTER(_MARGINS))
+        dwm.DwmExtendFrameIntoClientArea.restype = ctypes.c_long
+        dwm.DwmSetWindowAttribute.argtypes = (
+            wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD)
+        dwm.DwmSetWindowAttribute.restype = ctypes.c_long
         margins = _MARGINS(-1, -1, -1, -1)
         if dwm.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins)) != 0:
             return False

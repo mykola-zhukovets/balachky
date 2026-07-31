@@ -1,6 +1,6 @@
 """Живий скрін попапа обробки з КЛАВІАТУРНИМ фокусом на ручці слайдера, день.
 
-Доказ, що перстень фокуса видно на золотій ручці (блокер суду: FOCUS==GOLD).
+Доказ, що перстень фокуса видно на золотій ручці (блокер рецензії: FOCUS==GOLD).
 Відкриває попап чіпа обробки, ставить фокус на слайдер, грабить вікно.
 
 Вивід: shots/final/popover-focus-day.png
@@ -30,7 +30,10 @@ OUT = Path(_POS[0]).resolve() if _POS else ROOT / "shots" / "final"
 def main():
     if sys.platform != "win32":
         sys.exit("Tilky Windows (DWM/Mica).")
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    shcore = ctypes.windll.shcore
+    shcore.SetProcessDpiAwareness.argtypes = (ctypes.c_int,)
+    shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+    shcore.SetProcessDpiAwareness(2)
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)

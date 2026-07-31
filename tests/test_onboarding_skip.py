@@ -19,6 +19,13 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# ДО імпорту fronts.desktop.app: цей модуль викликає main(), яке піднімає
+# реальний QLocalServer single-instance. _isolation виставляє
+# BALACHKY_INSTANCE_SUFFIX, щоб цей offscreen-екземпляр не займав робочий
+# канал "balachky-single" (кейс 31.07 — відбило живий запуск власника).
+from tests._isolation import reset_process_caches
+reset_process_caches()
+
 from PySide6.QtWidgets import QApplication, QLabel
 from PySide6.QtCore import QSettings
 
@@ -86,11 +93,30 @@ class MainAppSkippedBranchTests(unittest.TestCase):
 
         Обриваємо main() контрольовано на створенні потоку завантаження рушія:
         сам факт, що ми туди дійшли, і є доказом, що виходу не сталося. Без
-        обриву main() пішов би піднімати справжнє вікно й тест би завис."""
+        обриву main() пішов би піднімати справжнє вікно й тест би завис.
+
+        ІЗОЛЯЦІЯ (знахідка 31.07): main() у dev-режимі читає config.toml із
+        КОРЕНЯ РЕПО (whisper_core.paths.USER_DIR == APP_ROOT поза frozen-збіркою) —
+        це той самий файл, яким користується власник, коли сам запускає
+        run_app.py. Без ізоляції тест читав РЕАЛЬНИЙ dev config.toml (одного разу
+        там був ui_language="en") і виставляв i18n у "en" на решту процесу —
+        14 тестів після цього в алфавітному порядку падали з англійськими
+        текстами. Тут підміняємо paths.config_path() і QSettings("Balachky",
+        "Balachky") на тимчасові файли, щоб main() нічого не читав і не писав
+        за межами tmp-теки цього тесту."""
         from fronts.desktop.app import main
 
         class _ReachedEngine(RuntimeError):
             """Мітка: виконання дійшло до підняття рушія, тобто виходу не було."""
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="balachky-main-isolated-"))
+        tmp_config_path = tmp_dir / "config.toml"
+        tmp_settings_path = tmp_dir / "settings.ini"
+
+        def _isolated_settings(*_a, **_kw):
+            return QSettings(str(tmp_settings_path), QSettings.IniFormat)
+
+        self.addCleanup(reset_process_caches)
 
         with patch("PySide6.QtNetwork.QLocalSocket.waitForConnected", return_value=False), \
              patch("fronts.desktop.app._should_show_onboarding", return_value=True), \
@@ -98,7 +124,9 @@ class MainAppSkippedBranchTests(unittest.TestCase):
              patch("fronts.desktop.app._apply_onboarding_result", return_value=True) as mock_apply, \
              patch("PySide6.QtWidgets.QMessageBox") as mock_box_cls, \
              patch("sys.exit", side_effect=AssertionError("програма НЕ мусить виходити при пропуску")), \
-             patch("fronts.desktop.app._EngineLoadThread", side_effect=_ReachedEngine):
+             patch("fronts.desktop.app._EngineLoadThread", side_effect=_ReachedEngine), \
+             patch("whisper_core.paths.config_path", return_value=tmp_config_path), \
+             patch("fronts.desktop.app.QSettings", side_effect=_isolated_settings):
 
             wiz_inst = mock_wiz_cls.return_value
             wiz_inst.exec.return_value = True
@@ -266,7 +294,13 @@ class ResumableDownloadTests(unittest.TestCase):
             return DummyResponse()
 
         with patch("urllib.request.urlopen", side_effect=dummy_urlopen):
-            resumable_download_file("https://example.invalid/model.bin", dest, expected_size=8)
+            resumable_download_file(
+                "https://example.invalid/model.bin",
+                dest,
+                expected_size=8,
+                expected_sha256=__import__("hashlib").sha256(
+                    b"xxxxyyyy").hexdigest(),
+            )
 
         self.assertEqual(requests_received, ["bytes=4-"])
         self.assertTrue(dest.exists())

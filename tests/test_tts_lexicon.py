@@ -170,7 +170,7 @@ class TestForms(unittest.TestCase):
         self.assertEqual(L.generate_forms(""), [])
 
     def test_forms_preserve_capitalization(self):
-        # хвіст суду хв.4: pymorphy3 дає нижній регістр; форми капіталізованого слова
+        # хвіст рецензії хв.4: pymorphy3 дає нижній регістр; форми капіталізованого слова
         # мають лишитись капіталізованими (§6.1 «Коростень»→«Коростеня»)
         import importlib.util
         if importlib.util.find_spec("pymorphy3") is None:

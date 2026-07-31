@@ -5,7 +5,7 @@
 Кнопка «Прослухати як звучатиме» — прев'ю ДО збереження (обовʼязково). Валідація ПЕРЕД
 збереженням (криве правило не зникає мовчки — NVDA #11407). «Поширити на відмінки?» —
 pymorphy3-форми з ПІДТВЕРДЖЕННЯМ. Список збережених правил + «Видалити» (undo, §6).
-Режим збігу — Ціле слово / Будь-де (regex прибрано у v1 — ReDoS, суд хвилі 4).
+Режим збігу — Ціле слово / Будь-де (regex прибрано у v1 — ReDoS, рецензія хвилі 4).
 
 Колбеки звʼязує app: on_preview, on_save(...)→status, on_forms, on_list()→rules,
 on_delete(id). Панель самодостатня для visual_gate."""
@@ -119,7 +119,7 @@ class PronunciationDialog(QDialog):
         bl.addStretch(1)
         outer.addWidget(brow)
 
-        # список збережених правил + видалення (undo, §6 БЛОКЕР 2 суду)
+        # список збережених правил + видалення (undo, §6 БЛОКЕР 2 рецензії)
         outer.addWidget(QLabel(tr("tts_pron_menu")))
         self._rules_list = QListWidget()
         self._rules_list.setMaximumHeight(140)

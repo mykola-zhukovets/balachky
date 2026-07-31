@@ -1,4 +1,19 @@
-﻿Required Notice: Copyright © 2026 Mykola Zhukovets (Микола Жуковець)
+﻿КОРОТКЕ ПОЯСНЕННЯ УКРАЇНСЬКОЮ (не замінює юридичний текст нижче):
+
+Ця програма — “Балачки у Коростені” (Balachky) — безкоштовна для будь-якого
+некомерційного використання: для особистих потреб, у Збройних Силах
+України, державних і комунальних установах, освітніх, медичних,
+благодійних та громадських організаціях.
+
+Для комерційного використання з метою отримання прибутку діє окрема
+угода — файл COMMERCIAL-LICENSE.md поруч із цим файлом.
+
+Нижче наведено повний юридичний текст ліцензії PolyForm Noncommercial
+License 1.0.0 англійською мовою — саме він має юридичну силу.
+
+==================================================
+
+Required Notice: Copyright © 2026 Mykola Zhukovets (Микола Жуковець)
 https://github.com/mykola-zhukovets/balachky
 
 This program — "Балачки у Коростені" (Balachky) — is licensed under the
@@ -10,7 +25,7 @@ Where COMMERCIAL-LICENSE.md grants you more than the license below, that
 additional grant applies. Third-party components keep their own licenses
 (see THIRD-PARTY-NOTICES.txt).
 
-================================================================================
+==================================================
 
 # PolyForm Noncommercial License 1.0.0
 

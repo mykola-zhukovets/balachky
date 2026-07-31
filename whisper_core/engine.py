@@ -168,13 +168,22 @@ class Engine:
         # refs/main). Мережу це НЕ вмикає — local_files_only лишається True.
         revision = (revision_override if revision_override is not None
                     else MODEL_REVISIONS.get(cfg.model_name))
-        from .models import resolve_cache_dir
+        from .models import (model_snapshot_integrity, repo_for,
+                             resolve_cache_dir, resolve_model_state,
+                             OTHER_REVISION_PRESENT)
         cache_dir = resolve_cache_dir(cfg.model_dir)
         # local_files_only=True → модель береться ВИКЛЮЧНО з локального кешу, БЕЗ
         # запиту до huggingface.co на старті (приватність: застосунок офлайн за
         # замовчуванням). Наявність кешу гарантує онбординг; там-таки — єдина
         # дозволена докачка з мережі. revision пінує конкретний коміт: докачка
         # за хешем не пише refs/main, тож вантажити теж треба за хешем.
+        if (revision == MODEL_REVISIONS.get(cfg.model_name)
+                and not model_snapshot_integrity(
+                    cache_dir, repo_for(cfg.model_name), revision)):
+            state = resolve_model_state(cfg)
+            raise ModelRevisionUnavailable(
+                cfg.model_name, cache_dir, revision,
+                state.state == OTHER_REVISION_PRESENT)
         try:
             self.model = WhisperModel(
                 cfg.model_name, device=cfg.device,
@@ -184,7 +193,6 @@ class Engine:
         except (LocalEntryNotFoundError, FileNotFoundError) as e:
             # Ці типи однозначно означають, що локального asset моделі бракує,
             # навіть якщо короткий snapshot-check бачить основні файли.
-            from .models import resolve_model_state, OTHER_REVISION_PRESENT
             state = resolve_model_state(cfg)
             raise ModelRevisionUnavailable(
                 cfg.model_name, cache_dir,
@@ -196,8 +204,7 @@ class Engine:
             # type, драйвер або DLL. Діалогом моделі їх маскувати не можна:
             # конвертуємо виняток лише коли файлова перевірка цільового snapshot
             # справді показала missing/incomplete/unreadable.
-            from .models import (model_snapshot_usable, resolve_model_state,
-                                 repo_for, OTHER_REVISION_PRESENT)
+            from .models import model_snapshot_usable
             if model_snapshot_usable(cache_dir, repo_for(cfg.model_name), revision):
                 raise
             state = resolve_model_state(cfg)

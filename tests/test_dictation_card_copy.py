@@ -10,7 +10,7 @@
 Плюс сторож ВЕРСТКИ ряду дій на найвужчому вікні (DictationCardNarrowRowTests):
 три підписані кнопки в мета-рядку не вміщались на 1000 точок і Qt стискав їх
 нижче minimumSizeHint — різало не лише нову «Копіювати дослівно», а й здорову
-«Переформатувати…» (регрес, знахідка суду 25.07).
+«Переформатувати…» (регрес, знахідка рецензії 25.07).
 """
 import os
 import shutil
@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QApplication, QAbstractButton, QLabel
 
 from fronts.desktop import main_window as mw
 from fronts.desktop import motion
-from fronts.desktop.i18n import tr
+from fronts.desktop.i18n import current_language, set_language, tr
 from fronts.desktop.main_window import MainWindow
 from fronts.desktop.theme import QSS, load_fonts
 from tests.render_nav_smoke import _NavController
@@ -65,6 +65,9 @@ class _FakeMenu:
 
 class DictationCardCopyTests(unittest.TestCase):
     def setUp(self):
+        self._language = current_language()
+        self.addCleanup(set_language, self._language)
+        set_language("uk")
         self.tmp_dir = tempfile.mkdtemp()
         self.win = MainWindow(_NavController(self.tmp_dir))
         self.page = self.win.dictation
@@ -198,7 +201,7 @@ class DictationCardCopyTests(unittest.TestCase):
         _APP.processEvents()
         self.assertEqual(len(self._card_buttons(tr("common_copy_verbatim"))), 1,
                          "кнопка «дослівно» не повернулась, хоч текст знову інший")
-        self.assertIn(tr("common_copy_verbatim"), self._menu_captions(label))
+        self.assertIn("Копіювати дослівно", self._menu_captions(label))
 
     def test_whitespace_only_difference_gives_neither_note_nor_verbatim(self):
         """Підпис «виправлено написання» ставився за final != raw БЕЗ strip, а
@@ -220,7 +223,7 @@ class DictationCardCopyTests(unittest.TestCase):
         self.assertIn(tr("dict_meta_fixed").strip(), self._meta_text())
         self.assertEqual(len(self._card_buttons(tr("common_copy_verbatim"))), 1)
 
-    # ─── діри покриття, названі судом 25.07 ───
+    # ─── діри покриття, названі рецензією 25.07 ───
     def test_set_card_text_renders_with_NEW_words_not_stale(self):
         """У _set_card_text порядок несучий: label._words МУСИТЬ бути присвоєне
         ДО setText(_render_fix_html(...)), бо рендер читає підсвітку саме з

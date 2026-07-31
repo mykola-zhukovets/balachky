@@ -734,11 +734,15 @@ class TestOfflinePackageHoleFixes(OfflinePackageBase):
         env_patch, _appdata = self._local_appdata()
         with env_patch, patch("whisper_core.offline_package.get_filesystem_type", return_value="FAT32"), \
              patch("whisper_core.offline_package.FOUR_GIB", 2):
+            dest = cuda_runtime.cuda_dir()
             with self.assertLogs("balachky.offline_package", level="WARNING") as logs:
                 result = import_package(pkg, self.cfg)
         self.assertTrue(any("FAT32" in line for line in logs.output),
                         "попередження про FAT32 не потрапило в журнал")
-        self.assertIsNotNone(result, "встановлення мусило пройти попри попередження")
+        self.assertEqual(result.installed, ["cuda_runtime"])
+        self.assertTrue(dest.is_dir(), "компонент має бути у цільовій теці")
+        self.assertEqual((dest / "cublas64_12.dll").read_bytes(), b"DLL_ONE")
+        self.assertEqual((dest / "cublasLt64_12.dll").read_bytes(), b"DLL_TWO")
 
     def test_fat32_check_ignores_exfat(self):
         # ловить: помилкове блокування носія exFAT через пошук рядка "FAT"

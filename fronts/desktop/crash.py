@@ -14,13 +14,32 @@ import threading
 import traceback
 from pathlib import Path
 
-from whisper_core import __version__
+from whisper_core import DISPLAY_VERSION
+from whisper_core.paths import anonymize_path   # ОДНА спільна функція (whisper_core: спільна і з UI, і з core)
+from .links import ISSUE_URL
 LOG_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Balachky" / "logs"
 LOG_FILE = LOG_DIR / "balachky.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUP_COUNT = 2
 _EVENT_LOGGER = logging.getLogger("balachky.event")
 _LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING}
+
+__all__ = [
+    "anonymize_path", "sanitize_log_bytes", "diagnostic_event",
+    "setup_logging", "apply_log_level", "set_test_mode", "test_mode_active",
+    "test_log", "test_log_header", "apply_test_mode", "copy_diagnostics",
+    "open_log_dir", "install_excepthooks", "LOG_DIR", "LOG_FILE",
+]
+
+
+def sanitize_log_bytes(data: bytes) -> bytes:
+    """anonymize_path над цілим вмістом файлу логу (для пакування у звіт).
+
+    Лог читається як utf-8 з допустимими похибками (файл міг застати збій
+    кодування) і повертається у тому ж вигляді — байтами, готовими в zip.
+    """
+    text = data.decode("utf-8", errors="replace")
+    return anonymize_path(text).encode("utf-8")
 
 # ВІЙСЬКОВИЙ КОНТЕКСТ / ПРИВАТНІСТЬ: у routine-лог НІКОЛИ не пишемо символів
 # розшифровки, аудіо, вміст буфера обміну чи нотатки. diagnostic_event приймає
@@ -43,7 +62,7 @@ def diagnostic_event(code: str, *, level=logging.INFO, **fields) -> None:
                 continue
             if isinstance(value, bool): safe.append(f"{key}={str(value).lower()}")
             elif isinstance(value, (int, float)): safe.append(f"{key}={value}")
-            elif key in {"mode", "destination", "state", "track", "tracks", "device", "model", "compute", "config_path", "reason", "status", "version", "level_name"} and isinstance(value, str): safe.append(f"{key}={value}")
+            elif key in {"mode", "destination", "state", "track", "tracks", "device", "model", "compute", "reason", "status", "version", "level_name"} and isinstance(value, str): safe.append(f"{key}={value}")
         _EVENT_LOGGER.log(level, "event=%s%s", code, " " + " ".join(safe) if safe else "")
     except Exception:
         try:
@@ -87,7 +106,8 @@ def setup_logging():
         root.addHandler(handler)
         if fallback_error is not None:
             logging.warning("Основний лог %s недоступний (%s) — пишу в %s",
-                            LOG_FILE, fallback_error, handler.baseFilename)
+                            anonymize_path(LOG_FILE), fallback_error,
+                            anonymize_path(handler.baseFilename))
         # балакучі бібліотеки (hf_hub шумить лише під час першої докачки моделі в
         # онбордингу; звичайний старт — офлайн, local_files_only) — лише важливе
         for noisy in ("httpx", "urllib3"):
@@ -168,9 +188,8 @@ def test_log_header() -> None:
     if not _TEST_MODE:
         return
     try:
-        from whisper_core import __version__
         from whisper_core._buildinfo import build_version
-        test_log("test_mode_enabled", build=build_version(__version__),
+        test_log("test_mode_enabled", build=build_version(DISPLAY_VERSION),
                  include_text=_TEST_MODE_TEXT)
     except Exception:
         pass
@@ -201,7 +220,7 @@ def copy_diagnostics(cfg, *, lines: int = 80) -> str:
     try: tail = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
     except OSError: tail = []
     tail = [line for line in tail if ".vaultkey" not in line.lower() and not any(word in line.lower() for word in ("password=", "token=", "secret="))]
-    return (f"Balachky {__version__}\nConfiguration (safe fields only):\n" + _safe_config_summary(cfg) + "\nRecent routine log:\n" + "\n".join(tail))
+    return (f"Balachky {DISPLAY_VERSION}\nConfiguration (safe fields only):\n" + _safe_config_summary(cfg) + "\nRecent routine log:\n" + "\n".join(tail))
 
 
 def open_log_dir():
@@ -210,7 +229,7 @@ def open_log_dir():
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         os.startfile(LOG_DIR)
     except Exception as e:
-        logging.error("Не вдалося відкрити теку логів: %s", e)
+        logging.error("Не вдалося відкрити теку логів: %s", anonymize_path(e))
 
 
 # --- діалог «Сталася помилка» ---
@@ -218,9 +237,6 @@ def open_log_dir():
 # доправляє текст у GUI-потік (queued connection), там і показуємо діалог.
 _notifier = None
 _dialog_open = False
-
-_ISSUE_URL = "https://github.com/mykola-zhukovets/balachky/issues/new"
-
 
 def _open_github_issue(details: str):
     """Відкрити форму нового issue на GitHub із безпечною заготовкою.
@@ -236,7 +252,7 @@ def _open_github_issue(details: str):
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
         QApplication.clipboard().setText(details)
-        url = _ISSUE_URL + "?" + urllib.parse.urlencode(
+        url = ISSUE_URL + "?" + urllib.parse.urlencode(
             {"title": tr("crash_report_title"),
              "body": tr("crash_report_body")})
         QDesktopServices.openUrl(QUrl(url))
@@ -370,7 +386,10 @@ def install_excepthooks(app=None):
             return
         try:
             text = "".join(traceback.format_exception(exc_type, exc, tb))
-            logging.error("Неперехоплена помилка:\n%s", text)
+            # Знеособлюємо ще в джерелі: OSError показує шлях через repr() з
+            # подвоєними бекслешами, і сирий traceback ніс ім'я облікового
+            # запису прямо в локальний журнал (рецензія 31.07).
+            logging.error("Неперехоплена помилка:\n%s", anonymize_path(text))
             try:
                 sys.__excepthook__(exc_type, exc, tb)   # звичний вивід у консоль
             except Exception:

@@ -42,12 +42,17 @@ _NAV_VK = {
 
 # Менеджери паролів: у їхні вікна НЕ вставляти й НЕ набирати (див. paste.py).
 # CredentialUIBroker — системний діалог введення облікових даних Windows.
+# Це best effort за точним ім'ям процесу, не гарантія: перейменований або
+# портативний exe може обійти блокування.
 PASSWORD_MANAGERS = frozenset({
     "keepass.exe",
     "keepassxc.exe",
+    "keepassxc-proxy.exe",
     "bitwarden.exe",
     "1password.exe",
     "credentialuibroker.exe",
+    "robotaskbaricon.exe",
+    "enpass.exe",
 })
 
 _RDP_CLASS = "TscShellContainerClass"
@@ -97,6 +102,7 @@ _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 # argtypes/restype ОБОВʼЯЗКОВІ: на 64-бітній Windows дескриптори — вказівники,
 # і без явного restype ctypes візьме c_int (32 біти) й обріже HWND/HANDLE.
+_user32.GetForegroundWindow.argtypes = ()
 _user32.GetForegroundWindow.restype = wintypes.HWND
 _user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
 _user32.SetForegroundWindow.restype = wintypes.BOOL

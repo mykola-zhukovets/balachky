@@ -71,7 +71,7 @@ if __name__ == "__main__":
 class LegacySoundsMigrationTests(unittest.TestCase):
     """sounds=False у старому конфігу глушив УСЕ, включно зі вставкою.
     Після видалення сигналів запису воля «тихо» не має вмикати вставку
-    (вердикт суду 24.07: регрес для sounds=False & paste_confirm_sound=True)."""
+    (вердикт рецензії 24.07: регрес для sounds=False & paste_confirm_sound=True)."""
 
     def _load(self, toml_text):
         import tempfile, os

@@ -38,12 +38,15 @@ class TestPronDialog(unittest.TestCase):
 
     def test_updated_status_shown(self):
         # БЛОКЕР 1: on_save повертає "updated" → діалог показує «Оновили», не «Запам'ятали»
-        from fronts.desktop.i18n import tr
+        from fronts.desktop.i18n import current_language, set_language
+        language = current_language()
+        self.addCleanup(set_language, language)
+        set_language("uk")
         d = PronunciationDialog(None, word="замок",
                                 on_save=lambda **kw: "updated")
         d._simple.setText("за́мок")
         d._do_save()
-        self.assertEqual(d._error.text(), tr("tts_pron_updated"))
+        self.assertEqual(d._error.text(), "Оновили вимову")
 
     def test_undo_list_and_delete(self):
         # БЛОКЕР 2: список збережених + видалення (undo)

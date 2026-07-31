@@ -76,14 +76,18 @@ _DAY = {
     "SUCCESS_EYEBROW": "#F39200", # світліше золото для підпису «готово»
     "GOLD_HOVER":    "#FFD387",   # accent hover — світліше золото
     "GOLD_PRESSED":  "#E2AB4A",   # accent pressed — глибше золото
-    "DANGER_MUTED":  "#CF7B62",   # теракот для тексту/рамки деструктив-кнопки
+    "DANGER_MUTED":  "#EB8B6F",   # теракот для тексту/рамки деструктив-кнопки
+    # ^ 30.07 a11y-batch: #CF7B62 давав лише 3.87:1 на CARD (#3A3528), нижче
+    # норми AA 4.5:1 — саме там, де помилка найдорожча (кнопки видалення).
+    # Той самий тон/насиченість, підтягнута яскравість (HSV V 0.81→0.92) →
+    # 4.92:1 на CARD.
     # rgba-токени (прозорі відтінки)
     "HOVER_OVERLAY": "rgba(255,255,255,0.05)",  # ghost hover — тихе біле світло
     "PRESS_OVERLAY": "rgba(0,0,0,0.22)",        # натиск базової/ghost
     "TEXT_DISABLED": "rgba(230,229,209,0.36)",  # текст вимкненого контрола
-    "_DANGER_45":    "rgba(207,123,98,0.45)",   # рамка деструктиву у спокої
-    "_DANGER_12":    "rgba(207,123,98,0.12)",   # hover-підсвіт деструктиву
-    "_DANGER_22":    "rgba(207,123,98,0.22)",   # натиск деструктиву
+    "_DANGER_45":    "rgba(235,139,111,0.45)",  # рамка деструктиву у спокої
+    "_DANGER_12":    "rgba(235,139,111,0.12)",  # hover-підсвіт деструктиву
+    "_DANGER_22":    "rgba(235,139,111,0.22)",  # натиск деструктиву
     "_TILE_BASE":    "#2c2718",                 # база тайла (під bg-tile.png)
     "_GLASS_HI":     "rgba(109,102,86,0.34)",   # верхній-лівий кремовий відблиск скла
     "_GLASS_TINT":   "rgba(46,42,31,0.26)",     # база плашки (.26 — тайл просвічує)
@@ -372,6 +376,42 @@ def _boost_contrast(token_value, bg_rgb, target: float = _CONTRAST_MIN, label: s
     return _repack_like(token_value, rgb_at(best_v, final_s))
 
 
+def _darkest_for_contrast(token_value, bg_rgbs, target: float = _CONTRAST_MIN, label: str = ""):
+    """Обернений до ``_boost_contrast``: знайти НАЙТЕМНІШЕ V (той самий тон і
+    насиченість), що ще проходить ``target`` контрасту проти КОЖНОГО тла в
+    ``bg_rgbs``. Використовується для HELPER_TEXT (рівень 4 шкали Налаштувань)
+    — навмисно темніший за TEXT_MUTED, щоб колір (третя ознака розриву 3→4)
+    читався на око, а не лише формально: рецензія 30.07 зміряла TEXT_BODY/TEXT_MUTED
+    і отримала контраст ~1,2:1 — практично невидимо. Темнішати нема куди
+    (``token_value`` уже на межі порогу) → тихо повертаємо його без змін,
+    читабельність пояснення важливіша за розрізнюваність."""
+    fg_rgb = _token_rgb(token_value)
+    if fg_rgb is None:
+        return token_value
+    h, s, v0 = colorsys.rgb_to_hsv(fg_rgb[0] / 255, fg_rgb[1] / 255, fg_rgb[2] / 255)
+
+    def rounded_rgb(vv):
+        raw = colorsys.hsv_to_rgb(h, s, vv)
+        return tuple(round(max(0, min(255, c * 255))) for c in raw)
+
+    def min_contrast(vv):
+        rgb = rounded_rgb(vv)
+        return min(_contrast_ratio(rgb, bg) for bg in bg_rgbs)
+
+    if min_contrast(v0) < target:
+        return token_value
+    lo, hi = 0.0, v0    # шукаємо мінімальний v у [lo, v0], що ще проходить поріг
+    best = v0
+    for _ in range(48):
+        mid = (lo + hi) / 2
+        if min_contrast(mid) >= target:
+            best = mid
+            hi = mid
+        else:
+            lo = mid
+    return _repack_like(token_value, rounded_rgb(best))
+
+
 def _fix_contrast(palette: dict) -> dict:
     """Прогнати всі пари з ``_CONTRAST_PAIRS`` і підтягнути текстові токени,
     що не дотягують до WCAG AA. Тло (CARD/SURFACE/GOLD) не чіпаємо."""
@@ -507,6 +547,14 @@ def _install(palette: dict, hue=None) -> None:
     g["_GLASS_FILL"] = glass_fill
     p = dict(palette)
     p["_GLASS_FILL"] = glass_fill
+    # HELPER_TEXT — похідний від TEXT_MUTED, максимально ВІДМІННИЙ від TEXT_BODY
+    # (розрив 3→4 шкали Налаштувань), лишаючись читним на CARD і SURFACE.
+    # Обчислюємо за КОЖНОГО _install (усі пресети, не лише hue-палітри), бо
+    # "classic"/"red" у PRESETS — сирі _DAY/_NIGHT, повз _fix_contrast.
+    p["HELPER_TEXT"] = _darkest_for_contrast(
+        palette["TEXT_MUTED"],
+        (_token_rgb(palette["CARD"]), _token_rgb(palette["SURFACE"])),
+        label="пояснення (HELPER_TEXT)")
     # статичні (не-палітрові) токени, на які теж спирається QSS. Шляхи до SVG-
     # іконок — за активним кольором (день/червоний/перефарбовані), решта
     # геометрії — та сама завжди.
@@ -592,6 +640,101 @@ def load_fonts() -> None:
         QFontDatabase.addApplicationFont(str(ttf))
 
 
+# ───────────── шкала групування сторінки Налаштувань (спільна) ─────────────
+# Джерело чисел: 2026-07-30-ПОРАДА-типографіка-сторінки-налаштувань.md §2.
+# Повітря НЕРІВНЕ навмисно — відступ між групами мусить читатись помітно
+# більшим за відступ усередині групи, інакше груп «не видно, скільки заголовків
+# не додай». Будь-яка вкладка Налаштувань, що переходить на групування карток,
+# бере ці самі числа (а не вигадує свої), щоб вкладки лишались візуально одним
+# застосунком.
+GROUP_GAP = 32        # px між картками-групами (_tab_scroll spacing)
+ROW_GAP = 12           # px між параметрами всередині картки
+GROUP_HEAD_GAP = 10    # px між назвою групи (level="group_title") і 1-м параметром
+LABEL_HELPER_GAP = 4   # px між назвою параметра і її поясненням (розрив 3→4)
+NESTED_INDENT = 28     # px лівий відступ вкладеної мікрокартки (wrap_nested)
+HELPER_MAX_CHARS = 70  # орієнтовна ширина рядка пояснення (символів, не px)
+
+
+def make_group_title(text: str):
+    """Заголовок групи всередині картки (рівень 2 шкали): 13px/700 UPPERCASE,
+    колір GOLD_EYEBROW. Спільний виклик — інша вкладка Налаштувань, що переходить
+    на групування карток, використовує той самий factory, без власного QSS."""
+    from PySide6.QtWidgets import QLabel
+    from PySide6.QtGui import QFont
+    lbl = QLabel(text)
+    lbl.setProperty("level", "group_title")
+    font = lbl.font()
+    font.setCapitalization(QFont.AllUppercase)
+    lbl.setFont(font)
+    return lbl
+
+
+def make_option_label(text: str):
+    """Назва параметра (рівень 3): 14px/500."""
+    from PySide6.QtWidgets import QLabel
+    lbl = QLabel(text)
+    lbl.setProperty("level", "option_label")
+    return lbl
+
+
+def make_helper_label(text: str):
+    """Пояснення під параметром (рівень 4): 12px/400, приглушений колір,
+    завжди word-wrap. Ширину рядка (~HELPER_MAX_CHARS) обмежує контейнер
+    виклику (напр. setMaximumWidth), сам лейбл цього не нав'язує."""
+    from PySide6.QtWidgets import QLabel
+    lbl = QLabel(text)
+    lbl.setProperty("level", "helper")
+    lbl.setWordWrap(True)
+    return lbl
+
+
+def make_badge(text: str):
+    """Капсула-статус поруч із назвою групи (рівень 5), напр. «ЕКСПЕРИМЕНТАЛЬНО» —
+    винесена з тексту заголовка (спека §5), щоб назва групи читалась чисто."""
+    from PySide6.QtWidgets import QLabel
+    from PySide6.QtGui import QFont
+    lbl = QLabel(text)
+    lbl.setProperty("badge", "exp")
+    font = lbl.font()
+    font.setCapitalization(QFont.AllUppercase)
+    lbl.setFont(font)
+    return lbl
+
+
+def indent_row(widget, indent: int = None):
+    """Обгорнути ``widget`` у QHBoxLayout з лівим відступом ``indent`` (типово
+    NESTED_INDENT). НЕ плутати з ``widget.setContentsMargins()`` — той міняє
+    внутрішній паддінг віджета, а НЕ його позицію в батьківському layout-і
+    (перевірено емпірично: QFrame зі своїм QVBoxLayout ігнорує власні
+    contentsMargins, бо layout має явно задані власні). Єдиний робочий спосіб
+    зсунути дитину вправо в QVBoxLayout — обгорнути в QHBoxLayout зі
+    spacer/margin зліва."""
+    from PySide6.QtWidgets import QHBoxLayout
+    row = QHBoxLayout()
+    row.setContentsMargins(NESTED_INDENT if indent is None else indent, 0, 0, 0)
+    row.addWidget(widget)
+    return row
+
+
+def wrap_nested(*widgets):
+    """Обгорнути вкладені/залежні елементи (напр. кнопку завантаження компонента)
+    у мікрокартку зі зв'язком-контейнером: легке тло + гребінець зліва, замість
+    голого відступу вправо (порада §4: «зв'язок тримає контейнер, а не відступ»).
+    Викликач додає повернутий QFrame у батьківський layout з indent NESTED_INDENT."""
+    from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget, QLayout
+    frame = QFrame()
+    frame.setProperty("nestedCard", True)
+    lay = QVBoxLayout(frame)
+    lay.setContentsMargins(14, 10, 14, 10)
+    lay.setSpacing(8)
+    for w in widgets:
+        if isinstance(w, QLayout):
+            lay.addLayout(w)
+        elif isinstance(w, QWidget):
+            lay.addWidget(w)
+    return frame
+
+
 def spaced(label, pct: int = 160, center: bool = False, rich: bool = False):
     """Збільшити міжрядковий інтервал QLabel. У Qt-QSS немає line-height, тож
     обгортаємо наявний текст у rich-text <p> з line-height — QLabel це шанує в
@@ -607,6 +750,20 @@ def spaced(label, pct: int = 160, center: bool = False, rich: bool = False):
     label.setText(f'<p style="{align}line-height:{pct}%; margin:0;">'
                   + inner + "</p>")
     return label
+
+
+def style_segment_frame(frame) -> None:
+    """Підкладка сегмент-контролу (2+ кнопки-«таблетки» типу «Монітор/Вікно»):
+    власне тло й заокруглення, БЕЗ власної рамки. GlassButton у стані checked
+    сам малює золоту рамку (glass.py paintEvent); якщо підкладка ТЕЖ малює
+    рамку (як [glasspanel="true"], border: 1px solid _GLASS_EDGE), між ними —
+    2px відступу padding і виходять дві паралельні лінії (діагноз 2026-07-30
+    №2). Викликати повторно з register_restyle_call при зміні теми — читає
+    _WHITE_04 наживо з глобалей модуля."""
+    frame.setStyleSheet(
+        f"QFrame {{ background: {_P['_WHITE_04']}; border: none;"
+        f" border-radius: 8px; padding: 2px; }}"
+    )
 
 
 def build_qss() -> str:
@@ -674,6 +831,37 @@ QLabel[level="block"]   {{ color: {p["TEXT_STRONG"]}; font-size: 16px; font-weig
 QLabel[level="body"]    {{ color: {p["TEXT_BODY"]}; font-size: 15px; font-weight: 400; }}
 QLabel[level="hint"]    {{ color: {p["TEXT_MUTED"]}; font-size: 13px; font-weight: 400; }}
 QLabel[level="stat"]    {{ color: {p["TEXT_STRONG"]}; font-size: 28px; font-weight: 600; }}
+/* --- шкала групування сторінки Налаштувань (докладно — GROUP_SCALE вище в
+   модулі; порада 2026-07-30-ПОРАДА-типографіка-сторінки-налаштувань.md §1):
+   рівень 2 «назва групи» (13/700, uppercase — застосовує make_group_title),
+   рівень 3 «назва параметра» (14/700), рівень 4 «пояснення» (12/400, тьмяніше),
+   рівень 5 «підпис/бейдж» (11/600). Розрив 3→4 мусить бути ПОТРІЙНИЙ: менший
+   кегль І легша вага НЕМАЄ (обидва 400) І тьмяніший колір — тому color+size
+   різні на кожному рівні, а не лише один канал.
+
+   Вага 500→700 (рецензія 30.07, друга ніч): колірна вісь має ФІЗИЧНУ стелю — на
+   темному тлі (SURFACE) HELPER_TEXT не може стати темнішим, ніж дозволяє
+   WCAG 4.5:1 до самого тла, а це тло й обмежує, наскільки далеко колір
+   пояснення може відійти від кольору назви. Для фіолетового (S,V майже на
+   межі) стеля — 1.32:1, і жодна зміна відтінку/яскравості HELPER_TEXT це не
+   підвищить, не порушивши 4.5:1 до тла (виміряно: theme._darkest_for_contrast
+   вже шукає найтемніше можливе V — це і є стеля, не недогляд). Тому розрив
+   3→4 несе вагова вісь: 700 проти 400 (замість 500 проти 400) — помітно
+   жирніший заголовок компенсує слабкий колірний сигнал саме там, де кольору
+   бракує. Контраст читабельності пояснення до тла (CARD/SURFACE, 4.5:1)
+   лишається недоторканим у КОЖНОМУ кольорі — це червона лінія, не жертвуємо. */
+QLabel[level="group_title"] {{
+    color: {p["GOLD_EYEBROW"]}; font-size: 13px; font-weight: 700;
+}}
+QLabel[level="option_label"] {{ color: {p["TEXT_BODY"]}; font-size: 14px; font-weight: 700; }}
+QLabel[level="helper"]  {{ color: {p["HELPER_TEXT"]}; font-size: 12px; font-weight: 400; }}
+QLabel[level="caption"] {{ color: {p["TEXT_MUTED"]}; font-size: 11px; font-weight: 600; }}
+/* капсула-бейдж статусу поруч із назвою групи (напр. «ЕКСПЕРИМЕНТАЛЬНО») —
+   винесено з тексту заголовка, щоб назва читалась чисто (спека §5). */
+QLabel[badge="exp"] {{
+    color: {p["TEXT_MUTED"]}; font-size: 11px; font-weight: 600;
+    border: 1px solid {p["_LINE_SOFT"]}; border-radius: 8px; padding: 2px 8px;
+}}
 QLabel[h1="true"]      {{
     color: {p["TEXT_STRONG"]}; font-size: 24px; font-weight: 600;
     font-family: "Segoe UI", system-ui, sans-serif;
@@ -728,6 +916,16 @@ QFrame[dropzone="true"] {{
     background: {p["_PANEL_35"]};
 }}
 
+/* мікрокартка вкладеного/залежного елемента (спека §3.4, порада §4): зв'язок з
+   батьком тримає КОНТЕЙНЕР — легке тло + гребінець-лінія зліва — а не сам
+   лише правий відступ. wrap_nested() (нижче) додає й лівий margin шару. */
+QFrame[nestedCard="true"] {{
+    background: {p["_GLASS_TINT"]};
+    border: none;
+    border-left: 2px solid {p["GOLD"]};
+    border-radius: 6px;
+}}
+
 /* скляна підложка панелей: та сама формула скла, що й картки */
 QFrame[glasspanel="true"] {{
     background: {p["_GLASS_FILL"]};
@@ -768,7 +966,7 @@ QPushButton {{
 QPushButton:hover {{ border-color: {p["_GOLD_65"]}; color: {p["TEXT_STRONG"]}; }}
 QPushButton:pressed {{ background: {p["PRESS_OVERLAY"]}; }}
 /* фокус: НЕ outline (Qt QSS малює його поверх контенту і він лягає на текст —
-   вердикти судів 24.07 двічі), а потовщена рамка з компенсацією паддінга,
+   вердикти рецензій 24.07 двічі), а потовщена рамка з компенсацією паддінга,
    щоб кнопка не «стрибала»: 1px+8/16 -> 2px+7/15. Рамка малюється ЛИШЕ при
    клавіатурному фокусі ([kbfocus="true"]). Правила для accent/ghost/danger —
    нижче їхніх базових, інакше програють у каскаді. */
@@ -778,6 +976,15 @@ QPushButton[accent="true"] {{ background: {p["GOLD"]}; color: {p["TEXT_ON_GOLD"]
 QPushButton[accent="true"]:hover {{ background: {p["GOLD_HOVER"]}; border-color: {p["GOLD_HOVER"]}; color: {p["TEXT_ON_GOLD"]}; }}
 QPushButton[accent="true"]:pressed {{ background: {p["GOLD_PRESSED"]}; border-color: {p["GOLD_PRESSED"]}; }}
 QPushButton[accent="true"]:disabled {{ background: {p["_GOLD_35"]}; border-color: {p["_GOLD_35"]}; color: {p["_PANEL_65"]}; }}
+/* Головна дія списку (напр. «Отримати текст наради» на готовій картці
+   наради) — помітно більша й жирніша за сусідні другорядні кнопки того ж
+   рядка. Окрема властивість (а не увесь [accent=true]): моделі
+   завантаження/«зробити активною» лишаються за звичайним акцентним
+   розміром — канон побудови сторінок 30.07 п.2 (кнопка "ховалась" серед
+   візуально рівних сусідів). */
+QPushButton[accent="true"][primaryAction="true"] {{
+    font-size: 16px; font-weight: 700; padding: 10px 18px; min-height: 32px;
+}}
 QPushButton[ghost="true"] {{ background: transparent; border: 1px solid transparent; color: {p["TEXT_MUTED"]}; min-width: 0; }}
 QPushButton[ghost="true"]:hover {{ background: {p["HOVER_OVERLAY"]}; color: {p["TEXT_STRONG"]}; border-color: transparent; }}
 QPushButton[ghost="true"]:pressed {{ background: {p["PRESS_OVERLAY"]}; }}
@@ -789,7 +996,7 @@ QPushButton[danger="true"]:hover {{ background: {p["_DANGER_12"]}; border-color:
 QPushButton[danger="true"]:pressed {{ background: {p["_DANGER_22"]}; }}
 QPushButton[danger="true"]:disabled {{ background: transparent; color: {p["TEXT_DISABLED"]}; border-color: {p["_HAIRLINE"]}; }}
 /* accent: FOCUS у денній темі == GOLD (#F39200) — рамка кольору заливки
-   невидима (суд-3, 0/5460 пікселів). Тому контрастна ТЕМНА рамка
+   невидима (рецензія-3, 0/5460 пікселів). Тому контрастна ТЕМНА рамка
    TEXT_ON_GOLD — той самий патерн, що фокус-перстень чіп-слайдера. */
 QPushButton[accent="true"][kbfocus="true"] {{ border: 2px solid {p["TEXT_ON_GOLD"]}; padding: 7px 15px; }}
 QPushButton[ghost="true"][kbfocus="true"] {{ border: 2px solid {p["FOCUS"]}; padding: 7px 15px; }}
@@ -827,6 +1034,18 @@ QToolButton:pressed {{ background: rgba(0,0,0,0.28); }}
 QToolButton:focus {{ border: 1px solid {p["FOCUS"]}; }}
 QToolButton:disabled {{ color: {p["_INK_45"]}; }}
 
+/* «Розкривач налаштувань» (канон побудови сторінок 30.07 п.3): звичайний
+   QToolButton вище має border:transparent у спокої — межа лише на hover,
+   тож рядок читається як підпис, не кнопка. Тут межа й більше поле
+   натискання видимі ЗАВЖДИ, не лише на hover/checked. */
+QToolButton[disclosure="true"] {{
+    border: 1px solid {p["_LINE_SOFT"]}; border-radius: {p["_R_CTRL"]};
+    padding: 8px 14px; min-height: 24px;
+}}
+QToolButton[disclosure="true"]:hover {{ background: {p["_GOLD_08"]}; border-color: {p["_GOLD_65"]}; }}
+QToolButton[disclosure="true"]:checked {{ background: {p["_GOLD_08"]}; border-color: {p["GOLD"]}; }}
+QToolButton[disclosure="true"]:focus {{ border: 2px solid {p["FOCUS"]}; padding: 7px 13px; }}
+
 /* --- вкладки Налаштувань: виразні пігулки --- */
 QTabWidget::pane {{ border: none; background: transparent; top: 0px; }}
 QTabWidget::tab-bar {{ left: 0; }}
@@ -847,7 +1066,16 @@ QTabBar::tab:selected {{
 QTabBar::tab:focus {{ border-color: {p["FOCUS"]}; }}
 QTabBar::tab:disabled {{ color: {p["TEXT_DISABLED"]}; border-color: {p["_HAIRLINE"]}; background: {p["_PANEL_45"]}; }}
 
-QRadioButton, QCheckBox {{ color: {p["TEXT_BODY"]}; spacing: 10px; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }}
+/* font-weight:700 навмисно (спека вигляду 30.07 §3, доробка рецензії 30.07,
+   друга ніч — синхронізовано з QLabel[level="option_label"] вище: та сама
+   вага рівня 3, з тих самих причин, включно з фізичною стелею колірного
+   контрасту в холодних тонах — див. коментар над option_label):
+   ~13 параметрів на вкладці «Запис і звук» — нативний текст QCheckBox, а НЕ
+   make_option_label(), тож він мусить нести ту саму вагу рівня 3 (option_label),
+   інакше вага з поясненням (рівень 4, 400) збігається і розрив 3→4 лишається
+   лише подвійним (кегль+колір), а не потрійним. Клік по тексту й доступність
+   (native QCheckBox accessible name) не чіпаємо — стиль, не структура. */
+QRadioButton, QCheckBox {{ color: {p["TEXT_BODY"]}; font-weight: 700; spacing: 10px; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; }}
 QRadioButton:hover, QCheckBox:hover {{ background: {p["_GOLD_08"]}; }}
 QRadioButton:pressed, QCheckBox:pressed {{ background: rgba(0,0,0,0.18); }}
 QRadioButton:focus, QCheckBox:focus {{ border: 1px solid {p["FOCUS"]}; }}
