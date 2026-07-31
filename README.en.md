@@ -1,4 +1,4 @@
-<p align="center"><strong>English</strong> · <a href="README.md">Українська</a></p>
+<p align="center"><strong>English</strong> · <a href="README.uk.md">Українська</a></p>
 
 <p align="center">
   <img src="assets/mascot-512.png" alt="Balachky beetle mascot with a microphone" width="150">

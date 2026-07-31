@@ -38,10 +38,20 @@ class BrandNames(unittest.TestCase):
         )
 
     def test_english_readme_uses_canonical_heading_and_keeps_origin(self):
-        readme = (ROOT / "README.en.md").read_text(encoding="utf-8")
-        self.assertIn('<h1 align="center">Balachky</h1>', readme)
-        self.assertNotIn("Chats in Korosten", readme)
-        self.assertIn("Korosten is the town in Ukraine where the app is made", readme)
+        # README.md — головна (англійська) сторінка репо; README.en.md лишили
+        # копією для наявних посилань. Перевіряємо обидві, бо розʼїзд між ними
+        # означав би, що людина за старим посиланням читає застарілий текст.
+        for name in ("README.md", "README.en.md"):
+            readme = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn('<h1 align="center">Balachky</h1>', readme, name)
+            self.assertNotIn("Chats in Korosten", readme, name)
+            self.assertIn(
+                "Korosten is the town in Ukraine where the app is made",
+                readme, name)
+        self.assertEqual(
+            (ROOT / "README.md").read_text(encoding="utf-8"),
+            (ROOT / "README.en.md").read_text(encoding="utf-8"),
+            "README.en.md розійшовся з README.md — оновіть копію")
 
     def test_installer_localizes_public_product_name(self):
         installer = (ROOT / "installer" / "balachky.iss").read_text(encoding="utf-8-sig")

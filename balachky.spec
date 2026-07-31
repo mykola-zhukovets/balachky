@@ -141,8 +141,9 @@ datas = [
     ("LICENSE", "."),                          # PolyForm NC — поруч із notices у _internal
     ("COMMERCIAL-LICENSE.md", "."),            # додаткові дозволи до основної ліцензії
     ("licenses", "licenses"),                  # повні тексти сторонніх ліцензій
-    ("README.md", "."),                        # довідка укр. (paths.bundled_doc)
-    ("README.en.md", "."),                     # довідка англ. (paths.bundled_doc)
+    ("README.md", "."),                        # довідка англ. (головна сторінка репо)
+    ("README.uk.md", "."),                     # довідка укр. (paths.bundled_doc)
+    ("README.en.md", "."),                     # копія англійської для сумісності
     ("CHANGELOG.md", "."),                     # «Що нового» на вкладці «Про програму»
                                                # (paths.bundled_doc / whisper_core.changelog)
     ("scripts/verify.py", "scripts"),          # feature/evidence-plus: незалежний

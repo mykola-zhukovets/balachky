@@ -24,15 +24,17 @@ from whisper_core import paths
 from .i18n import current_language, tr
 
 # Локальні файли (пакуються в збірку через datas у balachky.spec).
-# Канонічний README.md — УКРАЇНСЬКИЙ (головна сторінка репозиторію),
-# англійський живе в README.en.md.
-_LOCAL = {"uk": "README.md", "en": "README.en.md"}
+# Канонічний README.md — АНГЛІЙСЬКИЙ: це головна сторінка публічного
+# репозиторію, і саме англійська там основна (рішення власника; так було
+# від першої публікації). Українська версія — README.uk.md; README.en.md
+# лишається копією англійської для сумісності з наявними посиланнями.
+_LOCAL = {"uk": "README.uk.md", "en": "README.md"}
 # Сторінки репо з якорем розділу «як користуватися»
 _REMOTE = {
     "uk": ("https://github.com/mykola-zhukovets/balachky/"
-           "blob/master/README.md#використання"),
+           "blob/master/README.uk.md#використання"),
     "en": ("https://github.com/mykola-zhukovets/balachky/"
-           "blob/master/README.en.md#usage"),
+           "blob/master/README.md#usage"),
 }
 
 

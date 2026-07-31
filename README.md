@@ -1,199 +1,201 @@
-<p align="center"><a href="README.en.md">English</a> · <strong>Українська</strong></p>
+<p align="center"><strong>English</strong> · <a href="README.uk.md">Українська</a></p>
 
 <p align="center">
-  <img src="assets/mascot-512.png" alt="Жук Балачок із мікрофоном" width="150">
+  <img src="assets/mascot-512.png" alt="Balachky beetle mascot with a microphone" width="150">
 </p>
 
-<h1 align="center">Балачки у Коростені</h1>
+<h1 align="center">Balachky</h1>
 
-<p align="center">Записуйте наради, диктуйте в інші програми й розшифровуйте аудіофайли у Windows.</p>
+<p align="center">Record meetings, dictate into other programs, and transcribe audio files on Windows.</p>
+
+<p align="center"><sub>“Balachky” is Ukrainian for casual chats; Korosten is the town in Ukraine where the app is made.</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v1.2.4.2--beta-1f6feb" alt="Випуск v1.2.4.2-beta">
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10 і 11">
-  <img src="https://img.shields.io/badge/processing-local-2ea043" alt="Локальна обробка">
-  <img src="https://img.shields.io/badge/license-source--available-8957e5" alt="Вихідний код доступний">
+  <img src="https://img.shields.io/badge/release-v1.2.4.2--beta-1f6feb" alt="Release v1.2.4.2-beta">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10 and 11">
+  <img src="https://img.shields.io/badge/processing-local-2ea043" alt="Local processing">
+  <img src="https://img.shields.io/badge/license-source--available-8957e5" alt="Source-available license">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.2-beta/BalachkySetup-1.2.4.2-beta-20862C01.exe"><img src="https://img.shields.io/badge/Завантажити_для_Windows_(.exe)-2ea043?style=for-the-badge" alt="Завантажити Балачки v1.2.4.2 beta для Windows" height="44"></a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.2-beta/BalachkySetup-1.2.4.2-beta-20862C01.exe"><img src="https://img.shields.io/badge/Download_for_Windows_(.exe)-2ea043?style=for-the-badge" alt="Download Balachky v1.2.4.2 beta for Windows" height="44"></a>
   <br>
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta">Відомості про випуск</a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta">Release details</a>
   <br>
-  <sub>Windows 10/11 · 64-розрядна версія · без облікового запису</sub>
+  <sub>Windows 10/11 · 64-bit · no account required</sub>
   <br>
-  <sub><strong>Бета-інсталятор без цифрового підпису:</strong> Windows може показати попередження під час встановлення.</sub>
+  <sub><strong>Unsigned beta:</strong> Windows may show a warning during installation.</sub>
 </p>
 
-Балачки записують і розпізнають мовлення на Вашому комп’ютері. Після завантаження або імпорту потрібних моделей і додаткових компонентів основні можливості можуть працювати без інтернету.
+Balachky keeps recording and speech recognition on your computer. Once you have downloaded or imported the models and optional components you need, the main features can work without an internet connection.
 
-**100 мов розпізнавання у v1.2.4.2-beta · Автоматичне визначення мови · Інтерфейс українською та англійською**
+**100 speech-recognition languages in v1.2.4.2-beta · Automatic language detection · Interface in English and Ukrainian**
 
-<a id="використання"></a>
+<a id="usage"></a>
 
-## Наради
+## Meetings
 
-Оберіть відповідний режим запису:
+Choose a recording preset for the situation:
 
-- **Зустріч наживо:** один мікрофон записує розмову в приміщенні.
-- **Онлайн-дзвінок:** Балачки записують Ваш мікрофон і системний звук Windows як окремі синхронні доріжки.
-- **Кілька мікрофонів:** використовуйте від двох до чотирьох мікрофонів і, за потреби, системний звук Windows.
+- **In-person meeting:** one microphone records the conversation in the room.
+- **Online call:** Balachky records your microphone and Windows system sound as separate, synchronized tracks.
+- **Multiple microphones:** use two to four microphones, with optional Windows system sound.
 
-Балачки не приєднуються до Teams, Zoom або дзвінка в браузері як бот. Програма записує обрані Вами джерела звуку. Текст не з’являється під час самої наради. Після зупинки запису Балачки зберігають і готують аудіо наради. Ви самі вирішуєте, коли почати розшифровку.
+Balachky does not join Teams, Zoom, or a browser call as a bot. It records the audio sources you select. There is no live meeting transcript. After you stop recording, Balachky saves and prepares the meeting audio. You decide when to start transcription.
 
-Окремі доріжки спрощують перевірку результату. У програвачі можна змінювати гучність кожного джерела, вимикати його або слухати окремо. Синхронізація при цьому зберігається. Налаштований баланс можна зберегти окремим файлом WAV — оригінальні доріжки лишаються незмінними.
+Separate tracks make the result easier to review. In the player, you can adjust the volume of each source, mute it, or listen to it by itself while the tracks stay synchronized. The balance you set can be saved as a separate WAV file; the original tracks are left untouched.
 
-Під час запису кнопка на сторінці наради або комбінація `Ctrl+Alt+B` позначає важливий момент, не перериваючи запис. У перегляді запису позначки показані списком, натискання перемотує на потрібне місце. У відкритій нараді `Ctrl+F` шукає слово в розшифровці: збіги підсвічуються, а `Enter` веде до наступного.
+While recording, a button on the meeting page or `Ctrl+Alt+B` marks an important moment without interrupting the recording. Marks appear as a list in playback, and clicking one jumps straight to it. In an open meeting, `Ctrl+F` searches the transcript: matches are highlighted and `Enter` moves to the next one.
 
-Видалена нарада спершу потрапляє до кошика й лежить там 7 днів — повернути її можна з повідомлення внизу екрана.
+A deleted meeting first goes to a trash bin and stays there for 7 days — you can restore it from the notification at the bottom of the screen.
 
-Додаткове розпізнавання мовців може позначити співрозмовників у розшифровці доріжки системного звуку Windows. Після цього загальні позначки можна замінити іменами. Якщо потрібний компонент не встановлено, нараду все одно можна записати й розшифрувати.
+Optional speaker separation (diarization) can mark speakers in the transcript of the Windows system-sound track. You can then replace generic labels with names. If this component is not installed, the meeting can still be recorded and transcribed.
 
-Додатковий локальний ШІ-протокол перетворює готову розшифровку на **чернетку для перевірки** з підсумком, рішеннями, завданнями, цитатами й часовими позначками. Це не остаточний документ. Важливі подробиці потрібно звіряти із записом.
+The optional local AI protocol turns a completed transcript into a **draft for review** with a summary, decisions, tasks, supporting excerpts, and timestamps. It is not a final record, and important details should be checked against the recording.
 
-> Балачки не повідомляють учасників і не збирають їхньої згоди. Перед записом Ви самі відповідаєте за попередження людей і дотримання правил, які діють у Вашій ситуації.
+> Balachky does not notify participants or collect their consent. Before recording, you are responsible for telling the people involved and following the rules that apply where you are.
 
-Запис екрана є окремою можливістю й типово не входить до наради. За потреби Ви можете явно ввімкнути його для наради.
+Screen recording is a separate option and is not included in a meeting by default. You can explicitly enable it for a meeting when you need it.
 
-## Диктування
+## Dictation
 
-Працюйте з Балачками у програмі, де вже набираєте текст. Починайте й зупиняйте запис комбінацією для запису або бічною кнопкою миші. Коли текст буде готовий, Балачки можуть вставити його в активне поле, залишити у власному вікні або зробити обидві дії.
+Use Balachky in the program you are already working in. Start and stop with a recording shortcut or a side mouse button. When the text is ready, Balachky can paste it into the active field, keep it in its own window, or do both.
 
-Оберіть, як працюватиме комбінація для запису: утримуйте її, поки говорите, натискайте один раз для початку й ще раз для завершення або використовуйте подвійне натискання для запису без утримування клавіш. Якщо нове диктування починається, поки попереднє ще обробляється, черга зберігає порядок.
+Choose how the recording shortcut works: hold it while speaking, press once to start and once to stop, or use a double press for hands-free recording. If another dictation starts while the previous one is still being processed, the queue preserves the order.
 
-За бажанням перевірте текст перед вставленням. Цільове вікно можна закріпити, щоб зміна фокуса не відправила текст в іншу програму. Якщо відновлення буфера обміну ввімкнено, після вставлення Балачки відновлять попередній текст у буфері обміну.
+An optional preview lets you check the text before it is pasted. You can also pin the target window so a change of focus does not send text to another program. If clipboard restore is enabled, Balachky restores the previous clipboard text after pasting.
 
 <p align="center">
-  <img src="docs/screenshots/01-dictation.png" alt="Сторінка Диктування з картками з готовим текстом" width="820">
+  <img src="docs/screenshots/01-dictation-en.png" alt="Dictation page with completed dictation cards" width="820">
   <br>
-  <sub>Говоріть в одній програмі й отримуйте текст у полі, де Ви працюєте.</sub>
+  <sub>Speak in one program and receive the text in the field where you are working.</sub>
 </p>
 
-## Аудіофайли
+## Audio files
 
-Додавайте готові записи в чергу й розшифровуйте їх локально. Для кожного файла видно перебіг обробки, а окреме завдання можна скасувати. Файл можна розшифрувати знову іншою встановленою моделлю, а мову розпізнавання за потреби змінити в Налаштуваннях.
+Add existing recordings to a queue and transcribe them locally. Each item shows its progress and can be cancelled separately. You can transcribe a file again with another installed model; change the recognition language in Settings when needed.
 
-На цій самій сторінці є диктофон і програвач для перевірки вихідного аудіо. Готовий текст можна скопіювати або експортувати у TXT, Markdown, SRT, VTT чи DOCX.
+The same page includes a recorder and player for checking the source audio. Finished transcripts can be copied or exported as TXT, Markdown, SRT, VTT, or DOCX.
 
 <p align="center">
-  <img src="docs/screenshots/02-files.png" alt="Сторінка Аудіофайлів із чергою розшифровки, диктофоном, програвачем і перебігом роботи" width="820">
+  <img src="docs/screenshots/02-files-en.png" alt="Audio files page with a transcription queue, recorder, player, and progress" width="820">
   <br>
-  <sub>Запишіть або додайте аудіофайл, стежте за обробкою й експортуйте розшифровку з однієї сторінки.</sub>
+  <sub>Record or add an audio file, follow its progress, and export the transcript from one page.</sub>
 </p>
 
-## Більше інструментів
+## More tools
 
-### 1. Словники й навчання
+### 1. Dictionaries and learning
 
-Використовуйте окремі словники для різних потреб. Імпортуйте або експортуйте їх, а Балачки вивчатимуть виправлення лише після Вашого підтвердження.
+Keep separate dictionaries for different contexts. Import or export them, and let Balachky learn from a correction only after you confirm it.
 
-### 2. Історія та експорт
+### 2. History and exports
 
-Історія диктувань зберігається на Вашому комп’ютері. Шукайте попередні диктування, переглядайте статистику, копіюйте або виправляйте текст, видаляйте записи й експортуйте потрібні результати.
+Dictation history stays on your computer. Search earlier dictations, review statistics, copy or correct the text, delete entries, and export the results you need.
 
-### 3. Офлайн-пакет
+### 3. Offline package
 
-Керування моделями показує, які моделі розпізнавання встановлено, яка з них активна та скільки місця вони займають. Створіть офлайн-пакет, щоб перенести потрібні моделі й компоненти на інший комп’ютер із Windows.
+The model manager shows which recognition models are installed, which one is active, and how much disk space they use. Build an offline package to move the required models and components to another Windows computer.
 
-### 4. Запис екрана
+### 4. Screen recording
 
-Записуйте весь монітор або одне вікно в окремому режимі. У v1.2.4.2-beta пункт “Ділянка” ще записує перший монітор, а не довільно обраний фрагмент.
+Record an entire monitor or one window from a separate work mode. In v1.2.4.2-beta, the “Area” option still records the first monitor rather than a custom crop.
 
-### 5. Whisper без командного рядка
+### 5. Whisper without the command line
 
-Оберіть записи, модель Whisper і мову у вікні Балачок. Отримайте локальну розшифровку й експортуйте її без команд у терміналі та без скриптів.
+Choose recordings, a Whisper model, and a language in the Balachky window. Transcribe locally and export the result without terminal commands or scripts.
 
-## Розширені й необов’язкові можливості
+## Advanced and optional
 
-- **Захист нарад:** завершені файли наради можна зашифрувати окремим ключем. Під час запису робочі файли можуть залишатися незашифрованими, тому важливо стежити за поточним станом захисту. Для подальшої перевірки передбачено журнал цілісності й засоби експорту.
-- **Локальний ШІ-протокол:** використовує окрему локальну модель і компонент. Результат є чернеткою, яку потрібно перевірити.
-- **Озвучення тексту:** інтерфейс є, але рушій озвучення не входить до публічного інсталятора v1.2.4.2-beta.
-- **Голосова навігація:** за допомогою вбудованих команд можна переходити між підтримуваними полями документа й клітинками. Для голосового редагування потрібен окремий локальний компонент.
-- **Командний рядок і MCP:** CLI та сервер MCP є інструментами для запуску Балачок із вихідного коду. Вони не належать до стандартних можливостей інсталятора Windows. Дивіться [документацію MCP-сервера](docs/MCP-SERVER.md).
+- **Meeting protection:** completed meeting files can be encrypted with a separate key. Working files may remain unencrypted while recording is in progress, so the current protection state matters. Integrity records and export tools are available for later verification.
+- **Local AI protocol:** uses a separate local model and component. Its result is a draft that needs review.
+- **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.2-beta installer.
+- **Voice navigation:** built-in commands let you move between supported document fields and cells. Voice editing depends on a separate local component.
+- **Command line and MCP:** the CLI and MCP server are tools for running Balachky from source. They are not standard features of the Windows installer. See [MCP server documentation](docs/MCP-SERVER.md).
 
-## Локальна робота без інтернету
+## Local and offline use
 
-| Дія | Використання інтернету |
+| Action | Internet use |
 |---|---|
-| Запис, розшифровка, диктування й обробка нарад | Ні, коли потрібні моделі й компоненти вже є |
-| Перевірка з’єднання в майстрі налаштування | v1.2.4.2-beta створює TCP-з’єднання з `1.1.1.1:53`, коли відкривається майстер налаштування; перевірка не надсилає голосу чи розшифровок |
-| Завантаження моделі розпізнавання | Коли Ви обираєте її під час налаштування або пізніше |
-| Завантаження додаткового компонента | Коли Ви обираєте його під час налаштування або вмикаєте пізніше |
-| Перевірка оновлень | Коли Ви запускаєте її вручну; періодично лише після ввімкнення автоматичної перевірки |
-| Завантаження оновлення програми | Коли Ви погоджуєтеся на оновлення або автоматично, якщо окремо ввімкнули фонове завантаження |
+| Record, transcribe, dictate, and process meetings | No, after the required models and components are available |
+| Setup-wizard connection check | v1.2.4.2-beta makes a TCP connection to `1.1.1.1:53` when the setup wizard opens; the check does not send voice or transcripts |
+| Download a recognition model | When you choose one during setup or later |
+| Download an optional component | When you select it during setup or enable it later |
+| Check for updates | When you check manually; periodically only if automatic checks are enabled |
+| Download an app update | When you accept an update, or automatically if you separately enable background downloads |
 
-Балачки не надсилають Ваш голос, аудіофайли, записи, розшифровки, словники чи чернетки ШІ-протоколів на сервер для обробки. Програма не потребує облікового запису.
+Balachky does not send your voice, audio files, recordings, transcripts, dictionaries, or AI protocol drafts to a server for processing. The app does not require an account.
 
-Ваші дані зберігаються на комп’ютері. У документі [Дані та приватність](docs/DATA-PRIVACY.md) описано папки, які використовують Балачки, межі мережевої роботи й порядок видалення даних.
+Your data is stored on your computer. See [Data and privacy](docs/DATA-PRIVACY.md) for the folders Balachky uses, the network boundaries, and removal instructions.
 
-### Чого Балачки не роблять
+### What Balachky does not do
 
-- Не є хмарним сервісом розшифровки й не потребують облікового запису.
-- Не приєднуються до онлайн-дзвінка як бот.
-- Не повідомляють учасників наради про запис і не збирають їхньої згоди.
-- Розшифровки й чернетки ШІ-протоколів не є остаточними документами. Важливі подробиці потрібно звіряти із записом.
-- Типово не додають запис екрана до Нарад. Цю можливість потрібно ввімкнути явно.
+- It is not a cloud transcription service and does not require an account.
+- It does not join an online call as a bot.
+- It does not notify meeting participants or collect their consent.
+- Transcripts and AI protocol drafts are not final records. Review important details against the recording.
+- It does not include screen recording in Meetings by default. You have to enable that option explicitly.
 
-## Встановлення
+## Installation
 
-Балачки працюють у 64-розрядній Windows 10 або 11. Інсталятор займає близько 159 МБ. Для моделей розпізнавання й додаткових компонентів потрібне окреме місце на диску; загальний обсяг залежить від Вашого вибору.
+Balachky requires 64-bit Windows 10 or 11. The installer is about 159 MB. Recognition models and optional components need additional disk space; the total depends on what you install.
 
-Завантажте `BalachkySetup-1.2.4.2-beta-20862C01.exe` з [офіційної сторінки випуску v1.2.4.2-beta](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta) і запустіть інсталятор. Для завантаження моделі потрібен інтернет, якщо Ви не імпортуєте файли з офлайн-пакета.
+Download `BalachkySetup-1.2.4.2-beta-20862C01.exe` from the [official v1.2.4.2-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
 
-### Windows SmartScreen і перевірка файла
+### Windows SmartScreen and file verification
 
-Інсталятор поточної бета-версії ще не має цифрового підпису, тому Windows SmartScreen може показати попередження “Невідомий видавець”. Завантажуйте інсталятор лише зі сторінки GitHub Releases цього репозиторію. Також доступна [покрокова інструкція для SmartScreen](docs/INSTALL-SMARTSCREEN.md).
+The current beta installer does not have a digital signature, so Windows SmartScreen may show an “Unknown publisher” warning. Download the installer only from this repository’s GitHub Releases. A [step-by-step SmartScreen guide](docs/INSTALL-SMARTSCREEN.md) is available.
 
-SHA-256 саме для цього файла:
+SHA-256 for this exact file:
 
 `20862C0159ED6806A234085C27B3BC108A601161C63C730767F8D644FBBC43B6`
 
-Збіг SHA-256 підтверджує, що завантажений файл байт у байт відповідає опублікованому. Сам по собі цей збіг не доводить, що файл безпечний.
+A matching SHA-256 confirms that your download is byte-for-byte identical to the published file. It does not, by itself, prove that a file is safe.
 
-У записі перевірки випуску від 26 липня 2026 року для цього точного файла зазначено [0 виявлень серед 65 рушіїв VirusTotal](https://www.virustotal.com/gui/file/20862c0159ed6806a234085c27b3bc108a601161c63c730767f8d644fbbc43b6/detection). Це інформаційний результат, а не гарантія безпеки.
+The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/20862c0159ed6806a234085c27b3bc108a601161c63c730767f8d644fbbc43b6/detection) for this exact file. This is an informational result, not a safety guarantee.
 
-## Бета й комерційне використання
+## Beta and commercial use
 
-Вихідний код Балачок доступний за ліцензією [PolyForm Noncommercial 1.0.0](LICENSE). Некомерційне використання всіх режимів безкоштовне. Протягом бети всі режими також безкоштовні для комерційного використання.
+Balachky is source-available under the [PolyForm Noncommercial 1.0.0](LICENSE). Noncommercial use of every mode is free. During the beta, commercial use of every mode is also free.
 
-Після бети для комерційного використання залишаться безкоштовними:
+After the beta, these remain free for commercial use:
 
-- Диктування
-- Словники й навчання
-- Керування моделями Whisper
-- Історія та експорт диктувань
-- Офлайн-пакет
+- Dictation
+- Dictionaries and learning
+- Whisper model management
+- Dictation history and exports
+- Offline package
 
-Для комерційного використання Нарад, Аудіофайлів, Запису екрана та ШІ-протоколу після бети буде потрібна окрема ліцензія. Ціна й умови оплати ще не визначені.
+Commercial use of Meetings, Audio files, Screen recording, and the AI protocol will require a separate license after the beta. Pricing and payment terms have not been decided.
 
-Бета не має запланованої дати завершення. 30-денний перехідний період почнеться лише після того, як Микола Жуковець прямо оголосить у GitHub Release і про перший стабільний випуск, і про завершення бети.
+The beta has no scheduled end date. A 30-day transition period begins only after Mykola Zhukovets explicitly announces both the first stable release and the end of the beta in a GitHub Release.
 
-Цей розділ є коротким поясненням. Докладні умови наведено у файлі [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+This section is a short explanation. The detailed terms are in [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
-Сторонні компоненти зберігають власні ліцензії. Дивіться [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+Third-party components keep their own licenses. See [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
-## Допомога й посилання проєкту
+## Help and project links
 
-- Знайшли помилку? [Повідомте про неї в GitHub Issues](https://github.com/mykola-zhukovets/balachky/issues) і вкажіть версію програми та свої дії.
-- Маєте запитання або ідею? Почніть [обговорення на GitHub](https://github.com/mykola-zhukovets/balachky/discussions).
-- Знайшли проблему безпеки? [Повідомте про неї приватно за інструкцією](SECURITY.md).
-- Хочете долучитися до роботи? Прочитайте [CONTRIBUTING.md](CONTRIBUTING.md).
-- Шукаєте зміни між версіями? Перегляньте [Журнал змін](CHANGELOG.md).
+- Found a bug? [Open an Issue](https://github.com/mykola-zhukovets/balachky/issues) and include the app version and what you were doing.
+- Have a question or an idea? Use [GitHub Discussions](https://github.com/mykola-zhukovets/balachky/discussions).
+- Found a security problem? Follow the private reporting instructions in [SECURITY.md](SECURITY.md).
+- Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md).
+- Looking for changes between versions? See the [Changelog](CHANGELOG.md).
 
-## Підтримати проєкт
+## Support the project
 
-Якщо Балачки Вам корисні, Ви можете підтримати їхній розвиток. Підтримка добровільна. Вона не є оплатою комерційної ліцензії, не відкриває додаткових можливостей і не змінює черговість відповіді на звернення.
+If Balachky is useful to you, you can support its development. Support is optional. It does not include a commercial license, unlock features, or change the order in which support requests are handled.
 
-[Monobank (гривня)](https://send.monobank.ua/jar/21rfey7KTz) · [PrivatBank (долари)](https://www.privat24.ua/send/4h4jh) · [PrivatBank (євро)](https://www.privat24.ua/send/4h5jr)
+[Monobank (UAH)](https://send.monobank.ua/jar/21rfey7KTz) · [PrivatBank (USD)](https://www.privat24.ua/send/4h4jh) · [PrivatBank (EUR)](https://www.privat24.ua/send/4h5jr)
 
 USDT (TRC-20): `TTsc47PDTe2rUkeXcZGTQwR6driykkP2s8`
 
 <details>
-<summary>BTC та ETH</summary>
+<summary>BTC and ETH</summary>
 
 - BTC: `bc1q8wqskryef3ey09jxhv9epdv7kpxnzg8vcf40hy`
 - ETH: `0x6A9FeF1CB66C20D31f770a970F790aFC85243A57`
 
 </details>
 
-<p align="center"><sub>Зроблено в Коростені, Україна.</sub></p>
+<p align="center"><sub>Made in Korosten, Ukraine.</sub></p>
