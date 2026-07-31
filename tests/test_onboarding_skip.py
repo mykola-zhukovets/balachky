@@ -367,6 +367,51 @@ class OnboardingExtraFeaturesStepTests(unittest.TestCase):
         self.assertTrue(bool(wiz._extra_skip_btn.toolTip()))
         self.assertTrue(bool(wiz._extra_skip_btn.accessibleName()))
 
+    def test_extra_next_btn_exists_and_visible(self):
+        wiz = self._wizard()
+        wiz._stack.setCurrentIndex(4)
+        self.assertTrue(hasattr(wiz, "_extra_next_btn"), "Основна кнопка дії мусить існувати у майстрі")
+        self.assertFalse(wiz._extra_next_btn.isHidden(), "Основна кнопка дії мусить бути ВИДИМА на кроці")
+        self.assertTrue(wiz._extra_next_btn.isEnabled(), "Основна кнопка дії мусить бути АКТИВНА")
+        self.assertTrue(bool(wiz._extra_next_btn.toolTip()), "Кнопка дії мусить мати setToolTip")
+        self.assertEqual(wiz._extra_next_btn.accessibleName(), wiz._extra_next_btn.text())
+
+    def test_extra_next_btn_click_preserves_checks_and_populates_selected_extras(self):
+        wiz = self._wizard()
+        wiz._stack.setCurrentIndex(4)
+        chk, sz, is_dl = wiz._extra_chks["diarization"]
+        if not is_dl:
+            chk.setChecked(True)
+        with patch.object(wiz, "_start_download"), patch.object(wiz, "_finish_or_gpu"):
+            wiz._extra_next_btn.click()
+        self.assertTrue(chk.isChecked(), "Клік на основну кнопку дій НЕ повинен знімати галочки")
+        self.assertIn("diarization", getattr(wiz, "selected_extras", []),
+                      "selected_extras мусить бути непорожнім і містити обраний компонент")
+
+    def test_extra_skip_btn_clears_checks(self):
+        wiz = self._wizard()
+        wiz._stack.setCurrentIndex(4)
+        chk, sz, is_dl = wiz._extra_chks["diarization"]
+        if not is_dl:
+            chk.setChecked(True)
+        with patch.object(wiz, "_start_download"), patch.object(wiz, "_finish_or_gpu"):
+            wiz._extra_skip_btn.click()
+        self.assertFalse(chk.isChecked(), "Клік на «Пропустити» мусить знімати всі невикачані галочки")
+        self.assertEqual(getattr(wiz, "selected_extras", []), [],
+                         "selected_extras після пропуску мусить бути порожнім")
+
+    def test_extra_next_btn_text_changes_with_selection(self):
+        wiz = self._wizard()
+        wiz._stack.setCurrentIndex(4)
+        self.assertEqual(wiz._extra_next_btn.text(), "Далі")
+
+        chk, sz, is_dl = wiz._extra_chks["diarization"]
+        if not is_dl:
+            chk.setChecked(True)
+            self.assertEqual(wiz._extra_next_btn.text(), "Завантажити обране")
+            chk.setChecked(False)
+            self.assertEqual(wiz._extra_next_btn.text(), "Далі")
+
 
 if __name__ == "__main__":
     unittest.main()

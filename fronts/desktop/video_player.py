@@ -308,7 +308,7 @@ class VideoPlayerDialog(QDialog):
             self._player.setSource(QUrl.fromLocalFile(self._path))
             self._player.play()
         elif self._path:                # шлях є, але файл зник
-            self._show_error(tr("video_error"))
+            self._show_error(tr("video_not_found"))
 
     def closeEvent(self, event):
         try:
@@ -517,7 +517,7 @@ class VideoPlayerDialog(QDialog):
             self._status.setVisible(True)
         if self._play_btn is not None:
             self._play_btn.setEnabled(False)
-            self._play_btn.setToolTip(tr("video_error"))
+            self._play_btn.setToolTip(message)
 
     def _open_external(self):
         if self._path:

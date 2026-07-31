@@ -319,8 +319,10 @@ class ExtraComponentWorker(QThread):
 
             if self.comp_id == "diarization":
                 import whisper_core.meeting.diarization_models as diar_models
-                check_free_space(self.model_dir, diar_models.TOTAL_DOWNLOAD_BYTES)
-                diar_models.download_and_install(self.model_dir, progress_cb=_progress_cb, cancel_check=self._cancel.is_set)
+                import whisper_core.paths as paths
+                diar_dir = paths.diarization_models_dir()
+                check_free_space(diar_dir, diar_models.TOTAL_DOWNLOAD_BYTES)
+                diar_models.download_and_install(diar_dir, progress_cb=_progress_cb, cancel_check=self._cancel.is_set)
             elif self.comp_id == "protocol":
                 import whisper_core.protocol.model_manager as protocol_mm
                 import whisper_core.paths as paths
@@ -564,7 +566,7 @@ class FirstRunWizard(QDialog):
     def _show_finish_summary(self):
         from whisper_core import cuda_runtime
         from whisper_core.tts import voices as _v
-        import whisper_core.meeting.diarization_models as diar_models
+        from whisper_core.meeting.diarize import models_present_fast
         import whisper_core.protocol.model_manager as protocol_mm
         import whisper_core.punctuator as punc
         import whisper_core.paths as paths
@@ -592,9 +594,9 @@ class FirstRunWizard(QDialog):
                          else tr("onb_summary_voice_off"))
 
         extra_checks = [
-            (tr("onb_extra_diar_title"), diar_models.models_available(self.model_dir)),
+            (tr("onb_extra_diar_title"), models_present_fast(paths.diarization_models_dir())),
             (tr("onb_extra_proto_title"),
-             protocol_mm.model_available(paths.protocol_models_dir(), "fast")),
+             protocol_mm.model_available(paths.protocol_model_dir("fast"), "fast")),
             (tr("onb_extra_punc_title"), punc.model_available(paths.punctuator_model_dir())),
         ]
         for title, ready in extra_checks:
@@ -915,6 +917,7 @@ class FirstRunWizard(QDialog):
 
         # Розміри беруться З КОДУ через human_size
         import whisper_core.meeting.diarization_models as diar_models
+        from whisper_core.meeting.diarize import models_present_fast
         import whisper_core.protocol.model_manager as protocol_mm
         import whisper_core.punctuator as punc
         import whisper_core.tts.voices as tts_voices
@@ -926,7 +929,7 @@ class FirstRunWizard(QDialog):
         tts_sz = tts_voices.VOICE_PRESETS["styletts2_ua"].approx_size_bytes
 
 
-        diar_avail = diar_models.models_available(self.model_dir)
+        diar_avail = models_present_fast(paths.diarization_models_dir())
         # root/"fast" — та сама тека, куди її кладе download_and_install нижче
         # (аудит 31.07.2026: спільний корінь тут завжди читався б як «нема»).
         proto_avail = protocol_mm.model_available(paths.protocol_model_dir("fast"), "fast")
@@ -1025,11 +1028,20 @@ class FirstRunWizard(QDialog):
         sum_box.addWidget(self._extra_sum_label)
         sum_box.addStretch()
 
+        self._extra_next_btn = QPushButton(tr("onb_extra_next"))
+        self._extra_next_btn.setProperty("accent", True)
+        self._extra_next_btn.setToolTip(tr("onb_extra_next"))
+        self._extra_next_btn.setAccessibleName(tr("onb_extra_next"))
+        self._extra_next_btn.clicked.connect(self._advance_from_extra)
+        sum_box.addWidget(self._extra_next_btn)
+
         self._extra_skip_btn = QPushButton(tr("onb_extra_skip"))
         self._extra_skip_btn.setToolTip(tr("onb_extra_skip_tip"))
         self._extra_skip_btn.setAccessibleName(tr("onb_extra_skip"))
         self._extra_skip_btn.clicked.connect(self._skip_extra)
         sum_box.addWidget(self._extra_skip_btn)
+
+        self._update_extra_sum()
 
         lay.addLayout(sum_box)
         return page
@@ -1042,11 +1054,18 @@ class FirstRunWizard(QDialog):
                 total += sz_bytes
         if total == 0:
             txt = tr("onb_extra_none_selected")
+            btn_txt = tr("onb_extra_next")
         else:
             txt = tr("onb_extra_sum", size=human_size(total))
+            btn_txt = tr("onb_extra_download_selected")
         self._extra_sum_label.setText(txt)
         self._extra_sum_label.setToolTip(txt)
         self._extra_sum_label.setAccessibleName(txt)
+
+        if hasattr(self, "_extra_next_btn"):
+            self._extra_next_btn.setText(btn_txt)
+            self._extra_next_btn.setToolTip(btn_txt)
+            self._extra_next_btn.setAccessibleName(btn_txt)
 
     def _skip_extra(self):
         for comp_id, (chk, sz_bytes, is_downloaded) in self._extra_chks.items():
@@ -1448,16 +1467,19 @@ class FirstRunWizard(QDialog):
         except Exception as e:
             logging.warning("Не вдалося оновити стан автозапуску: %s", e)
 
+        # Чесна нумерація (варіант б, розширено для всіх гілок): якщо крок
+        # «Завантаження» так і не був показаний (модель вже готова, додаткових
+        # компонентів не обрано), зменшуємо total_steps на 1 в усіх гілках
+        # (як перед GPU, так і при фініші без GPU), щоб «Крок N з M» не обіцяв
+        # екран, якого людина так і не побачила.
+        if not self._download_shown and not getattr(self, "_download_adjusted", False):
+            self._download_adjusted = True
+            self._total_steps -= 1
+
         from whisper_core import cuda_runtime
         if (not self._gpu_done and cuda_runtime.gpu_present()
                 and not cuda_runtime.runtime_ready()):
             self._gpu_done = True
-            # Чесна нумерація (варіант б): якщо крок «Завантаження» так і не
-            # був показаний (модель вже готова, додаткових компонентів не
-            # обрано), останній крок GPU не має вдавати, що перед ним був
-            # крок, якого людина не бачила — total_steps зменшуємо на 1.
-            if not self._download_shown:
-                self._total_steps -= 1
             self._gpu_eyebrow_lab.setText(self._eyebrow(self._total_steps, "onb_sec_gpu"))
             self._stack.setCurrentIndex(self._gpu_index)
             self._update_gpu_page_state()

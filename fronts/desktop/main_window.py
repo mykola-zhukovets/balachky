@@ -30,7 +30,7 @@ from whisper_core import processing, punctuator  # feature/processing-slider
 from . import motion
 from .processing_slider import ProcessingChip  # feature/processing-slider (Т47: чіп+попап)
 from .watch import AUDIO_EXT   # feature/watch-folder: спільний список аудіо-розширень
-from .glass import GlassButton, RecButton, StatusTag, TipToolButton
+from .glass import FlowLayout, GlassButton, RecButton, StatusTag, TipToolButton
 from .empty_state import EmptyState
 from .hotkey import pretty
 from .i18n import tr
@@ -1536,8 +1536,15 @@ class FilesPage(TermFixMenuMixin, QWidget):
             motion.expand_height(row)     # ТЗ п.7: плавне розгортання результату
             return
         self.install_fix_menu(body)       # ПКМ → «виправити в словник» (міксин)
-        btns = QHBoxLayout()
-        btns.setSpacing(10)
+        # FlowLayout, а не QHBoxLayout: живий тест 31.07 (tests/test_no_clipped_
+        # button_text.py) на ширині 1280px спіймав той самий клас багу, що й
+        # record_action_bar.py — п'ять кнопок цього ряду («Копіювати»/«Зберегти»/
+        # «Зберегти як…»/«Спробувати іншою моделлю»/«Імпортувати субтитри…»)
+        # стискались QHBoxLayout нижче природного розміру, і текст обрізався.
+        # Перенос на новий рядок лишає кожну кнопку читабельною за будь-якої
+        # ширини — той самий рецепт, що вже застосований до рядка дій запису.
+        btns_widget = QWidget()
+        btns = FlowLayout(btns_widget, spacing=10)
         copy = GlassButton(tr("common_copy"))
         # читаємо body._final_text у момент КЛІКУ (а не text на побудові): після
         # виправлення слова в словник _fix_word оновлює саме body._final_text
@@ -1638,15 +1645,13 @@ class FilesPage(TermFixMenuMixin, QWidget):
                 ai_edit_fn=lambda sel, rep: self.controller.voice_edit_selection(
                     sel, rep, self))
             btns.addWidget(panel.edit_button)
-            btns.addStretch()
-            row.layout().addLayout(btns)
+            row.layout().addWidget(btns_widget)
             row.layout().addWidget(panel)
             row.layout().addWidget(saved_lbl)
             motion.expand_height(row)
             return
 
-        btns.addStretch()
-        row.layout().addLayout(btns)
+        row.layout().addWidget(btns_widget)
         row.layout().addWidget(saved_lbl)
         motion.expand_height(row)   # ТЗ п.7: плавне розгортання результату
 

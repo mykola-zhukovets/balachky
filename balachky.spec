@@ -235,7 +235,13 @@ if not _rth.is_file():
     raise SystemExit(
         f"balachky.spec: runtime hook відсутній: {_rth}"
     )
-_sherpa_runtime_hooks = [str(_rth)]
+_rth_pyside = Path(SPECPATH) / "packaging" / "pyi_rth_pyside6_multimedia.py"
+if not _rth_pyside.is_file():
+    raise SystemExit(
+        f"balachky.spec: runtime hook відсутній: {_rth_pyside}"
+    )
+_sherpa_runtime_hooks = [str(_rth), str(_rth_pyside)]
+
 # qtawesome: шрифти іконок (fa6s…)
 datas += collect_data_files("qtawesome")
 

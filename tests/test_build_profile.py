@@ -154,5 +154,75 @@ class BuildProfileTests(unittest.TestCase):
         self.assertIn("llama_cpp", message)
 
 
+class MultimediaRuntimeHookTests(unittest.TestCase):
+    """Хук шляху пошуку бібліотек Qt мусить лишатись у складі збірки.
+
+    Живий дефект 31.07 на встановленій 1.2.4: у frozen-збірці
+    ffmpegmediaplugin.dll не знаходив свої avcodec/avformat (вони лежать
+    рівнем вище, у _internal\\PySide6), і відтворення відео падало з
+    оманливим «Cannot allocate memory». Доведено прямим досвідом:
+    ctypes.WinDLL(плагін) без цієї теки в шляху → «Could not find module»,
+    з нею → вантажиться. Сам хук у dev-режимі свідомо нічого не робить
+    (guard на sys.frozen), тому юніт-тестом його ефект не перевірити —
+    натомість стережемо те, що перевірити МОЖНА: файл існує і справді
+    підключений до складання. Без цього його могли б тихо прибрати
+    рефактором, і дефект повернувся б лише у зібраній програмі."""
+
+    HOOK = ROOT / "packaging" / "pyi_rth_pyside6_multimedia.py"
+
+    def test_hook_file_exists_and_adds_qt_dir_to_dll_search_path(self):
+        self.assertTrue(self.HOOK.is_file(), "хук зник із packaging/")
+        source = self.HOOK.read_text(encoding="utf-8")
+        self.assertIn("add_dll_directory", source)
+        self.assertIn("PySide6", source)
+        self.assertIn("_MEIPASS", source)
+
+    def test_hook_is_wired_into_spec_runtime_hooks(self):
+        """Не «згадується у спеці», а САМЕ потрапляє у список runtime_hooks.
+
+        Перша редакція цього тесту перевіряла лише наявність підрядка і
+        мовчала, коли змінну хука прибирали зі списку — тобто не ловила
+        рівно те, від чого стереже. Тепер ідемо по AST: знаходимо змінну,
+        якій присвоєно шлях до хука, список, який передають у
+        runtime_hooks=, і вимагаємо, щоб змінна була в цьому списку."""
+        spec = SPEC_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(spec)
+
+        hook_vars = {
+            target.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+            and "pyi_rth_pyside6_multimedia" in ast.unparse(node.value)
+        }
+        self.assertTrue(hook_vars, "у спеці немає шляху до хука мультимедіа")
+
+        hooks_lists = {
+            target.id: ast.unparse(node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.List)
+        }
+        passed = {
+            ast.unparse(kw.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            for kw in node.keywords
+            if kw.arg == "runtime_hooks"
+        }
+        self.assertTrue(passed, "у спеці немає жодного runtime_hooks=")
+
+        wired = any(
+            any(var in hooks_lists.get(name, name) for var in hook_vars)
+            for name in passed
+        )
+        self.assertTrue(
+            wired,
+            f"хук {hook_vars} не входить у списки, передані в runtime_hooks= "
+            f"({passed}) — у зібраній програмі відео знову не гратиме")
+
+
 if __name__ == "__main__":
     unittest.main()

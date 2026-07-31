@@ -118,12 +118,51 @@ class VideoPlayerRenderTests(unittest.TestCase):
         self.assertEqual(dlg._player.playbackRate(), 0.5)
         self.assertEqual(dlg._speed_label(), "0,5×")
 
-    def test_missing_file_shows_human_error_no_crash(self):
+    def test_missing_file_shows_missing_message(self):
         dlg = self._dialog(str(_ROOT / "tests" / "no_such_video.mp4"))
-        # showEvent із неіснуючим файлом синхронно показує банер (os.path.exists)
+        # showEvent із неіснуючим файлом показує конкретний банер відсутності файлу
         self.assertTrue(dlg._status.isVisible())
-        self.assertIn("Не вдалося відтворити відео", dlg._status.text())
+        self.assertIn("не знайдено", dlg._status.text())
+        self.assertNotIn("Файл на місці", dlg._status.text())
         self.assertFalse(dlg._play_btn.isEnabled())
+
+    def test_existing_file_error_shows_playback_error_message(self):
+        dlg = self._dialog(str(_ROOT / "README.md"))   # Файл існує
+        dlg._on_error(None, "Cannot allocate memory")
+        self.assertTrue(dlg._status.isVisible())
+        self.assertIn("Файл на місці", dlg._status.text())
+        self.assertNotIn("не знайдено", dlg._status.text())
+        self.assertFalse(dlg._play_btn.isEnabled())
+
+    def test_error_messages_distinguish_missing_from_playback_failure(self):
+        dlg_missing = self._dialog(str(_ROOT / "tests" / "no_such_video.mp4"))
+        msg_missing = dlg_missing._status.text()
+
+        dlg_error = self._dialog(str(_ROOT / "README.md"))
+        dlg_error._on_error(None, "Cannot allocate memory")
+        msg_error = dlg_error._status.text()
+
+        self.assertNotEqual(msg_missing, msg_error)
+        self.assertIn("не знайдено", msg_missing)
+        self.assertIn("Файл на місці", msg_error)
+
+    def test_ensure_media_backend_sets_default_ffmpeg_without_overwriting_user_env(self):
+        from fronts.desktop.app import ensure_media_backend
+        old_env = os.environ.get("QT_MEDIA_BACKEND")
+        try:
+            if "QT_MEDIA_BACKEND" in os.environ:
+                del os.environ["QT_MEDIA_BACKEND"]
+            ensure_media_backend()
+            self.assertEqual(os.environ.get("QT_MEDIA_BACKEND"), "ffmpeg")
+
+            os.environ["QT_MEDIA_BACKEND"] = "windows"
+            ensure_media_backend()
+            self.assertEqual(os.environ.get("QT_MEDIA_BACKEND"), "windows")
+        finally:
+            if old_env is not None:
+                os.environ["QT_MEDIA_BACKEND"] = old_env
+            else:
+                os.environ.pop("QT_MEDIA_BACKEND", None)
 
     def test_render_not_null(self):
         dlg = self._dialog()

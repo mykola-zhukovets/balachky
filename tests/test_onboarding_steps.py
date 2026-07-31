@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QLabel
 
 from fronts.desktop.onboarding import FirstRunWizard
 
@@ -412,6 +412,37 @@ class OnboardingPresenceChecksTests(unittest.TestCase):
         self.assertFalse(wiz._gpu_no.isHidden())
         self.assertTrue(wiz._gpu_next_btn.isHidden())
 
+    def test_diarization_models_present_shows_downloaded_and_disables_checkbox(self):
+        import tempfile
+        from pathlib import Path
+        from whisper_core.meeting.diarize import MODEL_MANIFEST
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diar_dir = Path(tmp_dir)
+            for rel_path, (size, _digest) in MODEL_MANIFEST.items():
+                full_p = diar_dir / rel_path
+                full_p.parent.mkdir(parents=True, exist_ok=True)
+                with open(full_p, "wb") as f:
+                    f.seek(size - 1)
+                    f.write(b"\0")
+
+            with patch("whisper_core.paths.diarization_models_dir", return_value=diar_dir):
+                wiz = self._wizard()
+                chk, _sz, is_dl = wiz._extra_chks["diarization"]
+                self.assertTrue(is_dl, "коли моделі діаризації є на диску, is_downloaded=True")
+                self.assertFalse(chk.isEnabled(), "коли моделі діаризації є на диску, чекбокс деактивовано (уже на комп'ютері)")
+
+    def test_diarization_models_absent_offers_download_checkbox(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diar_dir = Path(tmp_dir)
+            with patch("whisper_core.paths.diarization_models_dir", return_value=diar_dir):
+                wiz = self._wizard()
+                chk, _sz, is_dl = wiz._extra_chks["diarization"]
+                self.assertFalse(is_dl, "коли моделей діаризації немає, is_downloaded=False")
+                self.assertTrue(chk.isEnabled(), "коли моделей діаризації немає, чекбокс активний для завантаження")
+
 
 class OnboardingHonestStepsTests(unittest.TestCase):
     """Рішення власника 31.07 (варіант а+б поверх аудиту 30.07): жоден крок не
@@ -521,3 +552,90 @@ class OnboardingHonestStepsTests(unittest.TestCase):
             wiz.accept()
         self.assertEqual(mock_box.call_count, 1,
                          "підсумок показуємо один раз, навіть якщо accept() кличуть кілька разів")
+
+    def test_page_count_matches_visited_pages_scenario_a_all_downloaded_no_gpu(self):
+        """Сценарій (а): Все завантажено, GPU не потрібен.
+        Кількість фактично показаних сторінок (5) повинна точно дорівнювати
+        фінальному total_steps (5), а не висіти 6."""
+        wiz = self._wizard(gpu_possible=False)
+        visited = [wiz._stack.currentIndex()]
+
+        def trace_page_change(idx):
+            if not visited or visited[-1] != idx:
+                visited.append(idx)
+
+        wiz._stack.currentChanged.connect(trace_page_change)
+
+        with patch("fronts.desktop.onboarding.model_present", return_value=True), \
+                patch("fronts.desktop.onboarding.model_snapshot_usable", return_value=True), \
+                patch("whisper_core.cuda_runtime.gpu_present", return_value=False), \
+                patch.object(QMessageBox, "information"):
+            # Проходимо кроки: 0 (Welcome) -> 1 (Model) -> 2 (Lang) -> 3 (Voice) -> 4 (Extra)
+            wiz._go_next()  # на 1
+            wiz._go_next()  # на 2
+            wiz._go_next()  # на 3
+            wiz._go_next()  # на 4 (Extra)
+            wiz._extra_skip_btn.click()  # пропустити extras -> _advance_from_extra -> finish
+
+        self.assertEqual(visited, [0, 1, 2, 3, 4], "пройдено 5 сторінок")
+        self.assertEqual(len(visited), 5)
+        self.assertEqual(wiz._total_steps, len(visited),
+                         "total_steps мусить дорівнювати кількості реально показаних сторінок (5)")
+
+    def test_page_count_matches_visited_pages_scenario_b_all_downloaded_with_gpu(self):
+        """Сценарій (б): Все завантажено, GPU потрібен.
+        Кількість реально показаних сторінок (6) дорівнює total_steps (6),
+        а лейбл кроку GPU містить '6/6' (або 6 з 6)."""
+        wiz = self._wizard(gpu_possible=True)
+        visited = [wiz._stack.currentIndex()]
+
+        def trace_page_change(idx):
+            if not visited or visited[-1] != idx:
+                visited.append(idx)
+
+        wiz._stack.currentChanged.connect(trace_page_change)
+
+        with patch("fronts.desktop.onboarding.model_present", return_value=True), \
+                patch("fronts.desktop.onboarding.model_snapshot_usable", return_value=True), \
+                patch("whisper_core.cuda_runtime.gpu_present", return_value=True), \
+                patch("whisper_core.cuda_runtime.runtime_ready", return_value=False):
+            wiz._go_next()  # 1
+            wiz._go_next()  # 2
+            wiz._go_next()  # 3
+            wiz._go_next()  # 4 (Extra)
+            wiz._extra_skip_btn.click()  # пропустити extras -> GPU step
+
+        self.assertEqual(visited, [0, 1, 2, 3, 4, wiz._gpu_index])
+        self.assertEqual(len(visited), 6)
+        self.assertEqual(wiz._total_steps, len(visited))
+        self.assertIn("6", wiz._gpu_eyebrow_lab.text())
+
+    def test_page_count_matches_visited_pages_scenario_c_has_downloads(self):
+        """Сценарій (в): Є що завантажувати (модель відсутня).
+        Показуються 6 сторінок, total_steps дорівнює 6, а лейбл на кроці завантаження містить '6'."""
+        wiz = self._wizard(gpu_possible=False)
+        visited = [wiz._stack.currentIndex()]
+
+        def trace_page_change(idx):
+            if not visited or visited[-1] != idx:
+                visited.append(idx)
+
+        wiz._stack.currentChanged.connect(trace_page_change)
+
+        with patch("fronts.desktop.onboarding.model_present", return_value=False), \
+                patch("fronts.desktop.onboarding.DownloadWorker.start"):
+            wiz._go_next()  # 1
+            wiz._go_next()  # 2
+            wiz._go_next()  # 3
+            wiz._go_next()  # 4 (Extra)
+            wiz._go_next()  # 5 (Download)
+
+        self.assertEqual(visited, [0, 1, 2, 3, 4, 5])
+        self.assertEqual(len(visited), 6)
+        self.assertEqual(wiz._total_steps, len(visited))
+
+        dl_page = wiz._stack.widget(5)
+        dl_eyebrow_label = dl_page.findChild(QLabel)
+        self.assertIsNotNone(dl_eyebrow_label)
+        self.assertIn("6", dl_eyebrow_label.text())
+

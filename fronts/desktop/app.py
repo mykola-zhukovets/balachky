@@ -6994,7 +6994,22 @@ def _instance_channel_name() -> str:
     return "balachky-single" + os.environ.get("BALACHKY_INSTANCE_SUFFIX", "")
 
 
+def ensure_media_backend():
+    """Явно встановити QT_MEDIA_BACKEND=ffmpeg ДО створення QApplication.
+
+    Детермінізм бекенду Qt Multimedia. У dev-середовищі відтворення працює
+    на всіх бекендах. У frozen (PyInstaller)-збірці завантаження ffmpegmediaplugin.dll
+    потребує реєстрації теки _MEIPASS/PySide6 у DLL search path (див. рантайм-хук
+    packaging/pyi_rth_pyside6_multimedia.py), що розв'язує залежності avcodec-61.dll
+    та усуває відкат на windowsmediaplugin із помилкою «Cannot allocate memory».
+    """
+    if "QT_MEDIA_BACKEND" not in os.environ:
+        os.environ["QT_MEDIA_BACKEND"] = "ffmpeg"
+
+
+
 def main():
+    ensure_media_backend()
     from .crash import setup_logging, install_excepthooks
     setup_logging()          # найпершим: жоден стартовий збій — без сліду в лозі
     from .theme import QSS, load_fonts

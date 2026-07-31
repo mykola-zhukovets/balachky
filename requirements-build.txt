@@ -1,4 +1,4 @@
-# POST-82: exact Windows build toolchain captured from .venv.
+# Exact Windows build toolchain captured from .venv.
 # Install with: python -m pip install -r requirements-build.txt
 --require-hashes
 --only-binary=:all:

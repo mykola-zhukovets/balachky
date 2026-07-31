@@ -11,7 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.4-beta] - 2026-07-31
+## [1.2.4.1-beta] - 2026-07-31
+
+**Інсталятор / Installer:** `BalachkySetup-1.2.4.1-beta-3C5F6144.exe` (161,8 МБ / 161.8 MB; 169 611 393 байтів / bytes)
+**SHA-256:** `3C5F61447C22596CFED5B5ACD8C32D88A4B91BE1768B0DEFE340233437186145`
+
+> Виправлення до 1.2.4-beta. Той випуск відкликано: у ньому не працювало відтворення відео всередині програми.
+> A hotfix for 1.2.4-beta. That release was withdrawn: video playback inside the app did not work there.
+
+### Fixed
+
+**Українською:**
+
+- **Відео знову грається у програмі.** У зібраній версії програвач не знаходив свої медіабібліотеки і показував помилку, хоча самі записи були цілі. Тепер записи екрана і нарад відтворюються як належить.
+- **Чесні повідомлення програвача.** Замість “файл переміщено або пошкоджено” програма розрізняє два випадки: файл на місці, але не вдалося відтворити — і файлу справді немає.
+- **Майстер першого запуску: вибір компонентів можна підтвердити.** Раніше на кроці додаткових можливостей була лише кнопка “Пропустити”, яка мовчки скидала позначені компоненти. З'явилася кнопка, що починає завантаження обраного.
+- **Майстер бачить уже завантажені компоненти.** Розпізнавання співрозмовників більше не пропонується до завантаження, якщо воно вже є на комп'ютері.
+- **Чесний лічильник кроків.** Майстер більше не обіцяє крок, якого не буде.
+- **Підписи кнопок не обрізаються.** Рядки дій над записом екрана і над готовим аудіофайлом переносяться на новий рядок замість того, щоб різати текст. Додано автоматичну перевірку, яка ловить такі місця на різних ширинах вікна.
+
+**In English:**
+
+- **Video plays inside the app again.** In the packaged build the player could not find its media libraries and showed an error, even though the recordings themselves were intact. Screen and meeting recordings now play as they should.
+- **Honest player messages.** Instead of “the file was moved or damaged”, the app now separates two cases: the file is there but playback failed, and the file is genuinely missing.
+- **First-run wizard: your component choice can be confirmed.** The optional-components step only had a “Skip” button, which silently cleared the boxes you ticked. There is now a button that starts downloading what you selected.
+- **The wizard sees components you already have.** Speaker recognition is no longer offered for download when it is already on the computer.
+- **Honest step counter.** The wizard no longer promises a step that will not appear.
+- **Button labels are no longer clipped.** Action rows above a screen recording and above a finished audio file wrap to a new line instead of cutting the text. An automatic check now catches such places at different window widths.
+
+---
+## [1.2.4-beta] - 2026-07-31 — ВІДКЛИКАНО / WITHDRAWN
+
+> Цей випуск відкликано: у зібраній програмі не працювало відтворення відео. Використовуйте 1.2.4.1-beta.
+> This release was withdrawn: video playback did not work in the packaged build. Use 1.2.4.1-beta instead.
 
 **Інсталятор / Installer:** `BalachkySetup-1.2.4-beta-7307EA13.exe` (161,7 МБ / 161.7 MB; 169 593 245 байтів / bytes)
 **SHA-256:** `7307EA13B0CAE2BCF7EE59417EE8A820F634299303242E99A60BE5F7FAC586F4`

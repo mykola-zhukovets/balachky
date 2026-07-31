@@ -1,5 +1,5 @@
 """ЗГЕНЕРОВАНО balachky.spec під час збірки — НЕ редагувати вручну."""
-COMMIT = "d990427"
+COMMIT = "b4b9b2b"
 
 
 def build_commit() -> str:

@@ -12,7 +12,7 @@
 <p align="center"><em>What is said in Korosten stays in Korosten.</em></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v1.2.4--beta-1f6feb" alt="Release v1.2.4-beta">
+  <img src="https://img.shields.io/badge/release-v1.2.4.1--beta-1f6feb" alt="Release v1.2.4.1-beta">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/offline-zero%20telemetry-2ea043" alt="Offline, zero telemetry">
   <img src="https://img.shields.io/badge/tests-2602-2ea043" alt="2602 automated tests">
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4-beta/BalachkySetup-1.2.4-beta-7307EA13.exe"><img src="https://img.shields.io/badge/Download_the_beta-2ea043?style=for-the-badge" alt="Download the v1.2.4 beta for Windows" height="44"></a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.1-beta/BalachkySetup-1.2.4.1-beta-3C5F6144.exe"><img src="https://img.shields.io/badge/Download_the_beta-2ea043?style=for-the-badge" alt="Download the v1.2.4.1 beta for Windows" height="44"></a>
   <br>
   <sub>Windows 10/11 (x64) · 158.9 MB installer · free, no account</sub>
 </p>
@@ -118,7 +118,7 @@ A “Meeting” is a recording, its transcript, and the minutes in one place.
 ### Read-aloud (“Listen”)
 
 - The “Listen” button is already in the interface — it will read dictation or meeting text aloud.
-- Build 1.2.4 doesn't include the speech engine yet: it needs a separate build and will arrive in a later update — offline like everything else. We'd rather honestly show a button that's “on its way” than pretend it's done.
+- Build 1.2.4.1 doesn't include the speech engine yet: it needs a separate build and will arrive in a later update — offline like everything else. We'd rather honestly show a button that's “on its way” than pretend it's done.
 
 ### For those who automate
 
@@ -139,9 +139,9 @@ A “Meeting” is a recording, its transcript, and the minutes in one place.
 
 **System requirements:** Windows 10/11 (x64), 8 GB RAM (16 GB recommended for meetings), and free space for whatever you use: the installer is 158.9 MB, the “Fast” speech model about 1.6 GB, and the Gemma AI-minutes model about 5 GB (needed only for meeting minutes). So dictation alone fits in roughly 2 GB.
 
-1. Download `BalachkySetup-1.2.4-beta-7307EA13.exe` from the [v1.2.4-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4-beta). The checksum prefix is right in the file name, so the build is easy to recognize.
+1. Download `BalachkySetup-1.2.4.1-beta-3C5F6144.exe` from the [v1.2.4.1-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.1-beta). The checksum prefix is right in the file name, so the build is easy to recognize.
 2. Optionally verify the SHA-256 against the sum published with the release:
-   `7307EA13B0CAE2BCF7EE59417EE8A820F634299303242E99A60BE5F7FAC586F4`
+   `3C5F61447C22596CFED5B5ACD8C32D88A4B91BE1768B0DEFE340233437186145`
    (in PowerShell: `Get-FileHash`).
 3. Run the installer.
 4. The first-run wizard downloads the chosen speech model. **That is 1.6 GB and up, and it needs the internet** — once, right here. After that the app works offline. The meeting-minutes model (about 5 GB) is a separate, later download if you want it.
@@ -150,7 +150,7 @@ A “Meeting” is a recording, its transcript, and the minutes in one place.
 
 > **If Windows shows “Unknown publisher”.** The beta installer is not digitally signed yet — a certificate costs hundreds of dollars a year, and the app is free. For a new app this is normal. Click “More info” → “Run anyway”. Step-by-step guide: [docs/INSTALL-SMARTSCREEN.md](docs/INSTALL-SMARTSCREEN.md). Signing will come later.
 
-Check this file on VirusTotal by its SHA-256: [file page](https://www.virustotal.com/gui/file/7307ea13b0cae2bcf7ee59417ee8a820f634299303242e99a60be5f7fac586f4/detection). If no report exists yet, you can submit the file yourself. A scan is an additional signal, not a substitute for verifying the SHA-256.
+Check this file on VirusTotal by its SHA-256: [file page](https://www.virustotal.com/gui/file/3c5f61447c22596cfed5b5acd8c32d88a4b91be1768b0defe340233437186145/detection). If no report exists yet, you can submit the file yourself. A scan is an additional signal, not a substitute for verifying the SHA-256.
 
 ## FAQ
 

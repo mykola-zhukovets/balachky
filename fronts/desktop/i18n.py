@@ -590,10 +590,12 @@ STRINGS = {
         "onb_extra_tts_info": "Корисно, щоб перевірити надиктоване на слух або послухати документ у дорозі. Це окреме завантаження, і на диску воно займає більше, ніж качається. Видаляється в Налаштуваннях одним рухом.",
         "onb_extra_sum": "Обрано для завантаження: {size}",
         "onb_extra_none_selected": "Нічого не обрано",
-        "onb_extra_skip": "Пропустити — можна взяти пізніше",
+        "onb_extra_skip": "Пропустити",
         "onb_extra_skip_tip": "Диктування працюватиме й без цих компонентів. Будь-який із них можна завантажити згодом у Налаштуваннях → Додаткові можливості.",
         "onb_extra_no_net": "Мережі немає. Ці компоненти можна завантажити пізніше або принести з іншого комп’ютера — програма підкаже, як.",
         "onb_extra_downloaded": "Уже на Вашому комп’ютері",
+        "onb_extra_download_selected": "Завантажити обране",
+        "onb_extra_next": "Далі",
 
 
         # --- відновлення моделі (recovery.py) ---
@@ -1528,7 +1530,8 @@ STRINGS = {
         "video_title": "Перегляд відео",
         "video_surface": "Відео",
         "video_position": "Позиція відтворення",
-        "video_error": "Не вдалося відтворити відео в програмі — можливо, файл переміщено або пошкоджено. Спробуйте відкрити його в системному плеєрі.",
+        "video_error": "Не вдалося відтворити відео в програмі. Файл на місці — спробуйте відкрити його в системному плеєрі.",
+        "video_not_found": "Файл відео не знайдено — можливо, його було переміщено або видалено.",
         "video_unavailable": "Вбудований перегляд відео недоступний у цій збірці. Відкрийте запис у системному плеєрі.",
         "video_fullscreen_enter": "На весь екран",
         "video_fullscreen_exit": "Вийти з повного екрана",
@@ -2769,10 +2772,12 @@ STRINGS = {
         "onb_extra_tts_info": "Useful for proofreading dictated text by ear or listening to a document on the go. This is a separate download and takes more disk space than downloaded size. Easily deleted in Settings with one click.",
         "onb_extra_sum": "Selected for download: {size}",
         "onb_extra_none_selected": "Nothing selected",
-        "onb_extra_skip": "Skip — you can get them later",
+        "onb_extra_skip": "Skip",
         "onb_extra_skip_tip": "Dictation will work without these components. Any of them can be downloaded later in Settings → Additional features.",
         "onb_extra_no_net": "No network connection. These components can be downloaded later or transferred from another computer — the application will guide you.",
         "onb_extra_downloaded": "Already on your computer",
+        "onb_extra_download_selected": "Download selected",
+        "onb_extra_next": "Next",
 
 
         # --- model recovery (recovery.py) ---
@@ -3849,7 +3854,8 @@ STRINGS = {
         "video_title": "Video playback",
         "video_surface": "Video",
         "video_position": "Playback position",
-        "video_error": "Couldn’t play the video in the app — the file may have been moved or damaged. Try opening it in the system player.",
+        "video_error": "Couldn’t play the video in the app. The file is intact — try opening it in the system player.",
+        "video_not_found": "Video file not found — it may have been moved or deleted.",
         "video_unavailable": "Built-in video playback isn’t available in this build. Open the recording in your system player.",
         "video_fullscreen_enter": "Full screen",
         "video_fullscreen_exit": "Exit full screen",

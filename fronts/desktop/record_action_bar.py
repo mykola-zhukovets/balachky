@@ -22,11 +22,11 @@ addStretch() — видалити). Перший споживач — Запис
 без жодної зміни в самому барі.
 """
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
 import qtawesome as qta
 
-from .glass import GlassButton
+from .glass import FlowLayout, GlassButton
 from .i18n import tr
 
 _FORBIDDEN_NAME_CHARS = '\\/:*?"<>|'
@@ -62,9 +62,13 @@ class RecordActionBar(QWidget):
         self._display_name = display_name
         self._path_text = path_text
 
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        # FlowLayout, а не QHBoxLayout: живий тест 31.07 на реальній ширині
+        # вікна показав, що пʼять кнопок із довгими українськими підписами
+        # («Перейменувати», «Надіслати / Зберегти») стискаються нижче свого
+        # природного розміру і текст обрізається просто посеред слова.
+        # Перенос на новий рядок лишає кожну кнопку читабельною за будь-якої
+        # ширини — той самий рецепт, що вже застосований до чіпів наради.
+        row = FlowLayout(self, spacing=8)
 
         self.rename_btn = GlassButton(tr("recact_rename"))
         self.rename_btn.setIcon(qta.icon("fa6s.pen"))
@@ -92,8 +96,10 @@ class RecordActionBar(QWidget):
         if extra_widget is not None:
             row.addWidget(extra_widget)
 
-        row.addStretch(1)   # канон п.4: незворотне — фізично віддалене
-
+        # Канон п.4 (незворотне — віддалене від безпечних дій): розпір тут
+        # неможливий (FlowLayout його не має), тож «Видалити» лишається
+        # ОСТАННЬОЮ кнопкою ряду і єдиною в ghost-стилі — випадково влучити
+        # в неї так само важко, а текст більше не ріжеться.
         self.delete_btn = GlassButton(tr("recact_delete"))
         self.delete_btn.setProperty("ghost", True)
         self.delete_btn.setIcon(qta.icon("fa6s.trash-can"))

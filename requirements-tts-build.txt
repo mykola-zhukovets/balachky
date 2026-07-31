@@ -1,5 +1,5 @@
-# POST-82: overlay ONLY for the dedicated Windows build venv:
-# C:\Projects\tts-build-venv (never install into the shared dev/frozen venv).
+# Overlay ONLY for the dedicated Windows build venv:
+# a separate folder outside the repository (never install into the shared dev/frozen venv).
 # Install after requirements.txt and requirements-build.txt.
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 --only-binary=:all:
