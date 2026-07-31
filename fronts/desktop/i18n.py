@@ -390,6 +390,7 @@ STRINGS = {
         "brand_top": "Балачки",
         "brand_bottom": "у Коростені",
         "brand_slogan": "Все, що сказано в Коростені, залишається в Коростені",
+        "sidebar_version": "версія {ver}",
         "sidebar_test_mode": "тестовий журнал увімкнено",
         "close_hint": "Програма працює у фоні. Значок залишається біля годинника. Щоб вийти повністю, відкрийте меню значка й виберіть “Вихід”.",
 
@@ -2545,6 +2546,7 @@ STRINGS = {
         "brand_top": "Balachky",
         "brand_bottom": "",
         "brand_slogan": "What’s said in Korosten stays in Korosten",
+        "sidebar_version": "version {ver}",
         "sidebar_test_mode": "test log active",
         "close_hint": "Balachky is running in the background. Its icon remains by "
                       "the clock. To quit completely, open the icon menu and select "

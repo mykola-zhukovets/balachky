@@ -1908,6 +1908,15 @@ class MainWindow(QMainWindow):
         slogan.setContentsMargins(12, 0, 0, 0)
         sv.addWidget(slogan)
         sv.addSpacing(6)
+        # Версія під слоганом: людині видно, ЩО в неї стоїть, без походу в
+        # «Про програму». Прибрано випадково при зведенні трьох дублів версії
+        # в один екран (2afbdc2) — власник помітив зникнення 31.07; повний
+        # підпис збірки лишається на вкладці «Про програму», тут — короткий.
+        from whisper_core import DISPLAY_VERSION
+        ver = QLabel(tr("sidebar_version", ver=DISPLAY_VERSION))
+        ver.setProperty("version", True)
+        ver.setContentsMargins(12, 0, 0, 0)
+        sv.addWidget(ver)
         # позначка активного режиму тестування (hint-рівень; під версією).
         # Оновлюється живо через сигнал test_mode_changed при перемиканні в Налаштуваннях.
         self._test_indicator = QLabel(tr("sidebar_test_mode"))
