@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from .crash import anonymize_path
+from .glass import FlowLayout
 from .i18n import tr, human_size
 from .hotkey import pretty
 from .links import GITHUB_URL, SUPPORT_URL   # єдине джерело зовнішніх посилань автора
@@ -532,6 +533,7 @@ class FirstRunWizard(QDialog):
         root.addWidget(self._stack, stretch=1)
         root.addLayout(nav)
         self._sync_nav()
+        self._min_width_calibrated = False   # разове калібрування ширини в showEvent
 
 
         self._tray = None
@@ -743,20 +745,24 @@ class FirstRunWizard(QDialog):
         lay.addWidget(self._rb_fast)
         lay.addWidget(self._rb_precise)
 
+        # Підпис теки — окремим рядком (word-wrap на всю ширину), кнопки — у
+        # FlowLayout під ним, а не QHBoxLayout: зонд ×1.5 31.07 — «Відкрити
+        # папку в провіднику»/«Змінити…» стискались label-розтяжкою нижче
+        # природної ширини й різались (той самий рецепт, що sum_box нижче).
         self._dir_label = QLabel(tr("onb_model_dir"))
         self._dir_label.setWordWrap(True)
+        lay.addWidget(self._dir_label)
         view_folders = QPushButton(tr("onb_model_view_folders"))
         view_folders.setAccessibleName(tr("onb_model_view_folders"))
         view_folders.clicked.connect(self._open_standard_folders)
         pick = QPushButton(tr("common_change"))
         pick.setAccessibleName(tr("common_change"))
         pick.clicked.connect(self._pick_dir)
-        row = QHBoxLayout()
-        row.setSpacing(12)
-        row.addWidget(self._dir_label, stretch=1)
+        row_widget = QWidget()
+        row = FlowLayout(row_widget, spacing=12)
         row.addWidget(view_folders)
         row.addWidget(pick)
-        lay.addLayout(row)
+        lay.addWidget(row_widget)
 
         # «Я не памʼятаю, де модель» — пошук уже завантаженої моделі обраного
         # типу у стандартних місцях (тека Балачок, кеш HuggingFace)
@@ -1020,13 +1026,20 @@ class FirstRunWizard(QDialog):
         scroll.setWidget(scroll_content)
         lay.addWidget(scroll, stretch=1)
 
-        sum_box = QHBoxLayout()
+        # FlowLayout, а не QHBoxLayout: живий дефект власника 31.07 на
+        # встановленій 1.2.4.1 (масштаб екрана понад 100%) — підпис «Завантажити
+        # обране» динамічний і довший за «Далі», рядок стискав кнопку нижче
+        # природної ширини й різав текст з обох боків. Той самий рецепт, що
+        # вже в record_action_bar.py/main_window.py: перенос замість стискання.
+        sum_box_widget = QWidget()
+        sum_box = FlowLayout(sum_box_widget, spacing=10)
         self._extra_sum_label = QLabel(tr("onb_extra_none_selected"))
         self._extra_sum_label.setProperty("strong", True)
         self._extra_sum_label.setToolTip(tr("onb_extra_none_selected"))
         self._extra_sum_label.setAccessibleName(tr("onb_extra_none_selected"))
         sum_box.addWidget(self._extra_sum_label)
-        sum_box.addStretch()
+        # FlowLayout не має розпору (як у record_action_bar.py) — лейбл і
+        # кнопки йдуть підряд зліва, без притискання кнопок до правого краю.
 
         self._extra_next_btn = QPushButton(tr("onb_extra_next"))
         self._extra_next_btn.setProperty("accent", True)
@@ -1043,7 +1056,7 @@ class FirstRunWizard(QDialog):
 
         self._update_extra_sum()
 
-        lay.addLayout(sum_box)
+        lay.addWidget(sum_box_widget)
         return page
 
 
@@ -1122,12 +1135,16 @@ class FirstRunWizard(QDialog):
         self._dl_skip.setAccessibleName(tr("onb_dl_skip"))
         self._dl_skip.setToolTip(tr("onb_dl_skip"))
         self._dl_skip.clicked.connect(self._skip_download)
-        row = QHBoxLayout()
+        # FlowLayout, а не QHBoxLayout: «Пропустити — можна будь-коли в
+        # Налаштуваннях» — найдовший підпис майстра; разом зі «Скасувати» і
+        # видимою після збою «Ще раз» ряд не вміщався при більшому шрифті —
+        # перенос замість стискання (рецепт sum_box вище).
+        row_widget = QWidget()
+        row = FlowLayout(row_widget, spacing=10)
         row.addWidget(self._dl_cancel)
         row.addWidget(self._dl_retry)
         row.addWidget(self._dl_skip)
-        row.addStretch()
-        lay.addLayout(row)
+        lay.addWidget(row_widget)
         return page
 
 
@@ -1183,6 +1200,40 @@ class FirstRunWizard(QDialog):
         btn_box.addWidget(self._gpu_next_btn)
         lay.addLayout(btn_box)
         return page
+
+    def showEvent(self, event):
+        """Разове калібрування мінімальної ширини під фактичний шрифт.
+
+        Вертикальні стеки кнопок (кроки «Озвучення»/GPU) — на всю ширину
+        картки; при масштабі екрана понад 100% (шрифт QSS більший, а
+        хардкод-мінімум 620px — ні) найдовші підписи («Пропустити — можна
+        будь-коли в Налаштуваннях», «Так, увімкнути швидкий режим…») різались
+        з обох боків. FlowLayout тут не рятує: кнопка ОДНА і ширша за діалог —
+        переносити нікуди. Глобальний QSS ставить QPushButton явний min-width,
+        тому ланцюг мінімумів Qt діалог сам не розширює (зонд 31.07: явний
+        мінімум перекриває minimumSizeHint у qSmartMinSize). Тож міряємо самі:
+        «хром» = ширина діалога мінус ширина вмісту картки (eyebrow-лейбл є на
+        кожному кроці), потреба = найширший sizeHint серед УСІХ кнопок майстра
+        (включно з прихованими — «Ще раз»/«Скасувати» зʼявляються пізніше).
+        На звичайному масштабі потреба менша за 620 — нічого не змінюється."""
+        super().showEvent(event)
+        if self._min_width_calibrated:
+            return
+        self._min_width_calibrated = True
+        lay = self.layout()
+        if lay is not None:
+            lay.activate()   # чесні геометрії ДО заміру, без відкладеного стрибка
+        page = self._stack.currentWidget()
+        lab = page.findChild(QLabel) if page is not None else None
+        if lab is None or lab.width() <= 0:
+            return
+        chrome = max(0, self.width() - lab.width())
+        need = max(
+            (b.sizeHint().width() for b in self.findChildren(QPushButton)
+             if (b.text() or "").strip()), default=0)
+        if need + chrome > self.minimumWidth():
+            self.setMinimumWidth(need + chrome)
+            self.resize(max(self.width(), need + chrome), self.height())
 
     # --- навігація ---
     def _sync_nav(self):

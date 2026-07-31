@@ -17,7 +17,7 @@ from PySide6.QtGui import (
     QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient,
 )
 from PySide6.QtWidgets import (
-    QLayout, QPushButton, QToolButton, QToolTip, QWidget,
+    QLayout, QPushButton, QSizePolicy, QToolButton, QToolTip, QWidget,
 )
 
 import math
@@ -92,6 +92,13 @@ class FlowLayout(QLayout):
         line_height = 0
         spacing = self.spacing()
         for item in self._items:
+            # Приховані пункти (item.isEmpty() — стандартна Qt-ознака схованого
+            # віджета) пропускаємо, як і звичайний QHBoxLayout: рядок наради
+            # (meeting.py _fill_done_card) тримає в одному FlowLayout взаємно
+            # виключні status/bar/cancel — без цього пропуску прихований
+            # елемент лишав би дірку або зсував сусідів.
+            if item.isEmpty():
+                continue
             hint = item.sizeHint()
             next_x = x + hint.width() + spacing
             if next_x - spacing > rect.right() and line_height > 0:
@@ -218,6 +225,19 @@ class GlassButton(QPushButton):
         if nav:
             self.setCheckable(True)
             self.setMinimumHeight(44)
+            # Сайдбар — колонка ФІКСОВАНОЇ ширини (204px, main_window.py):
+            # FlowLayout-рецепт «перенос замість стискання» сюди не пасує —
+            # переносити нікуди. Натомість підпис переноситься всередині
+            # кнопки: heightForWidth + Qt.TextWordWrap у paintEvent (зонд ×1.5
+            # 31.07 — «Запис екрана»/«Налаштування» різались при більшому
+            # шрифті на кожній сторінці).
+            # Вертикаль Preferred, а не типовий для QPushButton Fixed: при
+            # Fixed максимальна висота = sizeHint (один рядок) і layout мовчки
+            # зрізає heightForWidth назад до одного рядка (зонд 31.07).
+            sp = self.sizePolicy()
+            sp.setHeightForWidth(True)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
+            self.setSizePolicy(sp)
         else:
             # наведення «підйом + тінь» — лише для дій, не для сайдбар-навігації
             # (у неї власний активний стан: золота рамка + заливка checked-кнопки)
@@ -235,6 +255,33 @@ class GlassButton(QPushButton):
             if s.width() < needed:
                 s.setWidth(needed)
         return s
+
+    def _nav_text_rect(self):
+        """Прямокутник підпису nav-кнопки — ЄДИНЕ місце з цими відступами:
+        ним користуються і paintEvent (малювання), і heightForWidth (замір
+        переносу), і вартовий tests — розійтись вони не можуть."""
+        return self.rect().adjusted(14 + _ICON + 10, 0, -8, 0)
+
+    def hasHeightForWidth(self):
+        return self._nav or super().hasHeightForWidth()
+
+    def heightForWidth(self, width):
+        if not self._nav:
+            return super().heightForWidth(width)
+        # Скільки висоти треба, щоб підпис ВЕСЬ вмістився з переносом при цій
+        # ширині (сайдбар фіксований — ширина не росте, росте кнопка вниз).
+        hint_h = self.sizeHint().height()
+        avail = width - (14 + _ICON + 10) - 8
+        if avail <= 0 or not self.text():
+            return hint_h
+        fm = QFontMetrics(self.font())
+        text_h = fm.boundingRect(QRect(0, 0, avail, 0), Qt.TextWordWrap,
+                                 self.text()).height()
+        # Однорядковий підпис → рівно штатна висота (пікселі еталонів
+        # visual_gate на звичайному масштабі не рушаться); багаторядковий —
+        # той самий вертикальний «повітряний» запас (hint_h - fm.height())
+        # навколо тексту, що й у однорядкового.
+        return max(hint_h, text_h + hint_h - fm.height())
 
     # --- миша: glow слідує за курсором, press — анімація натиску ---
     def enterEvent(self, event):
@@ -342,8 +389,11 @@ class GlassButton(QPushButton):
             icon_rect = QRect(14, (self.height() - _ICON) // 2, _ICON, _ICON)
             if not self.icon().isNull():
                 self.icon().paint(p, icon_rect, Qt.AlignCenter, mode)
-            text_rect = self.rect().adjusted(14 + _ICON + 10, 0, -8, 0)
-            p.drawText(text_rect, Qt.AlignLeft | Qt.AlignVCenter, self.text())
+            # TextWordWrap — пара до heightForWidth вище: довгий підпис при
+            # більшому шрифті переноситься, а не обрізається правим краєм.
+            p.drawText(self._nav_text_rect(),
+                       Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap,
+                       self.text())
         elif not self.icon().isNull():
             # іконка зліва + текст, згруповані по центру кнопки
             fm = QFontMetrics(self.font())

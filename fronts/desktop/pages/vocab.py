@@ -32,7 +32,7 @@ from whisper_core import phrasebook              # feature/bilingual-memory
 from whisper_core import self_learning           # feature/selflearn-dict
 
 from .. import motion
-from ..glass import GlassButton
+from ..glass import FlowLayout, GlassButton
 from ..i18n import tr, plural
 from . import page_header
 
@@ -527,8 +527,12 @@ class VocabPage(QWidget):
         root.addWidget(self._phrase_table)
         root.addSpacing(10)
 
-        ph_bar = QHBoxLayout()
-        ph_bar.setSpacing(10)
+        # FlowLayout, а не QHBoxLayout: зонд ×1.5 31.07 — чотири кнопки ряду
+        # («Додати пару»/«Видалити»/«Імпорт списком»/«Відкрити файл») при
+        # більшому шрифті сумарно ширші за сторінку і стискались, ріжучи текст.
+        # Перенос замість стискання — рецепт record_action_bar.py.
+        ph_bar_widget = QWidget()
+        ph_bar = FlowLayout(ph_bar_widget, spacing=10)
         ph_add = QPushButton(tr("vocab_phrase_add"))
         ph_add.setProperty("accent", True)
         ph_add.clicked.connect(self._add_phrase)
@@ -540,8 +544,7 @@ class VocabPage(QWidget):
         ph_open.clicked.connect(self._open_phrases_file)
         for b in (ph_add, ph_del, ph_imp, ph_open):
             ph_bar.addWidget(b)
-        ph_bar.addStretch()
-        root.addLayout(ph_bar)
+        root.addWidget(ph_bar_widget)
         root.addSpacing(10)
 
         # авто-навчання: кандидати з мовного щоденника (латинська правильна форма)

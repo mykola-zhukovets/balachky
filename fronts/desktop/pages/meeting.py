@@ -1710,10 +1710,13 @@ class MeetingPage(QWidget):
         [accent="true"] QSS ігнорує (малює все сам у paintEvent) і візуально
         не відрізнявся від сусідніх кнопок, тому власник її не помічав. У
         процесі — сусідній прогрес-бар і «Скасувати»."""
+        # lay — FlowLayout (див. _fill_done_card нижче): без stretch-параметра,
+        # FlowLayout.addWidget — базовий QLayout.addWidget, без kwarg
+        # stretch/alignment, які підтримує лише QBoxLayout.
         status = QLabel()
         status.setWordWrap(True)
         status.setProperty("muted", True)
-        lay.addWidget(status, stretch=1)
+        lay.addWidget(status)
 
         bar = QProgressBar()
         bar.setRange(0, 1000)
@@ -1721,7 +1724,7 @@ class MeetingPage(QWidget):
         bar.setAccessibleName(tr("meeting_processing_progress_a11y"))
         bar.setObjectName(f"meetingProcessingProgress-{session_id}")
         bar.hide()
-        lay.addWidget(bar, stretch=1)
+        lay.addWidget(bar)
 
         cancel = GlassButton(tr("meeting_processing_cancel"))
         cancel.setAccessibleName(tr("meeting_processing_cancel"))
@@ -1846,21 +1849,46 @@ class MeetingPage(QWidget):
         # feature/diary-calendar: назва наради — редаговане поле. Якщо назви ще
         # немає, пробуємо підказати з календаря (.ics) за часом наради; підказку
         # НЕ нав'язуємо — просто передзаповнюємо, користувач може змінити.
-        # Усі чотири кнопки рядка — прямі item'и одного QHBoxLayout: Qt репарентить
-        # віджети, додані у під-layout, на батька того layout'у, тож хост QWidget
-        # тримає їх під одним власним QHBoxLayout (а не під QVBoxLayout картки).
+        #
+        # Три ряди замість одного спільного QHBoxLayout (суд 31.07, живий
+        # дефект: «Зберегти назву»/«Отримати текст наради»/«Видалити нараду»
+        # різались уже на мінімумі вікна 1000px — шість-сім контролів в
+        # одному ряді разом із двома stretch=1 (поле назви + статус-текст) не
+        # лишали кнопкам простору). Перенос замість стискання — той самий
+        # клас фіксу, що в майстрі й на диктуванні:
+        #   1) назва:      поле (stretch=1) + «Зберегти назву» — звичайний
+        #      QHBoxLayout, лише два контроли, ніколи не тісно;
+        #   2) обробка:    статус/бар/«Скасувати»/«Отримати текст наради» —
+        #      FlowLayout (glass.py), переносить на новий рядок, якщо тісно;
+        #   3) звільнити місце + «Видалити нараду» — окремий QHBoxLayout,
+        #      «Видалити» лишається праворуч і відділена розтяжкою (канон:
+        #      не натиснути випадково) — тепер сама, без конкуренції за
+        #      ширину з рештою кнопок ряду.
         row = QWidget()
-        actions = QHBoxLayout(row)
-        actions.setContentsMargins(0, 0, 0, 0)
-        actions.setSpacing(8)
-        self._add_title_editor(actions, session_id, meta)
+        rows = QVBoxLayout(row)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self._add_title_editor(title_row, session_id, meta)
+        rows.addLayout(title_row)
+
+        proc_widget = QWidget()
+        proc_row = FlowLayout(proc_widget, spacing=8)
         has_audio = bool(getattr(meta, "audio_files", {}) or {})
-        self._add_processing_controls(actions, session_id, meta, has_audio)
-        self._add_raw_cleanup(actions, session_id, has_audio)
-        # «Видалити нараду» — у тому самому ряді, але праворуч і відділена
-        # розтяжкою, щоб її не натиснули випадково.
-        actions.addStretch()
-        actions.addWidget(self._delete_button(session_id))
+        self._add_processing_controls(proc_row, session_id, meta, has_audio)
+        rows.addWidget(proc_widget)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(8)
+        self._add_raw_cleanup(bottom_row, session_id, has_audio)
+        # «Видалити нараду» — праворуч і відділена розтяжкою, щоб її не
+        # натиснули випадково.
+        bottom_row.addStretch()
+        bottom_row.addWidget(self._delete_button(session_id))
+        rows.addLayout(bottom_row)
+
         lay.addWidget(row)
         title = self._title_for(meta)
         text = ""
@@ -2059,8 +2087,12 @@ class MeetingPage(QWidget):
         src_chk.setProperty("muted", True)
         src_chk.setAccessibleName(tr("meeting_exp_source_labels"))
 
-        btns = QHBoxLayout()
-        btns.setSpacing(10)
+        # FlowLayout, а не QHBoxLayout: зонд ×1.5 31.07 — «Створити протокол»/
+        # «Спитати про нараду»/«Експортувати в…» стискались нижче природної
+        # ширини вже на мінімумі вікна при більшому шрифті. Перенос замість
+        # стискання — той самий рецепт, що proc_row у _fill_done_card вище.
+        btns_widget = QWidget()
+        btns = FlowLayout(btns_widget, spacing=10)
 
         if getattr(self.controller.cfg, "protocol_ai_enabled", True):
             # 1. «Створити протокол»
@@ -2180,8 +2212,7 @@ class MeetingPage(QWidget):
                 ai_edit_fn=lambda sel, rep: self.controller.voice_edit_selection(
                     sel, rep, self))
             btns.addWidget(panel.edit_button)
-        btns.addStretch()
-        lay.addLayout(btns)
+        lay.addWidget(btns_widget)
         # Чекбокс «Хто говорить» — ОКРЕМИМ рядком під кнопками: у ряду з кнопками
         # дій його довгий підпис не вміщався на 1000px і стискав кнопки, ріжучи
         # їхній текст (головна вимога хвилі: жодного обрізання на 1000-1920px).
@@ -2648,10 +2679,14 @@ class MeetingPage(QWidget):
         if res.status != audit_log.STATUS_ABSENT:
             # Кнопки доказовості — ОКРЕМИМ рядком під статусом: три довгі підписи в
             # один ряд зі статусом+SHA не вміщались і виїжджали за правий край вікна
-            # (дефект живого тесту 5г). Кожна — мінімальна ширина по fontMetrics
-            # (як кнопки дій вище), рядок ліворуч + stretch справа → нічого не ріжеться.
-            btn_row = QHBoxLayout()
-            btn_row.setSpacing(8)
+            # (дефект живого тесту 5г). FlowLayout, а не QHBoxLayout: зонд ×1.5
+            # 31.07 — «Журнал перевірок»/«Підтвердити перегляд»/«Пакет для
+            # комісії» при більшому шрифті стискались і різались; перенос
+            # замість стискання. Мінімальну ширину не задаємо — GlassButton.
+            # sizeHint() сам гарантує запас під текст (glass.py), а жорсткий
+            # setMinimumWidth лише посилював переповнення ряду.
+            btn_row_widget = QWidget()
+            btn_row = FlowLayout(btn_row_widget, spacing=8)
             for key, acc, slot in (
                 ("meeting_integrity_title", "meeting_integrity_title",
                  self._show_integrity_journal),
@@ -2662,11 +2697,9 @@ class MeetingPage(QWidget):
             ):
                 b = GlassButton(tr(key))
                 b.setAccessibleName(tr(acc))
-                b.setMinimumWidth(b.fontMetrics().horizontalAdvance(tr(key)) + 44)
                 b.clicked.connect(lambda _=False, sid=session_id, fn=slot: fn(sid))
                 btn_row.addWidget(b)
-            btn_row.addStretch()
-            evidence_box.addLayout(btn_row)
+            evidence_box.addWidget(btn_row_widget)
         lay.addLayout(evidence_box)
 
     def _show_integrity_journal(self, session_id):

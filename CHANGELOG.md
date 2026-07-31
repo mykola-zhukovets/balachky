@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4.2-beta] - 2026-08-01
+
+**Інсталятор / Installer:** `BalachkySetup-1.2.4.2-beta-20862C01.exe` (161,8 МБ / 161.8 MB; 169 618 367 байтів / bytes)
+**SHA-256:** `20862C0159ED6806A234085C27B3BC108A601161C63C730767F8D644FBBC43B6`
+
+> Виправлення до 1.2.4.1-beta: підписи кнопок більше не обрізаються за жодного розміру вікна й системного масштабу шрифту.
+> A hotfix for 1.2.4.1-beta: button labels no longer get clipped at any window size or system font scale.
+
+### Fixed
+
+**Українською:**
+
+- **Підписи кнопок не обрізаються ніде.** Раніше за вузького вікна або збільшеного системного шрифту текст різався просто посеред слова — у боковому меню, на сторінках Диктування, Нарада, Словники, Аудіофайли, Запис екрана, у Налаштуваннях і в майстрі першого запуску. Тепер ряди кнопок переносяться на новий рядок, підписи в боковому меню переносяться всередині кнопки, а вікно майстра саме стає ширшим за великого шрифту.
+- **Версія знову видна в боковому меню.** Вона зникла звідти, коли відомості про програму зводили в одну вкладку.
+- **Автоматична перевірка проти обрізаних підписів.** У збірку вбудовано обхід усіх сторінок, вкладок Налаштувань і кроків майстра на найвужчому вікні та зі збільшеним шрифтом — тепер таке не пройде непоміченим.
+
+**In English:**
+
+- **Button labels are no longer clipped anywhere.** In a narrow window, or with a larger system font, text used to be cut mid-word — in the side menu and on the Dictation, Meeting, Dictionaries, Audio files and Screen recording pages, in Settings, and in the first-run wizard. Action rows now wrap to a new line, side-menu labels wrap inside the button, and the wizard window widens itself when the font is larger.
+- **The version is shown in the side menu again.** It disappeared when the app details were merged into a single tab.
+- **An automatic check against clipped labels.** The build now sweeps every page, Settings tab and wizard step at the narrowest window size and with an enlarged font, so this cannot slip through unnoticed again.
+
+---
+
 ## [1.2.4.1-beta] - 2026-07-31
 
 **Інсталятор / Installer:** `BalachkySetup-1.2.4.1-beta-3C5F6144.exe` (161,8 МБ / 161.8 MB; 169 611 393 байтів / bytes)

@@ -584,10 +584,22 @@ class MeetingRenderTests(unittest.TestCase):
         self.assertEqual(len(page._cards), 2)
         self._save(page, "03-sessions.png")
 
-    def test_done_card_actions_share_one_row_and_badge_has_tooltip(self):
+    def test_done_card_actions_share_one_card_and_delete_is_separated(self):
         """Кнопки готової наради («Зберегти назву», «Обробити нараду»,
-        «Звільнити місце», «Видалити нараду») лежать в ОДНОМУ горизонтальному
-        контейнері; значок «локально, відкрито» має непорожню підказку."""
+        «Звільнити місце», «Видалити нараду») лежать в ОДНІЙ картці дій
+        (row-widget усередині QVBoxLayout, суд 31.07); значок «локально,
+        відкрито» має непорожню підказку.
+
+        Суд 31.07 (живий дефект: ці кнопки різались уже на мінімумі вікна
+        1000px — шість-сім контролів в одному спільному QHBoxLayout поруч із
+        двома stretch=1 не лишали кнопкам простору) розвів один спільний ряд
+        на ТРИ підряди в межах тієї самої картки (pages/meeting.py
+        _fill_done_card): (1) назва+«Зберегти назву», (2) статус/бар/
+        «Скасувати»/«Обробити нараду» — FlowLayout, (3) «Звільнити місце»+
+        «Видалити нараду». Тест раніше вимагав ОДИН QHBoxLayout на всі
+        чотири — тепер перевіряє те саме НАМІРЕННЯ (одна картка дій, «Видалити
+        нараду» відділена розтяжкою від сусіда в СВОЄМУ рядку), а не буквальний
+        спільний layout."""
         from PySide6.QtWidgets import QHBoxLayout, QPushButton
         from fronts.desktop.glass import StatusTag
         from fronts.desktop.i18n import tr
@@ -612,37 +624,70 @@ class MeetingRenderTests(unittest.TestCase):
                      if b.text() == tr(key)]
             self.assertEqual(len(found), 1, f"{key}: очікувалася одна кнопка")
             buttons.append(found[0])
+        save_btn, process_btn, cleanup_btn, delete_btn = buttons
 
-        def direct_hbox(widget):
-            # Qt репарентить віджет у layout-host, тож шукаємо найближчого
-            # предка, чий ВЛАСНИЙ layout — QHBoxLayout із цим предком item'ом.
+        def ancestors_up_to_card(widget, card):
+            node = widget
+            chain = []
+            while node is not None and node is not card:
+                chain.append(node)
+                node = node.parentWidget()
+            self.assertIs(node, card, "кнопка не всередині картки готової наради")
+            return chain
+
+        # Спільна картка дій (row-widget з QVBoxLayout у _fill_done_card) —
+        # найближчий спільний предок УСІХ чотирьох кнопок, вужчий за саму
+        # сторінку/скрол.
+        chains = [set(id(n) for n in ancestors_up_to_card(b, page))
+                 for b in buttons]
+        common = set.intersection(*chains)
+        self.assertTrue(common, "у чотирьох кнопок немає спільного предка на сторінці")
+
+        def own_hbox(widget):
+            """QHBoxLayout, у якому цей віджет — прямий item. Qt репарентить
+            віджети з-під addLayout()-піднесених дочірніх layout'ів на той
+            самий host-QWidget, що тримає БАТЬКІВСЬКИЙ layout (тут — QVBoxLayout
+            `rows` картки дій, pages/meeting.py _fill_done_card), тож
+            title_row/bottom_row не мають ВЛАСНОГО QWidget — треба обійти
+            дерево дочірніх layout'ів host-widget'а, а не лише parent.layout()."""
+            def find_in(lay):
+                if lay is None:
+                    return None
+                for idx in range(lay.count()):
+                    item = lay.itemAt(idx)
+                    if item.widget() is widget:
+                        return lay if isinstance(lay, QHBoxLayout) else None
+                    found = find_in(item.layout())
+                    if found is not None:
+                        return found
+                return None
+
             node = widget
             while node is not None and node is not page:
-                lay = node.layout()
-                if isinstance(lay, QHBoxLayout):
-                    return lay
                 parent = node.parentWidget()
                 if parent is None:
                     return None
-                lay = parent.layout()
-                if isinstance(lay, QHBoxLayout):
-                    for idx in range(lay.count()):
-                        if lay.itemAt(idx).widget() is node:
-                            return lay
-                    return None
+                hit = find_in(parent.layout())
+                if hit is not None:
+                    return hit
                 node = parent
             return None
 
-        rows = [direct_hbox(b) for b in buttons]
-        self.assertTrue(all(rows), "кожна кнопка — прямий item QHBoxLayout")
-        self.assertTrue(all(row is rows[0] for row in rows),
-                        "усі чотири кнопки — в одному горизонтальному ряді")
-        # «Видалити нараду» відділена розтяжкою: між нею і рештою є stretch.
-        row = rows[0]
+        # «Зберегти назву» — у своєму рядку разом із полем назви (не окремо).
+        self.assertIsNotNone(own_hbox(save_btn), "«Зберегти назву» поза QHBoxLayout")
+
+        # «Звільнити місце» і «Видалити нараду» — в ОДНОМУ рядку, і між ними
+        # (перед «Видалити нараду») є розтяжка — та сама гарантія «не
+        # натиснути випадково», що й раніше.
+        cleanup_row = own_hbox(cleanup_btn)
+        delete_row = own_hbox(delete_btn)
+        self.assertIsNotNone(delete_row, "«Видалити нараду» поза QHBoxLayout")
+        self.assertIs(cleanup_row, delete_row,
+                      "«Звільнити місце» і «Видалити нараду» мають бути в одному рядку")
         delete_index = next(
-            i for i in range(row.count())
-            if row.itemAt(i).widget() is buttons[-1])
-        kinds = [type(row.itemAt(i)).__name__ for i in range(delete_index)]
+            i for i in range(delete_row.count())
+            if delete_row.itemAt(i).widget() is delete_btn)
+        kinds = [type(delete_row.itemAt(i)).__name__ for i in range(delete_index)]
         self.assertIn("QSpacerItem", kinds,
                       "перед «Видалити нараду» має бути addStretch")
 

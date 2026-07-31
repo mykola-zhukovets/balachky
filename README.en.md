@@ -11,16 +11,16 @@
 <p align="center"><sub>“Balachky” is Ukrainian for casual chats; Korosten is the town in Ukraine where the app is made.</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v1.2.4.1--beta-1f6feb" alt="Release v1.2.4.1-beta">
+  <img src="https://img.shields.io/badge/release-v1.2.4.2--beta-1f6feb" alt="Release v1.2.4.2-beta">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10 and 11">
   <img src="https://img.shields.io/badge/processing-local-2ea043" alt="Local processing">
   <img src="https://img.shields.io/badge/license-source--available-8957e5" alt="Source-available license">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.1-beta/BalachkySetup-1.2.4.1-beta-3C5F6144.exe"><img src="https://img.shields.io/badge/Download_for_Windows_(.exe)-2ea043?style=for-the-badge" alt="Download Balachky v1.2.4.1 beta for Windows" height="44"></a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.2-beta/BalachkySetup-1.2.4.2-beta-20862C01.exe"><img src="https://img.shields.io/badge/Download_for_Windows_(.exe)-2ea043?style=for-the-badge" alt="Download Balachky v1.2.4.2 beta for Windows" height="44"></a>
   <br>
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.1-beta">Release details</a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta">Release details</a>
   <br>
   <sub>Windows 10/11 · 64-bit · no account required</sub>
   <br>
@@ -29,7 +29,7 @@
 
 Balachky keeps recording and speech recognition on your computer. Once you have downloaded or imported the models and optional components you need, the main features can work without an internet connection.
 
-**100 speech-recognition languages in v1.2.4.1-beta · Automatic language detection · Interface in English and Ukrainian**
+**100 speech-recognition languages in v1.2.4.2-beta · Automatic language detection · Interface in English and Ukrainian**
 
 <a id="usage"></a>
 
@@ -43,7 +43,11 @@ Choose a recording preset for the situation:
 
 Balachky does not join Teams, Zoom, or a browser call as a bot. It records the audio sources you select. There is no live meeting transcript. After you stop recording, Balachky saves and prepares the meeting audio. You decide when to start transcription.
 
-Separate tracks make the result easier to review. In the player, you can adjust the volume of each source, mute it, or listen to it by itself while the tracks stay synchronized.
+Separate tracks make the result easier to review. In the player, you can adjust the volume of each source, mute it, or listen to it by itself while the tracks stay synchronized. The balance you set can be saved as a separate WAV file; the original tracks are left untouched.
+
+While recording, a button on the meeting page or `Ctrl+Alt+B` marks an important moment without interrupting the recording. Marks appear as a list in playback, and clicking one jumps straight to it. In an open meeting, `Ctrl+F` searches the transcript: matches are highlighted and `Enter` moves to the next one.
+
+A deleted meeting first goes to a trash bin and stays there for 7 days — you can restore it from the notification at the bottom of the screen.
 
 Optional speaker separation (diarization) can mark speakers in the transcript of the Windows system-sound track. You can then replace generic labels with names. If this component is not installed, the meeting can still be recorded and transcribed.
 
@@ -95,7 +99,7 @@ The model manager shows which recognition models are installed, which one is act
 
 ### 4. Screen recording
 
-Record an entire monitor or one window from a separate work mode. In v1.2.4.1-beta, the “Area” option still records the first monitor rather than a custom crop.
+Record an entire monitor or one window from a separate work mode. In v1.2.4.2-beta, the “Area” option still records the first monitor rather than a custom crop.
 
 ### 5. Whisper without the command line
 
@@ -105,7 +109,7 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 
 - **Meeting protection:** completed meeting files can be encrypted with a separate key. Working files may remain unencrypted while recording is in progress, so the current protection state matters. Integrity records and export tools are available for later verification.
 - **Local AI protocol:** uses a separate local model and component. Its result is a draft that needs review.
-- **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.1-beta installer.
+- **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.2-beta installer.
 - **Voice navigation:** built-in commands let you move between supported document fields and cells. Voice editing depends on a separate local component.
 - **Command line and MCP:** the CLI and MCP server are tools for running Balachky from source. They are not standard features of the Windows installer. See [MCP server documentation](docs/MCP-SERVER.md).
 
@@ -114,7 +118,7 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 | Action | Internet use |
 |---|---|
 | Record, transcribe, dictate, and process meetings | No, after the required models and components are available |
-| Setup-wizard connection check | v1.2.4.1-beta makes a TCP connection to `1.1.1.1:53` when the setup wizard opens; the check does not send voice or transcripts |
+| Setup-wizard connection check | v1.2.4.2-beta makes a TCP connection to `1.1.1.1:53` when the setup wizard opens; the check does not send voice or transcripts |
 | Download a recognition model | When you choose one during setup or later |
 | Download an optional component | When you select it during setup or enable it later |
 | Check for updates | When you check manually; periodically only if automatic checks are enabled |
@@ -136,7 +140,7 @@ Your data is stored on your computer. See [Data and privacy](docs/DATA-PRIVACY.m
 
 Balachky requires 64-bit Windows 10 or 11. The installer is about 159 MB. Recognition models and optional components need additional disk space; the total depends on what you install.
 
-Download `BalachkySetup-1.2.4.1-beta-3C5F6144.exe` from the [official v1.2.4.1-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.1-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
+Download `BalachkySetup-1.2.4.2-beta-20862C01.exe` from the [official v1.2.4.2-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
 
 ### Windows SmartScreen and file verification
 
@@ -144,11 +148,11 @@ The current beta installer does not have a digital signature, so Windows SmartSc
 
 SHA-256 for this exact file:
 
-`3C5F61447C22596CFED5B5ACD8C32D88A4B91BE1768B0DEFE340233437186145`
+`20862C0159ED6806A234085C27B3BC108A601161C63C730767F8D644FBBC43B6`
 
 A matching SHA-256 confirms that your download is byte-for-byte identical to the published file. It does not, by itself, prove that a file is safe.
 
-The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/3c5f61447c22596cfed5b5acd8c32d88a4b91be1768b0defe340233437186145/detection) for this exact file. This is an informational result, not a safety guarantee.
+The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/20862c0159ed6806a234085c27b3bc108a601161c63c730767f8d644fbbc43b6/detection) for this exact file. This is an informational result, not a safety guarantee.
 
 ## Beta and commercial use
 

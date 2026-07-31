@@ -594,11 +594,21 @@ class DictationPage(TermFixMenuMixin, QWidget):
         # head-рядок: шапка сторінки + кнопки запису мишею (праворуч).
         # Стан кнопок синхронізує controller.rec_state — однаково для
         # запису з клавіші та з вікна.
-        head = QHBoxLayout()
-        head.setSpacing(16)
+        # FlowLayout, а не QHBoxLayout: живий дефект власника 31.07 на
+        # встановленій 1.2.4.1 (вузьке вікно + масштаб екрана понад 100%) —
+        # заголовок «Диктування» різався до «Диктуванн», кнопки «Заповнити
+        # шаблон»/«Обробка: …» різались посеред слів. Обгортка head_widget
+        # потрібна, бо page_header() повертає QVBoxLayout, а FlowLayout уміє
+        # додавати лише віджети (той самий рецепт, що вже в
+        # record_action_bar.py/main_window.py — рядок дій запису/файлів).
+        head_widget = QWidget()
+        self._head_widget = head_widget   # для гейтів/тестів: скан лише цього рядка
+        head = FlowLayout(head_widget, spacing=16)
+        header_widget = QWidget()
         header = page_header(tr("nav_dictation"), self._subtitle_text())
+        header_widget.setLayout(header)
         self._subtitle = header.itemAt(1).widget()
-        head.addLayout(header, stretch=1)
+        head.addWidget(header_widget)
         # feature/voice-form-fill: заповнення шаблону голосом — окрема модалка,
         # відкривається з шапки (не новий пункт навігації, не в рядку «Куди текст»)
         self._formfill_btn = GlassButton(tr("formfill_open"))
@@ -608,24 +618,7 @@ class DictationPage(TermFixMenuMixin, QWidget):
         self._formfill_btn.setToolTip(tr("formfill_tip"))
         self._formfill_btn.setAccessibleName(tr("formfill_tip"))
         self._formfill_btn.clicked.connect(self._open_formfill)
-        head.addWidget(self._formfill_btn, alignment=Qt.AlignVCenter)
-        self._pause_btn = GlassButton(tr("common_pause"))
-        self._pause_btn.clicked.connect(self._toggle_pause)
-        self._pause_btn.hide()
-        self._cancel_btn = GlassButton(tr("common_cancel"))
-        self._cancel_btn.clicked.connect(controller.record_cancel)
-        self._cancel_btn.hide()
-        self._rec_btn = RecButton()
-        start_tip = tr("dict_tip_start")
-        self._rec_btn.setToolTip(start_tip)
-        self._rec_btn.setAccessibleName(start_tip)
-        self._rec_btn.clicked.connect(self._on_rec_clicked)
-        for b in (self._pause_btn, self._cancel_btn, self._rec_btn):
-            head.addWidget(b, alignment=Qt.AlignVCenter)
-        self._rec_ui_state = "idle"   # локальне дзеркало rec_state
-        self._paused = False
-        controller.rec_state.connect(self._on_rec_state)
-        root.addLayout(head)
+        head.addWidget(self._formfill_btn)
 
         # Т47: рівень обробки тексту — компактний ЧІП біля кнопки запису
         # (замість смуги-слайдера на всю ширину). Клік → скляний попап зі
@@ -648,7 +641,25 @@ class DictationPage(TermFixMenuMixin, QWidget):
         self._processing.documentUnavailable.connect(self._on_document_unavailable)
         # Чіп стоїть у шапці, ліворуч від кластера пауза/скасувати/запис
         # (після кнопки заповнення шаблону): «біля кнопки запису», не смугою.
-        head.insertWidget(2, self._processing, 0, Qt.AlignVCenter)
+        head.addWidget(self._processing)
+
+        self._pause_btn = GlassButton(tr("common_pause"))
+        self._pause_btn.clicked.connect(self._toggle_pause)
+        self._pause_btn.hide()
+        self._cancel_btn = GlassButton(tr("common_cancel"))
+        self._cancel_btn.clicked.connect(controller.record_cancel)
+        self._cancel_btn.hide()
+        self._rec_btn = RecButton()
+        start_tip = tr("dict_tip_start")
+        self._rec_btn.setToolTip(start_tip)
+        self._rec_btn.setAccessibleName(start_tip)
+        self._rec_btn.clicked.connect(self._on_rec_clicked)
+        for b in (self._pause_btn, self._cancel_btn, self._rec_btn):
+            head.addWidget(b)
+        self._rec_ui_state = "idle"   # локальне дзеркало rec_state
+        self._paused = False
+        controller.rec_state.connect(self._on_rec_state)
+        root.addWidget(head_widget)
 
         # жива смужка рівня: провайдер lazy — recorder у контролері зʼявляється
         # пізніше за вікно. Хост-обгортка з верхнім відступом ховається цілком
@@ -724,8 +735,15 @@ class DictationPage(TermFixMenuMixin, QWidget):
         labrow.addWidget(info_hint("hint_output_live"))
         labrow.addStretch()
         outcol.addLayout(labrow)
-        outrow = QHBoxLayout()
-        outrow.setSpacing(10)
+        # FlowLayout, а не QHBoxLayout: зонд ×1.5 31.07 — три широкі режими
+        # («Вставляти під курсор»/«Лишати в Балачках»/«Вставляти й показувати»)
+        # при більшому шрифті стискались нижче природної ширини й різались
+        # навіть окремим рядком під підписом. Перенос замість стискання — той
+        # самий рецепт, що head-рядок вище. FlowLayout.addWidget — базовий
+        # QLayout.addWidget без kwarg alignment (він є лише в QBoxLayout).
+        outrow_widget = QWidget()
+        self._outrow_widget = outrow_widget   # для гейтів/тестів: скан лише цього рядка
+        outrow = FlowLayout(outrow_widget, spacing=10)
         self._modes = QButtonGroup(self)
         for mode, label in (("paste", tr("out_paste_here")),
                             ("show", tr("out_show_window")),
@@ -739,12 +757,10 @@ class DictationPage(TermFixMenuMixin, QWidget):
             # Т49: ⓘ саме біля опції «Вставляти під курсор» — коротке пояснення,
             # куди потрапить текст (той самий ⓘ-патерн, що перефарбовується вночі)
             if mode == "paste":
-                outrow.addWidget(info_hint("hint_paste_here"),
-                                 alignment=Qt.AlignVCenter)
+                outrow.addWidget(info_hint("hint_paste_here"))
         self._modes.buttonClicked.connect(
             lambda b: setattr(self.controller, "output_mode", b.property("mode")))
-        outrow.addStretch()
-        outcol.addLayout(outrow)
+        outcol.addWidget(outrow_widget)
         root.addWidget(panel)
         self._formfill_dialog = None
 
@@ -1787,6 +1803,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.controller = controller
         self.setWindowTitle(tr("app_title"))
+        # 1000px — контракт tests/test_narrow_rows_layout.py (мінімум ≤1000,
+        # користувачам вікно не звужуємо). Раніше 1000px різав кнопки дій
+        # наради («Зберегти назву»/«Отримати текст наради»/«Видалити нараду»)
+        # — вилікувано в pages/meeting.py _fill_done_card (перенос замість
+        # стискання, суд 31.07), а не підйомом мінімуму.
         self.setMinimumSize(1000, 640)
         # геометрія переживає перезапуск (QSettings → реєстр Windows)
         self._settings = QSettings("Balachky", "Balachky")

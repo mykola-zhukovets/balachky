@@ -48,7 +48,7 @@ from .. import links
 from ..chip_popover import make_slider
 from ..autostart import is_enabled, enable, disable
 from ..crash import open_log_dir, copy_diagnostics, anonymize_path
-from ..glass import GlassButton, TipToolButton, sync_status_animations
+from ..glass import FlowLayout, GlassButton, TipToolButton, sync_status_animations
 from ..hotkey import normalize_name, pretty
 from ..i18n import tr, current_language, human_size, format_decimal
 from ..onboarding import GpuDownloadWorker, _reap_worker
@@ -2317,8 +2317,9 @@ class SettingsPage(QWidget):
         modelbox.addWidget(self._model_about)
 
         # власна модель: тека з готовою моделлю faster-whisper або HF-id
-        custrow = QHBoxLayout()
-        custrow.setSpacing(10)
+        # FlowLayout, не QHBoxLayout: під більшим шрифтом обидва підписи не
+        # влазять в один ряд на вузькому вікні — переносимо (хвиля 31.07).
+        custrow = FlowLayout(spacing=10)
         add_folder = QPushButton(tr("stt_model_add_folder"))
         add_folder.setToolTip(tr("stt_model_add_folder_tip"))
         add_folder.clicked.connect(self._add_stt_folder)
@@ -2327,7 +2328,6 @@ class SettingsPage(QWidget):
         add_hf.clicked.connect(self._add_stt_hf)
         custrow.addWidget(add_folder)
         custrow.addWidget(add_hf)
-        custrow.addStretch()
         modelbox.addLayout(custrow)
 
         self._model_note = _note(tr("set_restart"))
@@ -3278,9 +3278,11 @@ class SettingsPage(QWidget):
         """Рядок «лейбл: <комбо або “Вимкнено”>  [Змінити…] [Прибрати]».
         Захоплення — тим самим KeyCaptureDialog, що й клавіша запису."""
         w = QWidget()
-        row = QHBoxLayout(w)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
+        # FlowLayout, не QHBoxLayout: лейбл+значення+«Змінити…»+«Очистити» під
+        # більшим шрифтом не влазять в один рядок на вузькому вікні — переносимо
+        # (хвиля 31.07). На звичайному масштабі вміщується в один рядок, як і
+        # раніше (FlowLayout не змінює вигляд, доки вистачає ширини).
+        row = FlowLayout(w, spacing=12)
         row.addWidget(_form_label(label))
         key = getattr(cfg, "undo_paste_key" if which == "undo" else "insert_last_key", "")
         shown = QLabel(pretty(key) if key else tr("set_qol_key_none"))
@@ -3290,7 +3292,6 @@ class SettingsPage(QWidget):
         clear = QPushButton(tr("set_qol_key_clear"))
         clear.clicked.connect(lambda _=False, w=which, l=shown: self._clear_action_key(w, l))
         row.addWidget(shown)
-        row.addStretch()
         row.addWidget(change)
         row.addWidget(clear)
         return w
@@ -3318,8 +3319,10 @@ class SettingsPage(QWidget):
         frame, lay = _card(tr("set_note_eyebrow"))
         g = _grid()
         combo = getattr(cfg, "note_hotkey", "") or ""
-        keyrow = QHBoxLayout()
-        keyrow.setSpacing(12)
+        # FlowLayout, не QHBoxLayout: значення+«Змінити…»+«Очистити» під більшим
+        # шрифтом не влазять в один рядок у вузькій колонці грід-таблиці
+        # налаштувань — переносимо (хвиля 31.07).
+        keyrow = FlowLayout(spacing=12)
         self._note_key_label = QLabel(pretty(combo) if combo else tr("set_note_none"))
         self._note_key_label.setProperty("kbd", True)
         change = QPushButton(tr("common_change"))
@@ -3331,7 +3334,6 @@ class SettingsPage(QWidget):
         keyrow.addWidget(self._note_key_label)
         keyrow.addWidget(change)
         keyrow.addWidget(self._note_clear_btn)
-        keyrow.addStretch()
         g.addWidget(_labeled_hint(tr("set_note_hotkey"), "hint_note_hotkey"), 0, 0)
         g.addLayout(keyrow, 0, 1)
         note_hint = QLabel(tr("set_note_hint"))
@@ -3343,8 +3345,8 @@ class SettingsPage(QWidget):
         # feature/voice-edit-selection: глобальний хоткей Command Mode (редагувати
         # виділене голосом). Опційний — трей-пункт діє завжди.
         ce_combo = getattr(cfg, "command_edit_hotkey", "") or ""
-        cerow = QHBoxLayout()
-        cerow.setSpacing(12)
+        # FlowLayout, не QHBoxLayout: той самий контракт, що й keyrow вище.
+        cerow = FlowLayout(spacing=12)
         self._command_edit_key_label = QLabel(
             pretty(ce_combo) if ce_combo else tr("set_note_none"))
         self._command_edit_key_label.setProperty("kbd", True)
@@ -3359,7 +3361,6 @@ class SettingsPage(QWidget):
         cerow.addWidget(self._command_edit_key_label)
         cerow.addWidget(ce_change)
         cerow.addWidget(self._command_edit_clear_btn)
-        cerow.addStretch()
         g.addWidget(_labeled_hint(tr("cmdedit_hotkey_label"), "hint_cmdedit_hotkey"), 2, 0)
         g.addLayout(cerow, 2, 1)
         ce_hint = QLabel(tr("cmdedit_hotkey_hint"))
@@ -3850,9 +3851,10 @@ class SettingsPage(QWidget):
         # «Створити новий код відновлення…» — найдовший підпис (307 точок), тож
         # він завжди сам у ряду: у парі з будь-ким знову різався б.
         # Порядок кнопок у ряду — той самий, що в коді (стани не міняють його).
-        vrow = QHBoxLayout(); vrow.setSpacing(8)
-        vrow2 = QHBoxLayout(); vrow2.setSpacing(8)
-        vrow3 = QHBoxLayout(); vrow3.setSpacing(8)
+        # FlowLayout, не три ручні QHBoxLayout-рядки: під більшим шрифтом навіть
+        # заздалегідь розбиті по 3-4 кнопки рядки переповнюються — один спільний
+        # FlowLayout переносить сам, скільки б кнопок не влізло (хвиля 31.07).
+        vrow = FlowLayout(spacing=8)
         self._vault_set_btn = GlassButton(tr("set_vault_pw_set"))
         self._vault_set_btn.clicked.connect(lambda: self._open_vault_dialog("set"))
         self._vault_keyfile_btn = GlassButton(tr("set_vault_keyfile_set"))
@@ -3872,18 +3874,12 @@ class SettingsPage(QWidget):
         self._vault_create_keyfile_btn = GlassButton(tr("set_vault_keyfile_create"))
         self._vault_create_keyfile_btn.clicked.connect(self._on_vault_create_keyfile)
         for button in (self._vault_set_btn, self._vault_keyfile_btn,
-                       self._vault_change_btn, self._vault_lock_btn):
+                       self._vault_change_btn, self._vault_lock_btn,
+                       self._vault_twofactor_btn, self._vault_remove_btn,
+                       self._vault_create_keyfile_btn, self._vault_recovery_btn):
             button.setAccessibleName(button.text())
             vrow.addWidget(button)
-        for button in (self._vault_twofactor_btn, self._vault_remove_btn,
-                       self._vault_create_keyfile_btn):
-            button.setAccessibleName(button.text())
-            vrow2.addWidget(button)
-        self._vault_recovery_btn.setAccessibleName(self._vault_recovery_btn.text())
-        vrow3.addWidget(self._vault_recovery_btn)
-        vrow.addStretch(); vaultbox.addLayout(vrow)
-        vrow2.addStretch(); vaultbox.addLayout(vrow2)
-        vrow3.addStretch(); vaultbox.addLayout(vrow3)
+        vaultbox.addLayout(vrow)
         g.addWidget(_labeled_hint(tr("set_vault_pw_label"), "hint_vault_password"),
                     7, 0, Qt.AlignTop)
         g.addLayout(vaultbox, 7, 1)
@@ -3913,19 +3909,25 @@ class SettingsPage(QWidget):
         g.addWidget(_labeled_hint(tr("set_meeting_dir"), "hint_meeting_dir"), 0, 0)
         g.addLayout(dirbox, 0, 1)
 
-        hotrow = QHBoxLayout(); hotrow.setSpacing(10)
+        # FlowLayout, як і решта рядків «підпис + Змінити + Очистити»: під
+        # більшим системним шрифтом обидві кнопки не влазять поруч і текст
+        # ріжеться (знахідка рецензії 31.07 — вкладка «Нарада» лишалась на
+        # QHBoxLayout, коли сусідні вкладки вже перевели).
+        hotrow_w = QWidget()
+        hotrow = FlowLayout(hotrow_w, spacing=10)
         combo = getattr(cfg, "meeting_bookmark_hotkey", "") or ""
         self._meeting_bookmark_key = QLabel(pretty(combo) if combo else tr("set_meeting_bookmark_none"))
         self._meeting_bookmark_key.setProperty("kbd", True)
         change = QPushButton(tr("common_change")); change.clicked.connect(self.controller.start_meeting_bookmark_key_capture)
         clear = QPushButton(tr("set_qol_key_clear")); clear.setProperty("ghost", True); clear.clicked.connect(self.controller.clear_meeting_bookmark_hotkey)
-        hotrow.addWidget(self._meeting_bookmark_key); hotrow.addWidget(change); hotrow.addWidget(clear); hotrow.addStretch()
+        hotrow.addWidget(self._meeting_bookmark_key); hotrow.addWidget(change); hotrow.addWidget(clear)
         g.addWidget(_form_label(tr("set_meeting_bookmark_hotkey")), 1, 0)
-        g.addLayout(hotrow, 1, 1)
+        g.addWidget(hotrow_w, 1, 1)
         self.controller.meeting_bookmark_key_captured.connect(self._on_meeting_bookmark_key)
 
         # feature/diary-calendar: опційний файл календаря (.ics) для авто-назви
-        icsrow = QHBoxLayout(); icsrow.setSpacing(10)
+        icsrow_w = QWidget()
+        icsrow = FlowLayout(icsrow_w, spacing=10)
         self._meeting_ics_label = QLabel()
         self._meeting_ics_label.setWordWrap(True)
         self._set_meeting_ics_text(getattr(cfg, "meeting_ics_path", None))
@@ -3934,11 +3936,11 @@ class SettingsPage(QWidget):
         ics_clear = QPushButton(tr("set_qol_key_clear"))
         ics_clear.setProperty("ghost", True)
         ics_clear.clicked.connect(self._on_clear_meeting_ics)
-        icsrow.addWidget(self._meeting_ics_label, stretch=1)
+        icsrow.addWidget(self._meeting_ics_label)
         icsrow.addWidget(ics_pick)
         icsrow.addWidget(ics_clear)
         g.addWidget(_labeled_hint(tr("set_meeting_ics"), "hint_meeting_ics"), 3, 0)
-        g.addLayout(icsrow, 3, 1)
+        g.addWidget(icsrow_w, 3, 1)
 
         lay.addLayout(g)
 
@@ -4964,8 +4966,9 @@ class SettingsPage(QWidget):
         # (кнопки-дії / вибір рівня) зі spacing 10px, щоб нічого не злипалось.
         logs_box = QVBoxLayout()
         logs_box.setSpacing(10)
-        logs_actions = QHBoxLayout()
-        logs_actions.setSpacing(10)
+        # FlowLayout, не QHBoxLayout: під більшим шрифтом обидва підписи не
+        # влазять в один ряд на вузькому вікні — переносимо (хвиля 31.07).
+        logs_actions = FlowLayout(spacing=10)
         logs_btn = QPushButton(tr("set_open_logs"))
         logs_btn.setAccessibleName(tr("set_open_logs"))
         logs_btn.clicked.connect(lambda _=False: open_log_dir())
@@ -4974,7 +4977,6 @@ class SettingsPage(QWidget):
         copy_diag.setAccessibleName(tr("set_copy_diagnostics"))
         copy_diag.clicked.connect(self._copy_diagnostics)
         logs_actions.addWidget(copy_diag)
-        logs_actions.addStretch()
         logs_box.addLayout(logs_actions)
         # «Повідомити про проблему» — окремим рядом: утрьох кнопки просили 491
         # точку при 386 доступних у колонці на мінімумі вікна (1000), і Qt різав
@@ -5017,8 +5019,10 @@ class SettingsPage(QWidget):
         self._upd_sha = None            # очікуваний SHA-256
         self._upd_notes = None          # «що нового»
         self._upd_ready_path = None     # шлях до вже завантаженого інсталятора
-        updrow = QHBoxLayout()
-        updrow.setSpacing(10)
+        # FlowLayout, не QHBoxLayout: до пʼяти можливих кнопок дій оновлення під
+        # більшим шрифтом не влазять в один ряд на вузькому вікні — переносимо
+        # (хвиля 31.07).
+        updrow = FlowLayout(spacing=10)
         # feature/auto-update: завантажити інсталятор у теку оновлень (з прогресом)
         self._upd_get = GlassButton(tr("set_upd_download"))
         self._upd_get.clicked.connect(self._on_get_update)
@@ -5042,7 +5046,6 @@ class SettingsPage(QWidget):
         updrow.addWidget(self._upd_notes_btn)
         updrow.addWidget(self._upd_download)
         updrow.addWidget(upd_check)
-        updrow.addStretch()
         g.addWidget(self._subhead(tr("set_system_updates")), 5, 0, 1, 2)
         g.addWidget(_labeled_hint(tr("set_updates"), "hint_updates"), 6, 0)
         g.addWidget(self._upd_status, 6, 1)
@@ -5126,8 +5129,10 @@ class SettingsPage(QWidget):
 
         g = _grid()
         combo = getattr(cfg, "panic_lock_hotkey", "") or ""
-        keyrow = QHBoxLayout()
-        keyrow.setSpacing(12)
+        # FlowLayout, не QHBoxLayout: у вузькій колонці грід-таблиці налаштувань
+        # значення+«Змінити…»+«Очистити» під більшим шрифтом не влазять в один
+        # рядок — переносимо (хвиля 31.07).
+        keyrow = FlowLayout(spacing=12)
         self._panic_key_label = QLabel(pretty(combo) if combo else tr("set_note_none"))
         self._panic_key_label.setProperty("kbd", True)
         change = QPushButton(tr("common_change"))
@@ -5144,7 +5149,6 @@ class SettingsPage(QWidget):
         keyrow.addWidget(self._panic_key_label)
         keyrow.addWidget(change)
         keyrow.addWidget(self._panic_clear_btn)
-        keyrow.addStretch()
         g.addWidget(_labeled_hint(tr("set_panic_hotkey"), "hint_panic_hotkey"), 0, 0)
         g.addLayout(keyrow, 0, 1)
 
