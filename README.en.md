@@ -152,7 +152,7 @@ SHA-256 for this exact file:
 
 A matching SHA-256 confirms that your download is byte-for-byte identical to the published file. It does not, by itself, prove that a file is safe.
 
-The release verification record dated 26 July 2026 reports [0 detections from 65 VirusTotal engines](https://www.virustotal.com/gui/file/20862c0159ed6806a234085c27b3bc108a601161c63c730767f8d644fbbc43b6/detection) for this exact file. This is an informational result, not a safety guarantee.
+Check this file on VirusTotal by its SHA-256: [file page](https://www.virustotal.com/gui/file/20862c0159ed6806a234085c27b3bc108a601161c63c730767f8d644fbbc43b6/detection). If no report exists yet, you can submit the file yourself. A scan is an additional signal, not a substitute for verifying the SHA-256.
 
 ## Beta and commercial use
 
