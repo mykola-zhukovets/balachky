@@ -138,7 +138,7 @@ Your data is stored on your computer. See [Data and privacy](docs/DATA-PRIVACY.m
 
 ## Installation
 
-Balachky requires 64-bit Windows 10 or 11. The installer is about 159 MB. Recognition models and optional components need additional disk space; the total depends on what you install.
+Balachky requires 64-bit Windows 10 or 11. The installer is about 162 MB. Recognition models and optional components need additional disk space; the total depends on what you install.
 
 Download `BalachkySetup-1.2.4.2-beta-20862C01.exe` from the [official v1.2.4.2-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.2-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
 
