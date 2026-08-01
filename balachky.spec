@@ -106,27 +106,7 @@ _version = runpy.run_path(
 _ver = _version["DISPLAY_VERSION"]
 _vtuple = _version["WINDOWS_FILE_VERSION"]
 
-# Вбиваємо коміт збірки у whisper_core/_buildinfo.py, щоб сайдбар, звіт про
-# проблему й шапка тест-журналу показували «версія X.Y.Z (abc1234)» без git у
-# frozen-exe. Аналог генерації installer\version.iss (див. docs/BUILD.md). Файл
-# ГЕНЕРУЄТЬСЯ тут; репозиторна версія лишає COMMIT=None (у dev читаємо git).
-import subprocess as _sp
-_commit = "dev"
-try:
-    _out = _sp.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(SPECPATH),
-                   capture_output=True, text=True, timeout=5)
-    _commit = (_out.stdout or "").strip() or "dev"
-except Exception:
-    pass
-(Path(SPECPATH) / "whisper_core" / "_buildinfo.py").write_text(
-    '"""ЗГЕНЕРОВАНО balachky.spec під час збірки — НЕ редагувати вручну."""\n'
-    f'COMMIT = "{_commit}"\n\n\n'
-    'def build_commit() -> str:\n'
-    '    return COMMIT\n\n\n'
-    'def build_version(version: str) -> str:\n'
-    '    return f"{version} ({COMMIT})"\n',
-    encoding="utf-8")
-
+# Вбиваємо коміт збірки: frozen metadata вже створено в staging-копії.
 datas = [
     ("assets", "assets"),                      # іконка (paths.assets_dir())
                                                # + feature/tts-listen: демо-WAV

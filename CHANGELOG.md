@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4.3-beta] - 2026-08-02
+
+**Інсталятор / Installer:** `BalachkySetup-1.2.4.3-beta-2554A930.exe` (161,8 МіБ / 161.8 MiB; 169,6 МБ / 169.6 MB; 169 609 456 байтів / bytes)
+**SHA-256:** `2554A930B2BB8DA1EA27790907E0656EB8D7CD60859E3193B32926D3FA74371E`
+
+> Випуск із підсиленням цілісності збірок, ґейтів публікації та двомовної довідки.
+> Maintenance release strengthening build integrity, publication gates, and bilingual help support.
+
+### Added
+
+**Українською:**
+- **Захист від ШІ-слідів у комітах та публікаціях.** Впроваджено ґейт перевірки `publish_gate.ps1`, який унеможливлює потрапляння `Co-Authored-By` трейлерів та неперевірених правок.
+- **Вшивання та перевірка Git HEAD SHA у бінарному `Balachky.exe`.** Автоматичний механізм цілісності `build_integrity.py` підтверджує 100% відповідність вихідного коду бінарним файлам.
+- **Суворий заморожений QA-гейт (`release_qa.ps1 -StrictFrozen`).** Гарантує fail-closed перевірку запускного рівня без жодних прихованих попереджень.
+- **Двомовне відкриття довідки.** Український інтерфейс відкриває інструкцію українською мовою (`README.uk.md`), англійський — англійською (`README.md`), у тому числі в офлайн-режимі.
+
+**In English:**
+- **AI-trailer protection for commits and publications.** Implemented `publish_gate.ps1` to prevent `Co-Authored-By` trailers and unverified changes.
+- **Git HEAD SHA embedding & integrity verification.** Automated `build_integrity.py` ensures 100% alignment between source code and binary assets.
+- **Strict frozen QA gate (`release_qa.ps1 -StrictFrozen`).** Guarantees fail-closed verification of executable releases with zero unhandled warnings.
+- **Bilingual help guide launching.** Ukrainian UI directs to `README.uk.md`, English UI directs to `README.md`, both online and offline.
+
+---
+
 ## [1.2.4.2-beta] - 2026-08-01
 
 **Інсталятор / Installer:** `BalachkySetup-1.2.4.2-beta-20862C01.exe` (161,8 МБ / 161.8 MB; 169 618 367 байтів / bytes)

@@ -48,7 +48,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-if (-not $LogDir) { $LogDir = Join-Path $Root "build-logs" }
+if (-not $LogDir) { $LogDir = Join-Path $env:TEMP "balachky-build-logs" }
 
 function Fail([string]$Message) {
     Write-Host ""
@@ -69,10 +69,8 @@ $buildPython = Join-Path $BuildVenv "Scripts\python.exe"
 $pyinstallerExe = Join-Path $BuildVenv "Scripts\pyinstaller.exe"
 $specPath = Join-Path $Root "balachky.spec"
 $issPath = Join-Path $Root "installer\balachky.iss"
-$buildInfoPath = Join-Path $Root "whisper_core\_buildinfo.py"
+$buildIntegrity = Join-Path $Root "scripts\build_integrity.py"
 $finalizeScript = Join-Path $Root "scripts\finalize_installer.ps1"
-$auditDistPath = Join-Path $Root "dist\Balachky"
-$exePath = Join-Path $auditDistPath "Balachky.exe"
 
 if (-not $InnoSetupExe) {
     $candidates = @(
@@ -88,6 +86,7 @@ $requiredPaths = @(
     @{ Name = "balachky.spec"; Path = $specPath },
     @{ Name = "installer\balachky.iss"; Path = $issPath },
     @{ Name = "scripts\finalize_installer.ps1"; Path = $finalizeScript },
+    @{ Name = "scripts\build_integrity.py"; Path = $buildIntegrity },
     @{ Name = "ISCC.exe (Inno Setup 6)"; Path = $InnoSetupExe }
 )
 foreach ($item in $requiredPaths) {
@@ -114,6 +113,26 @@ if ($LASTEXITCODE -ne 0 -or -not $commit) { Fail "Не вдалося визна
 Write-Host "  Коміт: $commit"
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$buildRoot = Join-Path $env:TEMP "balachky-build-$stamp-$commit-$PID"
+$stageRoot = Join-Path $buildRoot "source"
+$stageDist = Join-Path $stageRoot "dist"
+$stageWork = Join-Path $buildRoot "pyinstaller-work"
+$stageInstallerOutput = Join-Path $buildRoot "installer-output"
+$inputSnapshot = Join-Path $buildRoot "tracked-inputs.json"
+$stageSpecPath = Join-Path $stageRoot "balachky.spec"
+$stageIssPath = Join-Path $stageRoot "installer\balachky.iss"
+$stageFinalizeScript = Join-Path $stageRoot "scripts\finalize_installer.ps1"
+$auditDistPath = Join-Path $stageDist "Balachky"
+$exePath = Join-Path $auditDistPath "Balachky.exe"
+
+New-Item -ItemType Directory -Path $buildRoot | Out-Null
+& $buildPython $buildIntegrity snapshot --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "Не вдалося зняти побайтний snapshot відстежуваних вхідних даних" }
+& $buildPython $buildIntegrity stage --root $Root --commit $commit --output $stageRoot
+if ($LASTEXITCODE -ne 0) { Fail "Не вдалося створити staging-копію exact HEAD" }
+& $buildPython $buildIntegrity verify --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "HEAD або відстежувані байти змінилися до PyInstaller" }
+
 $buildLog = Join-Path $LogDir "build-$Profile-$stamp-$commit.log"
 "START $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') HEAD=$commit PROFILE=$Profile" |
     Out-File $buildLog -Encoding utf8
@@ -122,20 +141,22 @@ $buildLog = Join-Path $LogDir "build-$Profile-$stamp-$commit.log"
 $buildStart = Get-Date
 
 # ── 2-3. PyInstaller + перевірка свіжості ────────────────────────────────────
-# Обгорнуто в try/finally: balachky.spec перезаписує _buildinfo.py ще ПІД ЧАС
-# аналізу, тобто до можливого падіння. Без finally невдалий прогін лишав дерево
-# брудним, і наступний запуск падав на кроці 1 — оператору доводилося чистити
-# руками (знахідка судді 31.07).
-
-try {
     Step "PyInstaller ($Profile)"
 
     $env:BALACHKY_BUILD_PROFILE = $Profile
-    # python -m PyInstaller, НЕ pyinstaller.exe: exe-лаунчер venv несе вшитий
-    # абсолютний шлях до python і тихо падає з кодом 1 після переїзду venv
-    # (C:→D: 30.07; впіймано на білді 31.07 — порожній журнал, нуль виводу).
-    & $buildPython -m PyInstaller $specPath --noconfirm *>&1 | Tee-Object -FilePath $buildLog -Append
-    $pyinstallerExit = $LASTEXITCODE
+    Push-Location $stageRoot
+    try {
+        # ВАЖЛИВО: викликати саме "python -m PyInstaller", а не окремий
+        # pyinstaller.exe зі Scripts\ — цей entry-point exe в складальному
+        # venv не запускається (падає з кодом 1 без жодного виводу навіть на
+        # --version), тоді як пакет через python -m працює справно.
+        # Знайдено 02.08.2026 після двох підряд провалених білдів.
+        & $buildPython -m PyInstaller $stageSpecPath --noconfirm --distpath $stageDist --workpath $stageWork *>&1 |
+            Tee-Object -FilePath $buildLog -Append
+        $pyinstallerExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
     Remove-Item Env:\BALACHKY_BUILD_PROFILE -ErrorAction SilentlyContinue
 
     if ($pyinstallerExit -ne 0) {
@@ -158,26 +179,15 @@ try {
               "($($exeTime.ToString('yyyy-MM-dd HH:mm:ss')) < $($buildStart.ToString('yyyy-MM-dd HH:mm:ss'))) " +
               "— PyInstaller вивів 'успіх', але файл не перезаписав. Журнал: $buildLog")
     }
-    Write-Host "  ОК  $exePath оновлено о $($exeTime.ToString('yyyy-MM-dd HH:mm:ss'))"
-}
-finally {
-    # Виконується і при успіху, і при Fail усередині try — дерево не лишається
-    # брудним після невдалого складання.
-    git checkout -- $buildInfoPath 2>$null
-}
+Write-Host "  ОК  $exePath оновлено о $($exeTime.ToString('yyyy-MM-dd HH:mm:ss'))"
 
-# ── 4. Переконатися, що _buildinfo.py справді в dev-стані ───────────────────
-
-Step "Відкат whisper_core\_buildinfo.py"
-
-$postCheckoutStatus = git status --porcelain -- $buildInfoPath
-if ($postCheckoutStatus) {
-    Fail "whisper_core\_buildinfo.py лишився зміненим після відкату — робоче дерево забрудниться"
-}
 
 # ── 5. ОБОВ'ЯЗКОВИЙ аудит дистрибутива ───────────────────────────────────────
 
 Step "Аудит дистрибутива (BALACHKY_AUDIT_DIST)"
+
+& $buildPython $buildIntegrity verify --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "HEAD або відстежувані байти змінилися до аудиту й пакування" }
 
 $env:BALACHKY_AUDIT_DIST = (Resolve-Path $auditDistPath).Path
 $auditJunit = Join-Path $LogDir "audit-$stamp-$commit.xml"
@@ -222,20 +232,29 @@ Write-Host "  ОК  $totalTests/$totalTests перевірок пройдено,
 
 Step "Компіляція інсталятора (Inno Setup)"
 
-& $InnoSetupExe $issPath *>&1 | Tee-Object -FilePath $buildLog -Append
+& $buildPython $buildIntegrity verify --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "HEAD або відстежувані байти змінилися до Inno Setup" }
+
+& $InnoSetupExe "/O$stageInstallerOutput" $stageIssPath *>&1 | Tee-Object -FilePath $buildLog -Append
 $isccExit = $LASTEXITCODE
 if ($isccExit -ne 0) { Fail "ISCC.exe завершився з кодом $isccExit. Журнал: $buildLog" }
 
 Step "Фіналізація інсталятора (SHA-256 у назві)"
 
-$finalizeOutput = & pwsh -File $finalizeScript *>&1
+& $buildPython $buildIntegrity verify --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "HEAD або відстежувані байти змінилися до фіналізації" }
+
+$finalizeOutput = & pwsh -File $stageFinalizeScript -OutputDir $stageInstallerOutput *>&1
 $finalizeExit = $LASTEXITCODE
 $finalizeOutput | Tee-Object -FilePath $buildLog -Append | Out-Null
 if ($finalizeExit -ne 0) { Fail "finalize_installer.ps1 завершився з кодом $finalizeExit. Журнал: $buildLog" }
 
-$installer = Get-ChildItem -Path (Join-Path $Root "installer\Output") -Filter "BalachkySetup-*.exe" |
+$installer = Get-ChildItem -Path $stageInstallerOutput -Filter "BalachkySetup-*.exe" |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $installer) { Fail "Не знайдено готового інсталятора в installer\Output після фіналізації" }
+
+& $buildPython $buildIntegrity verify --root $Root --snapshot $inputSnapshot
+if ($LASTEXITCODE -ne 0) { Fail "HEAD або відстежувані байти змінилися під час фіналізації" }
 
 "END $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') EXIT=0" | Add-Content $buildLog
 

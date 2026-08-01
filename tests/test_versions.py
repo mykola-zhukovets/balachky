@@ -14,11 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 class VersionConstantsTests(unittest.TestCase):
     def test_release_concepts_have_distinct_canonical_values(self):
         self.assertEqual(
-            getattr(whisper_core, "DISPLAY_VERSION", None), "1.2.4.2-beta")
+            getattr(whisper_core, "DISPLAY_VERSION", None), "1.2.4.3-beta")
         self.assertEqual(
-            getattr(whisper_core, "PEP440_VERSION", None), "1.2.4.2b0")
+            getattr(whisper_core, "PEP440_VERSION", None), "1.2.4.3b0")
         self.assertEqual(
-            getattr(whisper_core, "WINDOWS_FILE_VERSION", None), (1, 2, 4, 2))
+            getattr(whisper_core, "WINDOWS_FILE_VERSION", None), (1, 2, 4, 3))
         self.assertEqual(
             getattr(whisper_core, "RELEASE_CHANNEL", None), "beta")
 
@@ -27,7 +27,7 @@ class VersionConstantsTests(unittest.TestCase):
             engine_manager.CURRENT_APP_VERSION, whisper_core.DISPLAY_VERSION)
         self.assertEqual(
             engine_manager.parse_version_tuple(whisper_core.DISPLAY_VERSION),
-            (1, 2, 4, 2),
+            (1, 2, 4, 3),
         )
 
     def test_offline_package_fallback_uses_canonical_display_version(self):
@@ -55,14 +55,14 @@ class WindowsVersionBuildTests(unittest.TestCase):
         version_preamble = spec.split("# Вбиваємо коміт збірки", 1)[0]
 
         version_values = {
-            "DISPLAY_VERSION": "1.2.4.2-beta",
-            "PEP440_VERSION": "1.2.4.2b0",
-            "WINDOWS_FILE_VERSION": (1, 2, 4, 2),
+            "DISPLAY_VERSION": "1.2.4.3-beta",
+            "PEP440_VERSION": "1.2.4.3b0",
+            "WINDOWS_FILE_VERSION": (1, 2, 4, 3),
             "RELEASE_CHANNEL": "beta",
         }
         namespace = {"SPECPATH": str(ROOT)}
         with patch.object(
-                Path, "read_text", return_value='__version__ = "1.2.4.2-beta"\n'), \
+                Path, "read_text", return_value='__version__ = "1.2.4.3-beta"\n'), \
                 patch("runpy.run_path", return_value=version_values):
             try:
                 exec(compile(version_preamble, "balachky.spec", "exec"),
@@ -72,7 +72,7 @@ class WindowsVersionBuildTests(unittest.TestCase):
             else:
                 file_version = namespace.get("_vtuple")
 
-        self.assertEqual(file_version, (1, 2, 4, 2))
+        self.assertEqual(file_version, (1, 2, 4, 3))
 
     def test_installer_uses_numeric_windows_file_version(self):
         installer = (
