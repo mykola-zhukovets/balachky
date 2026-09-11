@@ -256,10 +256,15 @@ def test_existing_dist_has_required_av_binaries_and_modules():
 
     internal = dist / "_internal"
     assert internal.is_dir()
-    av_pyds = list(internal.glob("**/av/**/*.pyd")) + list(internal.glob("av/**/*.pyd"))
+    av_pyds = {p.relative_to(internal) for p in internal.glob("**/av/**/*.pyd")}
     assert av_pyds, (
-        "dist/_internal must contain av *.pyd extension modules (e.g. stream*.pyd) "
+        "dist/_internal must contain av *.pyd extension modules "
         "required by faster-whisper audio decoding"
+    )
+    subtitle_pyds = [p for p in av_pyds if "subtitles" in p.parts and "stream" in p.name.lower()]
+    assert subtitle_pyds, (
+        "dist/_internal must specifically contain av/subtitles/stream*.pyd "
+        f"for faster-whisper subtitle decoding, found: {av_pyds}"
     )
 
 
