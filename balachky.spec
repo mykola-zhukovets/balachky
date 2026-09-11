@@ -88,6 +88,7 @@ for _component in _build_components:
 from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_dynamic_libs,
+    collect_submodules,
 )
 from PyInstaller.utils.win32.versioninfo import (
     VSVersionInfo,
@@ -170,9 +171,20 @@ if not _paw_origin:
     )
 binaries.append((_paw_origin, "."))
 
-# PyAV: H.264/MP4 для штатного запису екрана наради. Забираємо лише DLL,
-# що вже постачаються wheel-ом (зокрема av.libs), без зовнішніх залежностей.
-binaries += collect_dynamic_libs("av")
+# PyAV: декодування аудіо (faster-whisper) та H.264/MP4 запис екрана наради.
+# collect_dynamic_libs за замовчуванням шукає лише *.dll/*.dylib/lib*.so,
+# тому бінарні розширення *.pyd (зокрема av/subtitles/stream*.pyd) не
+# потрапляють у збірку без явного search_patterns, що призводило до
+# ModuleNotFoundError: No module named 'av.subtitles.stream' під час розпізнавання.
+hiddenimports += collect_submodules("av")
+_av_bins = collect_dynamic_libs(
+    "av",
+    search_patterns=["*.dll", "*.dylib", "lib*.so", "*.pyd"],
+)
+_av_pyds = [Path(src).name.lower() for src, _dst in _av_bins if src.lower().endswith(".pyd")]
+if not _av_pyds:
+    raise SystemExit("balachky.spec: у збірку av не потрапили .pyd розширення")
+binaries += _av_bins
 datas += collect_data_files("av")
 # faster_whisper: assets (silero VAD onnx тощо)
 datas += collect_data_files("faster_whisper")

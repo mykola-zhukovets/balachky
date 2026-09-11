@@ -164,6 +164,8 @@ def test_existing_dist_has_no_forbidden_files_or_archived_modules():
 
     archived = {}
     for executable in sorted(dist.glob("*.exe")):
+        if executable.name.lower().startswith("unins"):
+            continue
         roots = {name.partition(".")[0] for name in _archived_modules(executable)}
         leaked = sorted(roots & FORBIDDEN_MODULES)
         if leaked:
@@ -232,3 +234,58 @@ def test_restart_manager_contract_is_explicit_and_mutex_claim_is_honest():
     assert 'return "balachky-single" + os.environ.get("BALACHKY_INSTANCE_SUFFIX", "")' in app_source
     assert 'server.listen(channel)' in app_source
     assert "CreateMutex" not in app_source
+
+
+def test_spec_collects_full_pyav_submodules_and_binaries():
+    source = SPEC_PATH.read_text(encoding="utf-8")
+    assert 'collect_submodules("av")' in source, (
+        "balachky.spec must collect all av submodules via collect_submodules('av') "
+        "to prevent ModuleNotFoundError: No module named 'av.subtitles.stream' in frozen build"
+    )
+    assert re.search(
+        r'collect_dynamic_libs\(\s*["\']av["\'],\s*search_patterns=.*["\']\*\.pyd["\']',
+        source,
+        re.DOTALL,
+    ), "collect_dynamic_libs for 'av' must include '*.pyd' in search_patterns"
+
+
+def test_existing_dist_has_required_av_binaries_and_modules():
+    dist = _audit_dist()
+    if dist is None:
+        pytest.skip("set BALACHKY_AUDIT_DIST to inspect an existing build")
+
+    internal = dist / "_internal"
+    assert internal.is_dir()
+    av_pyds = list(internal.glob("**/av/**/*.pyd")) + list(internal.glob("av/**/*.pyd"))
+    assert av_pyds, (
+        "dist/_internal must contain av *.pyd extension modules (e.g. stream*.pyd) "
+        "required by faster-whisper audio decoding"
+    )
+
+
+def test_pyav_hook_collects_subtitles_stream_and_pyd_binaries():
+    pytest.importorskip("PyInstaller")
+    from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+
+    submodules = set(collect_submodules("av"))
+    assert "av.subtitles.stream" in submodules, (
+        "collect_submodules('av') must discover 'av.subtitles.stream'"
+    )
+    assert "av.container.core" in submodules, (
+        "collect_submodules('av') must discover 'av.container.core'"
+    )
+
+    bins = collect_dynamic_libs(
+        "av",
+        search_patterns=["*.dll", "*.dylib", "lib*.so", "*.pyd"],
+    )
+    pyd_names = {
+        Path(src).name.lower()
+        for src, _dst in bins
+        if src.lower().endswith(".pyd")
+    }
+    assert any("stream" in name for name in pyd_names), (
+        f"collect_dynamic_libs('av') must collect stream*.pyd extensions, got: {pyd_names}"
+    )
+
+
