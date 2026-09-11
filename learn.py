@@ -11,14 +11,12 @@
 
 Ти підтверджуєш кожен термін сам: система вчиться, контроль лишається за тобою.
 """
-import json
 import re
 import sys
-import tomllib
 from collections import Counter
 from pathlib import Path
 
-from whisper_core import profiles
+from whisper_core import history, profiles
 from whisper_core.uk_stopwords import UK_STOPWORDS
 
 MIN_COUNT = 2    # скільки разів має зустрітись токен, щоб стати кандидатом
@@ -40,18 +38,8 @@ def load_known_variants(terms_path) -> set:
 def analyze(history_path, known=None, stopwords=UK_STOPWORDS, min_count=MIN_COUNT):
     """→ [(токен, частота), ...] спадно: часті кириличні токени поза відомим."""
     known = known or set()
-    history_path = Path(history_path)
-    if not history_path.exists():
-        return []
     counter = Counter()
-    for line in history_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except Exception:
-            continue
+    for _line, rec in history.read_recent(Path(history_path)):
         for tok in _TOKEN_RE.findall((rec.get("raw") or "").lower()):
             tok = tok.strip("'")
             if tok not in stopwords and tok not in known:

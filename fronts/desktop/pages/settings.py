@@ -38,7 +38,6 @@ from whisper_core.config import (            # feature/audio-qol + audio-center:
     VAD_THRESHOLD_DEFAULT, VAD_MIN_SILENCE_MS_DEFAULT, VAD_MIN_SPEECH_MS_DEFAULT,
     NOISE_GATE_THRESHOLD_DB_DEFAULT, AGC_TARGET_DB_DEFAULT,
 )
-from whisper_core.engine import cuda_runtime_available
 
 from .. import context as ctx_mod
 from ..context import ContextProfile, Behavior, AutoProfileRule
@@ -93,6 +92,8 @@ _GPU_VRAM = {
     ("medium", "float16"): "2-3",
     ("large-v3-turbo", "int8"): "1-1.5", ("large-v3-turbo", "int8_float16"): "1.5-2",
     ("large-v3-turbo", "float16"): "2-3",
+    ("large-v2", "int8"): "2-3", ("large-v2", "int8_float16"): "3-4",
+    ("large-v2", "float16"): "4-5",      # той самий розмір, що й large-v3
     ("large-v3", "int8"): "2-3", ("large-v3", "int8_float16"): "3-4",
     ("large-v3", "float16"): "4-5",
 }
@@ -2358,6 +2359,7 @@ class SettingsPage(QWidget):
         # feature/gpu: рантайм може бути докачаний (cuda_runtime) або системний.
         # Радіо GPU активне, коли рантайм реально доступний. Коли NVIDIA є, а
         # рантайму ще нема — замість вимкненого радіо пропонуємо кнопку докачки.
+        from whisper_core.engine import cuda_runtime_available
         gpu_ok = cuda_runtime_available()
         show_gpu_download = cuda_runtime.gpu_present() and not gpu_ok
         devrow = QHBoxLayout()
@@ -2561,6 +2563,10 @@ class SettingsPage(QWidget):
         """Базовий підпис (диск+характер) + речення про залізо під поточний режим:
         CPU → оперативна пам’ять/час; GPU → VRAM під обрану точність (int8/…)."""
         base = tr(preset.hint_key)
+        if getattr(preset, "kind", "whisper") == "sherpa":
+            # feature/stt-sherpa-parakeet: модель працює на процесорі й сама
+            # визначає мову — підказки про VRAM і вибір мови до неї не стосуються
+            return "{} {}".format(base, tr("stt_sherpa_note")).strip()
         if self._selected_device() == "cuda":
             compute = self._selected_compute()
             vram = _GPU_VRAM.get((preset.name, compute))
@@ -3885,6 +3891,22 @@ class SettingsPage(QWidget):
         g.addLayout(vaultbox, 7, 1)
         self._refresh_vault_ui()
 
+        self._history_encrypt = QCheckBox(tr("set_history_encrypt"))
+        self._history_encrypt.setAccessibleName(tr("set_history_encrypt"))
+        self._history_encrypt.setChecked(
+            bool(getattr(cfg, "history_encrypt", False)))
+        self._history_encrypt.toggled.connect(self._on_history_encrypt)
+        history_encrypt_box = QVBoxLayout()
+        history_encrypt_box.setSpacing(4)
+        history_encrypt_box.addWidget(self._history_encrypt)
+        history_encrypt_hint = QLabel(tr("set_history_encrypt_hint"))
+        history_encrypt_hint.setProperty("muted", True)
+        history_encrypt_hint.setWordWrap(True)
+        history_encrypt_box.addWidget(history_encrypt_hint)
+        g.addWidget(_form_label(tr("set_history_encrypt_label")),
+                    8, 0, Qt.AlignTop)
+        g.addLayout(history_encrypt_box, 8, 1)
+
         # тека записів: локальна, поза хмарою (посилена OPSEC-вимога)
         dirbox = QVBoxLayout()
         dirbox.setSpacing(8)
@@ -4229,6 +4251,13 @@ class SettingsPage(QWidget):
             self._meeting_encrypt.setChecked(not bool(on))
             self._meeting_encrypt.blockSignals(False)
         self._refresh_vault_ui()
+
+    def _on_history_encrypt(self, on: bool):
+        if not self.controller.set_history_encryption(bool(on)):
+            self._history_encrypt.blockSignals(True)
+            self._history_encrypt.setChecked(not bool(on))
+            self._history_encrypt.blockSignals(False)
+
     def _on_paste_typing(self, on: bool):
         self.controller.cfg.paste_typing_fallback = bool(on)
         self.controller.save_config()

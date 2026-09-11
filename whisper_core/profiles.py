@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import paths
 from . import processing
-from .history import history_lock
+from .history import encrypted_path, history_lock, read_recent
 
 # База профілів: dev — корінь репо, frozen — %LOCALAPPDATA%\Balachky (writable)
 _ROOT = paths.profiles_root()
@@ -176,16 +176,36 @@ class Profile:
         # Той самий міжпроцесний lock, що й log_history/delete_line: append не
         # може писати у вже перейменований backup, а Windows не бачить open file.
         with history_lock(self.history_path):
-            if not self.history_path.exists():
+            encrypted = encrypted_path(self.history_path)
+            has_encrypted = encrypted.exists()
+            has_plaintext = self.history_path.exists()
+            if not has_encrypted and not has_plaintext:
                 return None
             stamp = time.strftime("%Y%m%d-%H%M%S")
-            bak = self.dir / f"history.{stamp}.bak.jsonl"
-            n = 1
-            while bak.exists():  # Windows rename не перезаписує: два кліки за секунду
-                bak = self.dir / f"history.{stamp}-{n}.bak.jsonl"
-                n += 1
-            self.history_path.rename(bak)
-            return bak
+
+            def available_backup(*, stale=False, encrypted_copy=False):
+                middle = ".stale" if stale else ""
+                suffix = ".enc" if encrypted_copy else ""
+                candidate = self.dir / (
+                    f"history.{stamp}{middle}.bak.jsonl{suffix}")
+                n = 1
+                while candidate.exists():
+                    candidate = self.dir / (
+                        f"history.{stamp}-{n}{middle}.bak.jsonl{suffix}")
+                    n += 1
+                return candidate
+
+            # Після аварії міграції можуть співіснувати обидві копії.
+            # Зашифрована є канонічною; відкритий залишок теж архівуємо окремо,
+            # аби очищення не активувало його знову і водночас не губило дані.
+            if has_plaintext:
+                plain_backup = available_backup(stale=has_encrypted)
+                self.history_path.rename(plain_backup)
+            if has_encrypted:
+                encrypted_backup = available_backup(encrypted_copy=True)
+                encrypted.rename(encrypted_backup)
+                return encrypted_backup
+            return plain_backup
 
     def ignored_words(self) -> set:
         if not self.ignore_path.exists():
@@ -337,10 +357,7 @@ def _main(argv) -> int:
         for p in list_profiles():
             mark = "→" if p.name == active else " "
             mem = "пам'ять увімкнена" if p.memory_enabled else "пам'ять ВИМКНЕНА"
-            n = 0
-            if p.history_path.exists():
-                n = sum(1 for line in
-                        p.history_path.read_text(encoding="utf-8").splitlines() if line.strip())
+            n = len(read_recent(p))
             print(f" {mark} {p.name:<12} {mem}, записів: {n}")
     elif cmd == "new" and len(argv) > 1:
         p = create_profile(name=argv[1])

@@ -164,6 +164,10 @@ class Config:
     auto_download_updates: bool = False  # feature/auto-update: тихо завантажувати
                                     # інсталятор нової версії у фоні (opt-in; за
                                     # замовч. ВИМК — гігабайти без згоди не качаємо)
+    telegram_enabled: bool = False  # Telegram integration opt-in; token живе
+                                    # окремо у per-user DPAPI-сховищі
+    telegram_user_id: int = 0       # числовий paired user; 0 = не спарено
+    telegram_chat_id: int = 0       # числовий private chat; 0 = не спарено
     backdrop: str = "auto"          # auto — Mica-скло Win11 (якщо DWM дозволив) | off
     night_mode: bool = False        # feature/night-mode: нічний/червоний МОНО-режим
                                     # інтерфейсу для роботи з приладами нічного бачення
@@ -189,6 +193,7 @@ class Config:
                                         # (None → paths.meetings_dir(): локальна,
                                         # поза синхронізацією)
     meeting_encrypt: bool = False        # opt-in encryption for local meeting storage
+    history_encrypt: bool = False        # opt-in encryption for dictation history
     _config_corrupt: bool = field(default=False, init=False, repr=False)
     _config_recovered_from_backup: bool = field(
         default=False, init=False, repr=False)
@@ -394,6 +399,21 @@ class Config:
                                 key, type(val).__name__)
                     continue
                 setattr(c, key, val)
+        telegram_ids = (c.telegram_user_id, c.telegram_chat_id)
+        telegram_ids_valid = all(
+            type(value) is int and 0 <= value <= 2**63 - 1
+            for value in telegram_ids)
+        telegram_pair_valid = telegram_ids_valid and (
+            telegram_ids == (0, 0)
+            or all(value > 0 for value in telegram_ids))
+        if (type(c.telegram_enabled) is not bool
+                or not telegram_ids_valid
+                or not telegram_pair_valid):
+            c.telegram_enabled = False
+            c.telegram_user_id = 0
+            c.telegram_chat_id = 0
+        elif c.telegram_enabled and telegram_ids == (0, 0):
+            c.telegram_enabled = False
         try:
             c.meeting_screen_fps = min(15, max(1, int(c.meeting_screen_fps)))
         except (TypeError, ValueError):
@@ -459,6 +479,7 @@ class Config:
                 "workspace_bg",  # feature/background-choice (Т76)
                 "check_updates",
                 "auto_download_updates",  # feature/auto-update
+                "telegram_enabled", "telegram_user_id", "telegram_chat_id",
                 "dictation_queue_enabled",  # feature/dictation-queue
                 "voice_punctuation",     # feature/voice-punctuation
                 "voice_nav_enabled",     # feature/office-voice-nav
@@ -473,6 +494,7 @@ class Config:
                 "watch_enabled",         # feature/watch-folder
                 "meeting_sources",       # feature/meeting-ui: пресет пишемо завжди
                 "meeting_encrypt",       # feature/meeting-encryption: opt-in
+                "history_encrypt",       # feature/history-encryption: opt-in dictation-history encryption
                 "meeting_mic_devices",   # feature/multi-mic: імена, не несталі індекси
                 "meeting_record_sources", "meeting_export_segment_minutes",
                 "operator_name",         # feature/evidence-plus: «хто зафіксував»
@@ -571,8 +593,10 @@ class Config:
             _atomic_write_text(config_path, text)
             self._config_corrupt = False
             self._config_recovered_from_backup = False
+            return True
         except OSError as e:
             log.error("Не вдалося зберегти %s: %s", config_path, e)
+            return False
 
 
 # --- feature/meeting-ui: пресети джерел вкладки «Нарада» ---

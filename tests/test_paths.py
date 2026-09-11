@@ -41,6 +41,19 @@ class AssetRootTests(unittest.TestCase):
                 pass
 
 
+class TelegramSecretPathTests(unittest.TestCase):
+    def test_token_path_is_local_app_data_in_dev_and_frozen(self):
+        local_app_data = Path(r"C:\Users\tester\AppData\Local")
+        expected = local_app_data / "Balachky" / "telegram" / "bot-token.json"
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_app_data)}):
+            for frozen in (False, True):
+                with self.subTest(frozen=frozen), \
+                        patch.object(paths, "FROZEN", frozen):
+                    self.assertEqual(paths.telegram_token_path(), expected)
+                    self.assertFalse(
+                        paths.telegram_token_path().is_relative_to(paths.APP_ROOT))
+
+
 class SafeUnderTests(unittest.TestCase):
     """paths.safe_under() — захист від path-traversal (спільний для CLI/MCP).
 
@@ -77,6 +90,25 @@ class SafeUnderTests(unittest.TestCase):
             self.assertFalse(paths.safe_under(root, link))
             # і будь-що «під» лінком теж вислизає назовні
             self.assertFalse(paths.safe_under(root, link / "loot.txt"))
+
+
+class AllocTimestampedPathTests(unittest.TestCase):
+    """paths.alloc_timestamped_path() — генерація шляхів з таймстемпом та захистом від колізій."""
+
+    def test_creates_timestamped_path_and_handles_collisions(self):
+        with tempfile.TemporaryDirectory() as root:
+            import time
+            with patch.object(time, "strftime", return_value="2026-08-30_12-00-00"):
+                p1 = paths.alloc_timestamped_path(root, ".wav")
+                self.assertEqual(p1.name, "2026-08-30_12-00-00.wav")
+                p1.touch()
+
+                p2 = paths.alloc_timestamped_path(root, ".wav")
+                self.assertEqual(p2.name, "2026-08-30_12-00-00-1.wav")
+                p2.touch()
+
+                p3 = paths.alloc_timestamped_path(root, ".wav")
+                self.assertEqual(p3.name, "2026-08-30_12-00-00-2.wav")
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ from whisper_core import DISPLAY_VERSION, PEP440_VERSION
 from whisper_core.config import Config
 from whisper_core.live import LiveTranscriber
 from whisper_core.engine import (
-    Engine, ModelRevisionUnavailable, TranscriptionCancelled,
+    make_engine, ModelRevisionUnavailable, TranscriptionCancelled,
     NullEngine, ModelAbsentError,
     cuda_runtime_available, is_cuda_runtime_error,
 )
@@ -59,7 +59,9 @@ from whisper_core.processing import policy_for_mode, DICTATION  # feature/proces
 from whisper_core.textformat import apply_format as apply_output_format  # feature/output-formats
 from whisper_core import autocorrect, punctuator         # feature/punctuation-plus
 from whisper_core.history import (
-    log_history, read_recent, update_record, update_final_by_id)
+    is_encrypted as history_file_is_encrypted,
+    log_history, read_recent, set_encryption as set_history_file_encryption,
+    update_record, update_final_by_id)
 from whisper_core import self_learning        # feature/selflearn-dict
 from whisper_core.qol import (                          # feature/qol-pack
     UndoBuffer, AutostopMonitor, duration_status, sounds_muted_now,
@@ -88,10 +90,11 @@ from .paste import (
 )
 from whisper_core import navcommands  # feature/office-voice-nav
 from whisper_core.dictation_queue import DictationQueue  # feature/dictation-queue
-from whisper_core.meeting.audit_log import (  # блокер Т56 + delete-barrier
+from whisper_core.meeting.audit_log import (  # T56 + delete-barrier
     AuditLogCorrupt,
     AuditLogDeleted,
 )
+from whisper_core.meeting.signing import SigningKeyCorrupt, SigningKeyMissing
 from .main_window import MainWindow, FileStatus, app_icon
 from . import sounds
 from .crash import diagnostic_event, apply_log_level, apply_test_mode, test_log, anonymize_path
@@ -510,12 +513,22 @@ def _resume_meeting_encryption(app):
         app.tray.notify(tr("meeting_pending_plaintext", count=pending))
 
 
+# Спільний префікс усіх plaintext-тек наради (issue #16, за судом, блокер 2):
+# і планова чистка (_cleanup_stale_meeting_temps), і панічне блокування
+# (_cleanup_panic_plaintext_temps), і деінсталятор (balachky.iss:130) прибирають
+# усе, що починається з нього — тож БУДЬ-ЯКА нова plaintext-тека наради (в тому
+# числі повторний прогін start_retranscribe_meeting) мусить починатись саме з
+# нього, а не з якогось власного літералу, інакше вона переживе панічне
+# блокування нечистою.
+MEETING_TEMP_PREFIX = "balachky-meeting-"
+
+
 def _cleanup_stale_meeting_temps(max_age_seconds=3600):
     """Best-effort removal of plaintext media/worker dirs left by a hard crash."""
     import shutil
     now = time.time()
     root = Path(tempfile.gettempdir())
-    for prefix in ("balachky-meeting-", "balachky-meeting-media-"):
+    for prefix in (MEETING_TEMP_PREFIX, "balachky-meeting-media-"):
         for path in root.glob(prefix + "*"):
             try:
                 if path.is_dir() and now - path.stat().st_mtime >= max_age_seconds:
@@ -532,7 +545,7 @@ def _cleanup_panic_plaintext_temps() -> bool:
     root = Path(tempfile.gettempdir())
     success = True
     for prefix in (
-            "balachky-meeting-",
+            MEETING_TEMP_PREFIX,
             "balachky-meeting-media-",
             "balachky-tts-plain-"):
         try:
@@ -570,6 +583,8 @@ _audit_corrupt_warned_sessions: set[str] = set()
 _audit_deleted_warned_sessions: set[str] = set()
 _audit_timeout_warned_sessions: set[str] = set()
 _audit_unavailable_warned_sessions: set[str] = set()
+_audit_signing_warned_sessions: set[str] = set()
+_audit_signing_rotation_warned_roots: set[str] = set()
 _AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS = 1.0
 
 
@@ -657,6 +672,41 @@ def _warn_audit_unavailable(session_dir_or_id, error: OSError) -> None:
         except Exception:
             logging.exception(
                 "Не вдалося показати попередження про недоступний журнал")
+def _warn_audit_signing(session_dir_or_id=None) -> None:
+    """Попередити один раз на нараду, що безпечне журналювання зупинено."""
+    session_key = Path(session_dir_or_id).name if session_dir_or_id else "unknown"
+    logging.warning(
+        "Ключ підпису наради %s недоступний — нові події не записуються",
+        session_key)
+    if session_key in _audit_signing_warned_sessions:
+        return
+    _audit_signing_warned_sessions.add(session_key)
+    notify = _audit_corrupt_notifier
+    if notify is not None:
+        try:
+            notify(tr("meeting_audit_signing_warn"))
+        except Exception:
+            logging.exception(
+                "Не вдалося показати попередження про ключ підпису")
+
+
+def _warn_audit_signing_rotation(meetings_root) -> None:
+    """Попередити, що замість втраченого ключа створено новий."""
+    root_key = str(Path(meetings_root).resolve())
+    logging.warning(
+        "Створено новий ключ підпису для %s; старі журнали лишаються "
+        "підписані попереднім ключем",
+        root_key)
+    if root_key in _audit_signing_rotation_warned_roots:
+        return
+    _audit_signing_rotation_warned_roots.add(root_key)
+    notify = _audit_corrupt_notifier
+    if notify is not None:
+        try:
+            notify(tr("meeting_audit_signing_rotated_warn"))
+        except Exception:
+            logging.exception(
+                "Не вдалося показати попередження про новий ключ підпису")
 
 
 def _cleanup_stale_tts_temps() -> int:
@@ -666,6 +716,23 @@ def _cleanup_stale_tts_temps() -> int:
     ЄДИНЕ джерело логіки — plaintext_temp.cleanup_stale."""
     from whisper_core.tts import plaintext_temp
     return plaintext_temp.cleanup_stale(max_age_seconds=0)
+
+
+def _audit_signer(session_dir):
+    """Повернути signer для нового/підписаного журналу або None для legacy."""
+    from whisper_core.meeting import audit_log, signing
+    events = audit_log.read_events(session_dir)
+    unsigned_legacy = bool(
+        events and isinstance(events[0], dict)
+        and not isinstance(events[0].get("auth"), dict)
+        and events[0].get("signature_policy") != "required")
+    if unsigned_legacy:
+        return None
+    meetings_root = Path(session_dir).parent
+    signer = signing.ensure_signing_identity(meetings_root)
+    if getattr(signer, "replaces_missing_key", False):
+        _warn_audit_signing_rotation(meetings_root)
+    return signer
 
 
 def _audit_event(session_dir, event_type: str, **kwargs) -> None:
@@ -678,22 +745,53 @@ def _audit_event(session_dir, event_type: str, **kwargs) -> None:
     зникають (блокер Т56). Показуємо чесне попередження раз на нараду."""
     try:
         from whisper_core.meeting import audit_log
-        audit_log.append_event(
-            session_dir,
-            event_type,
-            lock_timeout=_AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS,
-            **kwargs,
-        )
+        signer = _audit_signer(session_dir)
+        if signer is None:
+            audit_log.append_event(
+                session_dir,
+                event_type,
+                lock_timeout=_AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS,
+                **kwargs,
+            )
+        else:
+            audit_log.append_event(
+                session_dir,
+                event_type,
+                signer=signer,
+                require_signature=True,
+                lock_timeout=_AUDIT_DESKTOP_LOCK_TIMEOUT_SECONDS,
+                **kwargs,
+            )
     except AuditLogDeleted:
         _warn_audit_deleted(session_dir)
     except AuditLogCorrupt:
         _warn_audit_corrupt(session_dir)
+    except (SigningKeyMissing, SigningKeyCorrupt):
+        _warn_audit_signing(session_dir)
     except TimeoutError:
         _warn_audit_timeout(session_dir)
     except OSError as exc:
         _warn_audit_unavailable(session_dir, exc)
     except Exception:
         logging.exception("Не вдалося дописати подію журналу цілісності: %s", event_type)
+
+
+def _audit_finalize(session_dir, artifacts) -> None:
+    """Зафіксувати фінальні SHA через той самий signer/legacy-шлях, що й події."""
+    try:
+        from whisper_core.meeting import audit_log
+        signer = _audit_signer(session_dir)
+        if signer is None:
+            audit_log.finalize(session_dir, artifacts)
+        else:
+            audit_log.finalize(session_dir, artifacts, signer=signer)
+    except AuditLogCorrupt:
+        _warn_audit_corrupt(session_dir)
+    except (SigningKeyMissing, SigningKeyCorrupt):
+        _warn_audit_signing(session_dir)
+    except Exception:
+        logging.exception(
+            "Не вдалося зафіксувати фіналізацію в журналі цілісності")
 
 
 def _play_chime(cfg, kind: str) -> None:
@@ -866,7 +964,7 @@ class _EngineLoadThread(QThread):
     def run(self):
         started = time.perf_counter()
         try:
-            engine = Engine(self._cfg)          # блокує ~кілька сек (модель)
+            engine = make_engine(self._cfg)     # блокує ~кілька сек (модель)
         except ModelRevisionUnavailable as e:
             self.needs_recovery.emit(e)
         except Exception as e:                  # сирий виняток → НЕ мовчазний hang
@@ -977,7 +1075,7 @@ def _recover_engine_on_gui(cfg, err, splash=None):
             logging.exception("Само-лікування моделі (дереференс) впало")
         if healed:
             try:
-                engine = Engine(cfg, revision_override=state.revision)
+                engine = make_engine(cfg, revision_override=state.revision)
                 logging.info("Модель само-полагоджено (дереференс лінків "
                              "HF-кешу) — старт без вікна відновлення")
             except ModelRevisionUnavailable as retry_err:
@@ -988,7 +1086,7 @@ def _recover_engine_on_gui(cfg, err, splash=None):
             logging.info("Відновлення моделі скасовано — старт без мовного пакета")
             return NullEngine(cfg)
         try:
-            engine = Engine(cfg, revision_override=dlg.revision_override)
+            engine = make_engine(cfg, revision_override=dlg.revision_override)
         except ModelRevisionUnavailable as retry_err:
             err = retry_err
             logging.warning("Модель усе ще недоступна — повтор відновлення")
@@ -999,6 +1097,31 @@ def _recover_engine_on_gui(cfg, err, splash=None):
 # transcript.txt/transcript.json сесії лишаються байт-у-байт незмінними
 # (доказовість: недоторканні і аудіо, і текст оригіналу).
 REDACTED_TRANSCRIPT_STEM = "transcript-redacted"
+
+
+def _meeting_asr_provenance(cfg) -> dict:
+    """Той самий склад полів, що перший прогін (_process_meeting_worker):
+    рушій, версія рушія, модель, ревізія моделі, мова, пристрій, тип
+    обчислень. Вільна функція (не метод) — не залежить від DesktopApp."""
+    try:
+        from importlib.metadata import version
+        engine_version = version("faster-whisper")
+    except Exception:
+        engine_version = "unknown"
+    try:
+        from whisper_core.models import revision_for
+        model_revision = revision_for(getattr(cfg, "model_name", "")) or "local"
+    except Exception:
+        model_revision = "unknown"
+    return {
+        "engine": "faster-whisper",
+        "engine_version": engine_version,
+        "model": str(getattr(cfg, "model_name", "unknown")),
+        "model_revision": str(model_revision),
+        "language": str(getattr(cfg, "language", "auto")),
+        "device": str(getattr(cfg, "device", "unknown")),
+        "compute_type": str(getattr(cfg, "compute_type", "unknown")),
+    }
 
 # feature/dictation-queue: сентинел «ціль вставки не передавали» — щоб відрізнити
 # «явно None» від «беремо self._paste_target» у _work (стара блокувальна поведінка).
@@ -1088,6 +1211,11 @@ class DesktopApp(QObject):
     meeting_screen_error = Signal(str)              # нефатальна помилка відео → трей
     meeting_processing_progress = Signal(str, object)  # session_id + snapshot
     meeting_processing_done = Signal(str, object)      # session_id + ProcessingResult
+    # issue #16 (за судом): «Спробувати іншою моделлю» тепер фоновий потік
+    # (start_retranscribe_meeting), а не виклик зі слота GUI-потоку — картка
+    # дізнається про фінал ЛИШЕ через done (причина: ok|vault|missing|busy|fail).
+    meeting_retranscribe_progress = Signal(str, object)  # session_id + snapshot
+    meeting_retranscribe_done = Signal(str, str, str)     # session_id, model_name, причина
     screen_record_state = Signal(str)               # idle | recording
     screen_record_error = Signal(str)
     screen_record_finished = Signal(str, bool)
@@ -1105,6 +1233,8 @@ class DesktopApp(QObject):
                                                      # чанк (wav, timings, is_first, generation)
     tts_synth_dropped = Signal(object)               # рецензія 5.3: playback-генерація впала/
                                                      # скасована ДО першого чанка → disarm панелі
+    telegram_state_changed = Signal(object)          # dict зі станом TelegramService (worker → GUI)
+    telegram_error = Signal(str)                     # помилка Telegram (worker → GUI)
 
     def __init__(self, app: QApplication, engine, cfg=None,
                  cuda_fallback=False):
@@ -1464,6 +1594,15 @@ class DesktopApp(QObject):
         self._download_thread = None      # feature/auto-update
         if self.cfg.check_updates:
             QTimer.singleShot(5000, self._maybe_check_updates)
+
+        # Telegram local-STT: контролер фонового сервісу
+        from .telegram_controller import TelegramController
+        self.telegram_controller = TelegramController(
+            cfg=self.cfg,
+            transcribe=self._telegram_transcribe,
+            state_callback=self._on_telegram_state,
+        )
+        QTimer.singleShot(0, self.telegram_controller.start_if_enabled)
 
     # --- feature/no-model-state --------------------------------------------
     @property
@@ -1976,7 +2115,7 @@ class DesktopApp(QObject):
         started = time.perf_counter()
         load_cfg = copy(getattr(self, "_engine_load_cfg", self.cfg))
         try:
-            engine = Engine(load_cfg)
+            engine = make_engine(load_cfg)
         except ModelRevisionUnavailable:
             self._stt_model_installed = False
             raise
@@ -2136,6 +2275,35 @@ class DesktopApp(QObject):
         bak = self.profile.reset_memory()
         self.tray.notify(tr("app_mem_cleared", name=bak.name) if bak
                          else tr("app_mem_empty"))
+
+    def set_history_encryption(self, enabled: bool) -> bool:
+        """Migrate every profile before persisting the global history policy."""
+        enabled = bool(enabled)
+        old_policy = bool(self.cfg.history_encrypt)
+        changed = []
+        try:
+            for profile in profiles.list_profiles(ROOT):
+                path = profile.history_path
+                was_encrypted = history_file_is_encrypted(path)
+                set_history_file_encryption(path, enabled)
+                if was_encrypted != enabled:
+                    changed.append((path, was_encrypted))
+            self.cfg.history_encrypt = enabled
+            if self.cfg.save() is False:
+                raise OSError("history encryption policy was not saved")
+        except Exception:
+            logging.exception("Could not change dictation history encryption")
+            self.cfg.history_encrypt = old_policy
+            for path, was_encrypted in reversed(changed):
+                try:
+                    set_history_file_encryption(path, was_encrypted)
+                except Exception:
+                    logging.exception(
+                        "Could not roll back dictation history encryption for %s",
+                        path)
+            self.tray.notify(tr("history_encrypt_error"))
+            return False
+        return True
 
     def _profile_terms(self, profile):
         """feature/bilingual-memory + feature/selflearn-dict: словник термінів
@@ -2717,6 +2885,13 @@ class DesktopApp(QObject):
 
     def _cleanup(self):
         """Вихід: запам'ятати геометрію, зняти клавіатурні хуки, звільнити мікрофон."""
+        telegram_ctrl = getattr(self, "telegram_controller", None)
+        if telegram_ctrl is not None:
+            try:
+                if not telegram_ctrl.stop(timeout=5.0):
+                    logging.warning("TelegramController background thread did not exit cleanly within timeout")
+            except Exception:
+                logging.exception("Помилка під час зупинки TelegramController")
         cancel_clipboard_restore()
         self._clear_meeting_plain_cache()
         # feature/tts-listen (§8.9): завершити озвучення й ПРИБРАТИ plaintext-аудіо на
@@ -3295,6 +3470,19 @@ class DesktopApp(QObject):
                     out.append(name)
             except Exception:
                 logging.debug("Не вдалося перевірити модель %s на диску", name,
+                              exc_info=True)
+        # feature/stt-sherpa-parakeet: пакети другого рушія (components/stt)
+        from whisper_core import stt_presets, stt_sherpa_models as sherpa_models
+        for preset in stt_presets.PRESETS:
+            if preset.kind != "sherpa" or preset.name == active or preset.name in out:
+                continue
+            try:
+                package = sherpa_models.package_for(preset.name)
+                if package is not None and sherpa_models.models_present_fast(
+                        sherpa_models.model_dir(preset.name), package):
+                    out.append(preset.name)
+            except Exception:
+                logging.debug("Не вдалося перевірити пакет %s на диску", preset.name,
                               exc_info=True)
         return out
 
@@ -4247,15 +4435,26 @@ class DesktopApp(QObject):
     def trigger_panic_lock(self):
         """Panic-lock (хоткей чи кнопка) — СУВОРІШИЙ за meeting_vault_lock:
         1. Знищити відкриті й залишкові plaintext temp-файли.
-        2. Вивантажити З ПАМ’ЯТІ всі DEK нарад — не лише активного сейфу (lock_vault
-           чистить один корінь; .clear() чистить усі → суворіше).
-        3. Очистити буфер обміну.
-        4. Згорнути вікна застосунку.
+        2. Занулити на місці всі кешовані DEK нарад — не лише активного сейфу
+           (lock_vault чистить один корінь; wipe_password_cache() зачищає
+           буфери усіх коренів, а не просто спорожнює словник — див.
+           storage_crypto.wipe_password_cache()).
+        3. Прибрати збережені голоси співрозмовників (біометрія, поза
+           шифруванням наради).
+        4. Очистити буфер обміну.
+        5. Згорнути вікна програми.
         """
         def clear_keys():
             from whisper_core.meeting import storage_crypto
-            storage_crypto._PASSWORD_CACHE.clear()
+            storage_crypto.wipe_password_cache()
             return True
+
+        def clear_voice_memory():
+            from whisper_core.meeting import voice_memory
+            profile = getattr(self, "profile", None)
+            if profile is None:
+                return True
+            return voice_memory.panic_wipe(profile)
 
         def clear_system_clipboard():
             from whisper_core.win_hardening import clear_clipboard
@@ -4270,6 +4469,7 @@ class DesktopApp(QObject):
             ("panic_step_meeting_cache", self._clear_meeting_plain_cache),
             ("panic_step_temp_files", _cleanup_panic_plaintext_temps),
             ("panic_step_keys", clear_keys),
+            ("panic_step_voice_memory", clear_voice_memory),
             ("panic_step_clipboard", clear_system_clipboard),
             ("panic_step_window", minimize_window),
         )
@@ -4550,15 +4750,9 @@ class DesktopApp(QObject):
     def show_screen_recording_in_folder(self, path) -> None:
         """Відкрити Провідник із виділеним файлом (Windows); поза Windows або
         при збої — просто відкрити теку записів (як «Відкрити папку»)."""
-        path = Path(path)
-        if sys.platform.startswith("win") and path.is_file():
-            try:
-                subprocess.Popen(["explorer", "/select,", str(path)])
-                return
-            except OSError:
-                logging.exception("Не вдалося відкрити провідник із виділенням %s",
-                                  anonymize_path(path))
-        self.open_screen_recordings_folder()
+        from .links import reveal_in_explorer
+        if not reveal_in_explorer(path):
+            self.open_screen_recordings_folder()
 
     # --- команди вкладки (контракт розділу 3.1) ---
     def meeting_start(self, preset: str) -> bool:
@@ -5582,10 +5776,13 @@ class DesktopApp(QObject):
         журнал цілісності + незалежний verify.py + людино-читний REPORT.txt) для
         передачі комісії/слідчому. Пакет відображає стан НА МОМЕНТ експорту; сам факт
         експорту фіксуємо в журналі окремою подією ПІСЛЯ складання."""
-        from whisper_core.meeting import evidence
+        from whisper_core.meeting import evidence, signing
         session_dir = self._meeting_session_dir(session_id)
+        meetings_root = self._meetings_root()
+        signer = signing.ensure_signing_identity(meetings_root)
         pkg = evidence.export_evidence(
-            session_dir, out_zip, app_version=DISPLAY_VERSION)
+            session_dir, out_zip, app_version=DISPLAY_VERSION,
+            signer=signer, meetings_root=meetings_root)
         _audit_event(session_dir, "exported",
                      note={"kind": "evidence", "name": Path(out_zip).name})
         return pkg
@@ -5913,16 +6110,19 @@ class DesktopApp(QObject):
             return
         update_final(prof.history_path, old_text, new_text, source="file")
 
-    def read_meeting_utterances(self, session_id):
-        """feature/markdown-export: репліки сесії з transcript.json → список
+    def read_meeting_utterances(self, session_id, stem: str = "transcript"):
+        """feature/markdown-export: репліки сесії з <stem>.json → список
         Utterance (для експорту .md із секціями за мітками мовців). Немає файлу
-        чи він битий → [] (експорт дасть лише frontmatter, без краху)."""
+        чи він битий → [] (експорт дасть лише frontmatter, без краху).
+
+        ``stem`` (issue #16, за судом, блокер 3): версія розшифровки, обрана
+        на картці — "transcript" (оригінал) або "transcript-<модель>"."""
         import json
         from whisper_core.meeting import postprocess as mpost
         from whisper_core.meeting import session as msession
         try:
             data = json.loads(msession.read_artifact(
-                self._meeting_session_dir(session_id), "transcript.json").decode("utf-8"))
+                self._meeting_session_dir(session_id), f"{stem}.json").decode("utf-8"))
         except (OSError, ValueError, UnicodeError):
             return []
         out = []
@@ -5934,6 +6134,319 @@ class DesktopApp(QObject):
             except (KeyError, TypeError):
                 continue
         return out
+
+    def meeting_subtitles(self, session_id, fmt: str, *, show_source: bool = True,
+                          stem: str = "transcript") -> str:
+        """Субтитри наради (.srt або .vtt) з іменами мовців.
+
+        <stem>.json і meeting.json читаємо через read_artifact — шифрована
+        сесія не розпаковується на диск. Помилки читання не ковтаємо: сторінка
+        покаже “не вдалося” замість порожнього файлу з написом про успіх;
+        закрите сховище — сигнал на введення пароля і той самий виняток.
+        ``show_source`` — стан чекбокса “Хто говорить”, як у .txt/.md.
+        ``stem`` (issue #16, за судом, блокер 3) — обрана версія розшифровки."""
+        import json
+        from whisper_core import export
+        from whisper_core.meeting import postprocess as mpost
+        from whisper_core.meeting import session as msession
+        from whisper_core.meeting.storage_crypto import VaultPasswordRequired
+        session_dir = self._meeting_session_dir(session_id)
+        try:
+            data = json.loads(msession.read_artifact(
+                session_dir, f"{stem}.json").decode("utf-8"))
+            meta = msession.load_meta(session_dir)
+        except VaultPasswordRequired:
+            self.meeting_vault_needed.emit()
+            raise
+        segments = mpost.subtitle_segments(
+            data, meta.speaker_names if meta is not None else None,
+            me_label=tr("meeting_speaker_me"),
+            others_label=tr("meeting_speaker_others"), show_source=show_source)
+        return export.to_vtt(segments) if fmt == "vtt" else export.to_srt(segments)
+
+    # --- issue #16: «Спробувати іншою моделлю» для наради ---
+    def meeting_audio_available(self, session_id) -> bool:
+        """Чи лишилось бодай одне аудіо наради серед артефактів сесії — чесний
+        тост ДО побудови меню моделей. Перевіряємо через read_artifact (як і
+        решта коду, вимога звіту п.4): шифрована сесія не розпаковується на
+        диск лише заради перевірки наявності."""
+        from whisper_core.meeting import session as msession
+        session_dir = self._meeting_session_dir(session_id)
+        try:
+            meta = msession.load_meta(session_dir)
+        except Exception:
+            return False
+        audio_files = dict(getattr(meta, "audio_files", {}) or {}) if meta else {}
+        for relatives in audio_files.values():
+            for relative in relatives or []:
+                try:
+                    msession.read_artifact(session_dir, relative)
+                except Exception:
+                    continue
+                return True
+        return False
+
+    def meeting_transcript_versions(self, session_id) -> list:
+        """Моделі, для яких уже є transcript-<модель>.json/.txt поруч з
+        оригіналом (issue #16) — перемикач версій на картці. Лише перелік
+        файлів: вміст читаємо окремо через meeting_transcript_text, шифрована
+        сесія лишається закритою до фактичного читання тексту."""
+        session_dir = self._meeting_session_dir(session_id)
+        if not session_dir.is_dir():
+            return []
+        names = set()
+        for suffix in (".txt", ".txt.enc"):
+            for path in session_dir.glob(f"transcript-*{suffix}"):
+                stem = path.name[: -len(suffix)]
+                if stem.startswith("transcript-") and stem != REDACTED_TRANSCRIPT_STEM:
+                    names.add(stem[len("transcript-"):])
+        return sorted(names)
+
+    def meeting_original_model(self, session_id):
+        """Модель, якою нараду вже розпізнано ПЕРШИМ прогоном (issue #16, N4):
+        читаємо asr_provenance.model першого запису word-ledger через
+        read_artifact — та сама шифро-обізнана точка доступу, що й решта
+        читань артефактів наради. Ледгера нема чи поле відсутнє → None (меню
+        «Спробувати іншою моделлю» тоді лишає всі встановлені моделі —
+        визначити активну неможливо, краще зайвий пункт, ніж хибне
+        приховування)."""
+        import json as _json
+        from whisper_core.meeting import session as msession
+        session_dir = self._meeting_session_dir(session_id)
+        try:
+            meta = msession.load_meta(session_dir)
+        except Exception:
+            return None
+        for track in (getattr(meta, "sources", []) or []) if meta else []:
+            try:
+                raw = msession.read_artifact(
+                    session_dir, f"words.{track}.jsonl").decode("utf-8")
+            except Exception:
+                continue
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = _json.loads(line)
+                except ValueError:
+                    continue
+                model = (record.get("asr_provenance") or {}).get("model")
+                if model:
+                    return str(model)
+        return None
+
+    def meeting_transcript_text(self, session_id, version=None) -> str:
+        """Текст обраної версії розшифровки: ``version`` порожній/None →
+        оригінал (transcript.txt), інакше transcript-<version>.txt. Той самий
+        read_artifact, що meeting_subtitles — шифрована сесія не розпаковується
+        на диск."""
+        from whisper_core.meeting import session as msession
+        stem = f"transcript-{version}" if version else "transcript"
+        return msession.read_artifact(
+            self._meeting_session_dir(session_id), f"{stem}.txt").decode("utf-8")
+
+    def meeting_transcript_edited(self, session_id) -> bool:
+        """Чи різниться transcript.txt від тексту, відбудованого з
+        transcript.json (issue #16, п.2): True — людина правила текст руками
+        (write_meeting_transcript пише лише .txt, .json лишається джерелом).
+        Будь-яка помилка читання → False (не заважає повторному прогону)."""
+        from whisper_core.meeting import postprocess as mpost
+        from whisper_core.meeting import session as msession
+        session_dir = self._meeting_session_dir(session_id)
+        try:
+            saved = msession.read_artifact(session_dir, "transcript.txt").decode("utf-8")
+            data = json.loads(msession.read_artifact(
+                session_dir, "transcript.json").decode("utf-8"))
+            meta = msession.load_meta(session_dir)
+            utterances = [mpost.Utterance(**item) for item in data]
+        except (OSError, ValueError, UnicodeError, TypeError):
+            return False
+        rebuilt = mpost.to_transcript_text(
+            utterances, me_label=tr("meeting_speaker_me"),
+            others_label=tr("meeting_speaker_others"),
+            speaker_names=meta.speaker_names if meta is not None else None)
+        return saved.strip() != rebuilt.strip()
+
+    def start_retranscribe_meeting(self, session_id, model_name) -> bool:
+        """issue #16 (за судом): запустити повторне розпізнавання наради ІНШОЮ
+        моделлю у фоновому потоці — той самий підхід, що
+        start_meeting_processing (:5205), щоб важкий ASR не морозив GUI на
+        хвилини. Busy-guard і "модель є" — ті самі перевірки, що там-таки
+        (:5206-5214): активний запис/обробка наради або вже триваючий
+        повторний прогін ЦІЄЇ сесії → чесна причина "busy" через
+        meeting_retranscribe_done (а не мовчазне ігнорування), і рушій НЕ
+        стартує вдруге. Скасування з інтерфейсу свідомо не робимо (лишаємо
+        CancelToken про запас — розвилка власника, див. звіт)."""
+        from whisper_core.meeting import meeting_pipeline as pipeline
+        from whisper_core.meeting import session as msession
+        if not getattr(self, "has_model", True):
+            self.tray.notify(tr("app_model_absent_meeting"))
+            return False
+        if not msession.is_safe_session_id(session_id):
+            return False
+        jobs = getattr(self, "_meeting_retranscribe_jobs", {})
+        if (getattr(self, "_meeting_active", False)
+                or getattr(self, "_meeting_processing_jobs", {})
+                or session_id in jobs):
+            self.meeting_retranscribe_done.emit(session_id, model_name, "busy")
+            return False
+        session_dir = self._meeting_session_dir(session_id)
+        token = pipeline.CancelToken()
+        jobs[session_id] = token
+        self._meeting_retranscribe_jobs = jobs
+        threading.Thread(
+            target=self._retranscribe_meeting_worker,
+            args=(session_id, model_name, session_dir, token),
+            daemon=True,
+        ).start()
+        return True
+
+    def retranscribe_active(self, session_id) -> bool:
+        """Чи триває зараз повторний прогін ЦІЄЇ наради — картка вимикає
+        кнопку «Спробувати іншою моделлю», поки прогін не завершиться
+        (issue #16, за судом)."""
+        return session_id in getattr(self, "_meeting_retranscribe_jobs", {})
+
+    def _retranscribe_meeting_worker(self, session_id, model_name, session_dir, token):
+        """Worker-потік start_retranscribe_meeting (issue #16, за судом): тіло
+        колишнього синхронного retranscribe_meeting — повторно розпізнати
+        збережену нараду ІНШОЮ моделлю без втрати наявного transcript.json/.txt
+        і правок людини. Результат — В ОКРЕМІ артефакти transcript-<модель>.
+        json/.txt (postprocess.write_transcript(stem=...), той самий шлях, що
+        redact_transcript) і provenance-<модель>.json поруч.
+
+        ASR ганяємо через process_meeting на ІЗОЛЬОВАНІЙ тимчасовій копії
+        аудіо (WAV-байти читаємо через read_artifact — шифрована сесія не
+        розпаковується назавжди): process_meeting відмовляється працювати
+        поверх сесії, де вже опубліковано word-ledger (immutable ledger), тож
+        справжній повторний прогін НА МІСЦІ неможливий. Тимчасовий рушій —
+        той самий підхід, що _transcribe_file_job для файлів: self.cfg не
+        мутуємо. Діаризацію в повторному прогоні свідомо НЕ повторюємо
+        (розвилка власника — див. звіт): перший прогін уже зберіг імена
+        мовців у meeting.json.
+
+        На відміну від колишньої синхронної версії — жодного винятку назовні:
+        єдиний вихід зі worker-потоку — сигнал meeting_retranscribe_done із
+        чесною причиною ok|vault|missing|fail. Тимчасова тека навмисно
+        починається з "balachky-meeting-" (а не "balachky-retranscribe-", як
+        було): саме цей префікс прибирають і планова чистка
+        (_cleanup_stale_meeting_temps), і панічне блокування
+        (_cleanup_panic_plaintext_temps), і деінсталятор (balachky.iss)."""
+        from whisper_core.meeting import session as msession
+        from whisper_core.meeting import meeting_pipeline as pipeline
+        from whisper_core.meeting import postprocess as mpost
+        from whisper_core.meeting.session import MeetingMeta, atomic_write_json
+        from whisper_core.meeting.storage_crypto import VaultPasswordRequired
+        reason = "fail"
+        try:
+            try:
+                meta = msession.load_meta(session_dir)
+            except VaultPasswordRequired:
+                self.meeting_vault_needed.emit()
+                reason = "vault"
+                return
+            audio_files = dict(getattr(meta, "audio_files", {}) or {}) if meta else {}
+            if meta is None or not audio_files:
+                reason = "missing"
+                return
+            with tempfile.TemporaryDirectory(
+                    prefix=f"{MEETING_TEMP_PREFIX}retranscribe-") as scratch:
+                scratch_dir = Path(scratch)
+                scratch_audio = {}
+                try:
+                    for track, relatives in audio_files.items():
+                        names = []
+                        for relative in relatives or []:
+                            data = msession.read_artifact(session_dir, relative)
+                            dest = scratch_dir / relative
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            dest.write_bytes(data)
+                            names.append(relative)
+                        if names:
+                            scratch_audio[track] = names
+                except FileNotFoundError:
+                    reason = "missing"
+                    return
+                if not scratch_audio:
+                    reason = "missing"
+                    return
+                scratch_meta = MeetingMeta(
+                    schema=meta.schema, id=meta.id, created=meta.created,
+                    status=meta.status, preset=meta.preset,
+                    sources=[t for t in meta.sources if t in scratch_audio],
+                    audio_files=scratch_audio,
+                    speaker_names=dict(getattr(meta, "speaker_names", {}) or {}))
+                atomic_write_json(scratch_dir / "meeting.json",
+                                  json.loads(scratch_meta.to_json()))
+                cfg2 = copy(self.cfg)
+                cfg2.model_name = model_name
+                provenance = _meeting_asr_provenance(cfg2)
+                lifecycle = getattr(self, "_model_lifecycle", None)
+                lease = (lifecycle.activity(load=False)
+                        if lifecycle is not None else nullcontext())
+                with lease:
+                    with self._engine_lock:
+                        engine = make_engine(cfg2)
+                        try:
+                            def transcribe(path, *, include_word_timestamps=False):
+                                return engine.transcribe(
+                                    path, self.terms,
+                                    include_word_timestamps=include_word_timestamps)
+                            result = pipeline.process_meeting(
+                                scratch_dir, transcribe=transcribe,
+                                asr_provenance=provenance,
+                                me_label=tr("meeting_speaker_me"),
+                                others_label=tr("meeting_speaker_others"),
+                                microphone_label=tr(
+                                    "meeting_microphone_number", number="{number}"),
+                                speaker_label=tr(
+                                    "meeting_speaker_number", number="{number}"),
+                                cancel=token,
+                                progress=lambda state: self.meeting_retranscribe_progress.emit(
+                                    session_id, state))
+                        finally:
+                            engine.close()
+                if result.status not in ("complete", "partial"):
+                    reason = "fail"
+                    return
+                transcript_json = json.loads(
+                    (scratch_dir / "transcript.json").read_text(encoding="utf-8"))
+            utterances = [mpost.Utterance(**item) for item in transcript_json]
+            stem = f"transcript-{model_name}"
+            mpost.write_transcript(
+                session_dir, utterances,
+                me_label=tr("meeting_speaker_me"),
+                others_label=tr("meeting_speaker_others"),
+                speaker_names=getattr(meta, "speaker_names", None),
+                stem=stem)
+            # N3: часова позначка прогону — версії впорядковуються за нею.
+            provenance["finished_at"] = int(time.time())
+            msession.write_artifact(
+                session_dir, f"provenance-{model_name}.json",
+                json.dumps(provenance, ensure_ascii=False, indent=2).encode("utf-8"))
+            # N1: подія журналу цілісності (як edited) + скидання plaintext-кешу
+            # картки — інакше вона й далі показувала б попередній стан сесії.
+            from whisper_core.meeting import audit_log
+            _audit_event(
+                session_dir, "retranscribed",
+                artifacts=audit_log.hash_artifacts(
+                    session_dir,
+                    [f"transcript-{model_name}.txt", f"transcript-{model_name}.json",
+                     f"provenance-{model_name}.json"]),
+                note={"model": model_name, "pipeline": pipeline.PIPELINE_VERSION})
+            self._clear_meeting_plain_cache(session_id)
+            reason = "ok"
+        except Exception:
+            logging.exception("Повторне розпізнавання наради %s впало", session_id)
+            reason = "fail"
+        finally:
+            # У finally, а НЕ після try/except: усередині try є ранні `return`
+            # (vault/missing) — без finally вони обірвали б функцію ще ДО
+            # сигналу, і сторінка (і кнопка "Спробувати іншою моделлю") ніколи
+            # не дізналась би про фінал.
+            getattr(self, "_meeting_retranscribe_jobs", {}).pop(session_id, None)
+            self.meeting_retranscribe_done.emit(session_id, model_name, reason)
 
     # --- конвеєр наради (worker-потоки + агрегатор у GUI-потоці) ---
     def _meeting_postprocess(self, session_id, session_dir, sess):
@@ -6066,13 +6579,7 @@ class DesktopApp(QObject):
             artifacts = [wav.name for wav in sorted(pending["dir"].glob("*.wav"))]
             artifacts += [name for name in ("transcript.txt", "transcript.json")
                           if (pending["dir"] / name).is_file()]
-            try:
-                from whisper_core.meeting import audit_log
-                audit_log.finalize(pending["dir"], artifacts)
-            except AuditLogCorrupt:
-                _warn_audit_corrupt(pending["dir"])          # блокер Т56: чесно, а не мовчки
-            except Exception:
-                logging.exception("Не вдалося зафіксувати фіналізацію в журналі цілісності")
+            _audit_finalize(pending["dir"], artifacts)
             diagnostic_event("meeting_finalized", status="done", speakers=len(speaker_names),
                              duration_s=_diagnostic_elapsed(
                                  pending.get("post_started"), clock=time.perf_counter))
@@ -6639,7 +7146,9 @@ class DesktopApp(QObject):
                     path, terms, model, include_word_timestamps=_hl,
                     should_cancel=lambda j=jid: self._file_job_cancelled(j))
                 log_history(profile.history_path, raw, final,
-                            source="file", enabled=profile.memory_enabled)
+                            source="file", enabled=profile.memory_enabled,
+                            encrypt=bool(getattr(
+                                self.cfg, "history_encrypt", False)))
                 self.file_done.emit(jid, final or tr("files_silence"),
                                     f"{FileStatus.DONE}:{dur:.0f}", segs, words)
                 # feature/auto-export: завершений файл черги теж дописуємо у теку
@@ -6690,7 +7199,7 @@ class DesktopApp(QObject):
         lease = lifecycle.activity(load=False) if lifecycle is not None else nullcontext()
         with lease:
             with self._engine_lock:
-                engine = Engine(cfg2)  # ~кілька сек + пам'ять моделі (свідома дія)
+                engine = make_engine(cfg2)  # ~кілька сек + пам'ять моделі (свідома дія)
                 try:
                     return engine.transcribe(
                         path, terms,
@@ -6698,6 +7207,44 @@ class DesktopApp(QObject):
                         **cancel_kw)[:5]
                 finally:
                     engine.close()
+
+    # --- Telegram local-STT методи ---
+    def _on_telegram_state(self, state_dict: dict) -> None:
+        self.telegram_state_changed.emit(state_dict)
+
+    def telegram_status(self) -> dict:
+        return self.telegram_controller.status()
+
+    def telegram_verify_token(self, token: str) -> None:
+        self.telegram_controller.verify_and_save_token(token)
+
+    def telegram_begin_pairing(self) -> str:
+        return self.telegram_controller.begin_pairing()
+
+    def telegram_set_enabled(self, enabled: bool) -> None:
+        self.telegram_controller.set_enabled(enabled)
+
+    def telegram_disconnect(self) -> bool:
+        return self.telegram_controller.disconnect()
+
+    def _telegram_transcribe(self, audio, should_cancel=None):
+        profile = getattr(self, "profile", None)
+        if profile is None:
+            profile = profiles.get_active(ROOT)
+        terms = self._profile_terms(profile) if profile else None
+        result = self._transcribe_with_fallback(
+            audio, terms, should_cancel=should_cancel)
+        _raw, final, _dur, _words, _segs = result[:5]
+        if final and profile:
+            log_history(
+                profile.history_path,
+                _raw or final,
+                final,
+                source="remote",
+                enabled=getattr(profile, "memory_enabled", True),
+            )
+            self.telegram_state_changed.emit(self.telegram_controller.status())
+        return result
 
     # --- робочий потік PTT ---
     def _transcribe_with_fallback(self, audio, terms, *, include_word_timestamps=False,
@@ -6727,7 +7274,7 @@ class DesktopApp(QObject):
                     diagnostic_event("compute_fallback", reason="cuda_to_cpu", level=logging.WARNING)
                     cpu_cfg = _prepare_cpu_config(copy(self.cfg))
                     try:
-                        cpu_engine = Engine(cpu_cfg)
+                        cpu_engine = make_engine(cpu_cfg)
                     except Exception:
                         raise cuda_error
                     # До queued GUI-slot shared cfg не мутуємо й не пишемо з worker.
@@ -6929,7 +7476,8 @@ class DesktopApp(QObject):
                     audio_name = self._persist_dictation_audio(profile, audio)
                 rec = log_history(profile.history_path, raw, final,
                                   source="desktop", enabled=profile.memory_enabled,
-                                  audio=audio_name)
+                                  audio=audio_name, encrypt=bool(getattr(
+                                      self.cfg, "history_encrypt", False)))
                 ts = rec["ts"] if rec else None   # None → у файл не писали (пам'ять off)
                 # feature/accuracy-corpus: запам'ятати аудіо-кліп цього диктування
                 # (float32), щоб пізніша дія «Розпізнано погано…» на картці мала що

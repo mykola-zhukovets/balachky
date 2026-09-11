@@ -195,22 +195,23 @@ class HistoryPage(QWidget):
         row.addLayout(streak_col, 1)
         return card
 
-    def _update_summary(self):
+    def _update_summary(self, records=None):
         """Перерахувати зведення з history.jsonl активного словника."""
-        data = summarize(self.controller.profile)
+        source = records if records is not None else self.controller.profile
+        data = summarize(source)
         for period, (num, sub) in self._sum_cells.items():
             words = data[period]["words"]
-            records = data[period]["records"]
+            records_count = data[period]["records"]
             num.setText(str(words))
             word_form = plural(words, ("слово", "слова", "слів"),
                                ("word", "words"))
-            rec_form = plural(records, ("запис", "записи", "записів"),
+            rec_form = plural(records_count, ("запис", "записи", "записів"),
                               ("record", "records"))
-            sub.setText(f"{word_form} · {records} {rec_form}")
+            sub.setText(f"{word_form} · {records_count} {rec_form}")
         # дашборд «економія часу» (feature/ux-center)
         mins = round(estimate_saved_minutes(data["all"]["words"]))
         self._saved_num.setText(tr("stats_saved_unit", mins=mins))
-        days = streak_days(self.controller.profile)
+        days = streak_days(source)
         self._streak_num.setText(tr("stats_streak_unit", days=days) if days
                                  else tr("stats_streak_none"))
 
@@ -220,7 +221,8 @@ class HistoryPage(QWidget):
         self.refresh()
 
     def refresh(self):
-        self._update_summary()
+        all_records = read_recent(self.controller.profile)
+        self._update_summary(all_records)
         # прибрати старі картки (лишається лише stretch)
         while self._feedbox.count() > 1:
             item = self._feedbox.takeAt(0)
@@ -230,7 +232,7 @@ class HistoryPage(QWidget):
 
         memory_on = self.controller.profile.memory_enabled
         # найновіші першими, найбільше _MAX_SHOWN (спільний парсер із треєм)
-        records = read_recent(self.controller.profile, _MAX_SHOWN)
+        records = all_records[:_MAX_SHOWN]
         if not records:
             if memory_on:
                 self._empty_title.setText(tr("common_empty_here"))
@@ -246,11 +248,42 @@ class HistoryPage(QWidget):
 
         self._memory_note.setVisible(not memory_on)
         self._stack.setCurrentIndex(1)
-        for line, rec in records:          # read_recent уже дає найновіші зверху
+
+        remote_records = [
+            (line, rec) for line, rec in records
+            if rec.get("source") in ("remote", "telegram")
+        ]
+        local_records = [
+            (line, rec) for line, rec in records
+            if rec.get("source") not in ("remote", "telegram")
+        ]
+
+        if remote_records:
+            remote_section = QFrame()
+            remote_section.setObjectName("remoteHistorySection")
+            remote_section.setProperty("card", True)
+            remote_lay = QVBoxLayout(remote_section)
+            remote_lay.setContentsMargins(18, 14, 18, 16)
+            remote_lay.setSpacing(10)
+
+            sec_title = QLabel(tr("remote_feed_title"))
+            sec_title.setObjectName("remoteHistoryTitle")
+            sec_title.setProperty("section", True)
+            remote_lay.addWidget(sec_title)
+
+            for line, rec in remote_records:
+                self._add_card(line, rec, target_layout=remote_lay, is_subcard=True)
+
+            self._feedbox.insertWidget(self._feedbox.count() - 1, remote_section)
+            self._remote_section = remote_section
+        else:
+            self._remote_section = None
+
+        for line, rec in local_records:
             self._add_card(line, rec)
         self._apply_filter(self._search.text())
 
-    def _add_card(self, line: str, rec: dict):
+    def _add_card(self, line: str, rec: dict, target_layout=None, is_subcard=False):
         text = (rec.get("final") or rec.get("raw") or "").strip()
         if not text:
             return
@@ -267,6 +300,8 @@ class HistoryPage(QWidget):
             meta_parts.append(time.strftime("%d.%m.%Y %H:%M", time.localtime(ts)))
         if rec.get("source") == "file":
             meta_parts.append(tr("hist_from_file"))
+        elif rec.get("source") in ("remote", "telegram"):
+            meta_parts.append(tr("hist_from_remote"))
         if rec.get("edited"):          # feature/reverse-dictation: позначка виправлення
             meta_parts.append(tr("revdict_edited_badge"))
         meta_text = "  ·  ".join(meta_parts)
@@ -349,17 +384,27 @@ class HistoryPage(QWidget):
         quiet.addStretch()
         lay.addLayout(quiet)
 
-        self._feedbox.insertWidget(self._feedbox.count() - 1, card)
+        if target_layout is not None:
+            target_layout.addWidget(card)
+        else:
+            self._feedbox.insertWidget(self._feedbox.count() - 1, card)
         # Пошук матчить і текст, і мету (дата запису, «з файлу») — щоб запит із
         # датою, як показано в картці (напр. «17.07.2026» чи «17.07»), знаходив
         # запис (зауваж. 9). До цього шукали лише по тексту розшифровки.
-        self._cards.append((card, f"{text}\n{meta_text}".lower()))
+        is_remote = bool(rec.get("source") in ("remote", "telegram"))
+        self._cards.append((card, f"{text}\n{meta_text}".lower(), is_remote))
 
     # --- дії ---
     def _apply_filter(self, query: str):
         query = query.strip().lower()
-        for card, text in self._cards:
-            card.setVisible(not query or query in text)
+        remote_has_visible = False
+        for card, text, is_remote in self._cards:
+            vis = bool(not query or query in text)
+            card.setVisible(vis)
+            if is_remote and vis:
+                remote_has_visible = True
+        if getattr(self, "_remote_section", None) is not None:
+            self._remote_section.setVisible(remote_has_visible or not query)
 
     def _report_bad(self, text: str, rec: dict):
         """«Розпізнано погано…» над карткою історії → діалог збирача корпусу.
@@ -397,9 +442,8 @@ class HistoryPage(QWidget):
         if drop_audio:
             drop_audio(rec)
         card.deleteLater()
-        self._cards = [(c, t) for c, t in self._cards if c is not card]
-        if not self._cards:
-            self.refresh()
+        self._cards = [item for item in self._cards if item[0] is not card]
+        self.refresh()
 
     def _clear_all(self):
         resp = QMessageBox.question(

@@ -61,6 +61,10 @@ dev/
 dev/*
 !dev/audit-post50-binaries.ps1
 !dev/report-post42-50.md
+# Конвеєр публікації (issue #26): інструмент і його перелік маркерів лежать у dev/,
+# бо самі не публікуються, але це джерело, а не артефакт.
+!dev/make_public_snapshot.ps1
+!dev/public_snapshot_markers.json
 
 # Візуальний гейт: звіт регенерується щопрогону (артефакт, не джерело).
 # Базлайн (visual_gate_baseline.json) — навпаки, комітиться як джерело правди.

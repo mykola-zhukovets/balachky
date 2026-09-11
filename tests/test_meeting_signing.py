@@ -88,14 +88,17 @@ def _mixed_key_session(root: Path):
         sess, audit_log.EVENT_CREATED, signer=ident_a,
         require_signature=True, ts=1.0)
     audit_log.append_event(
-        sess, audit_log.EVENT_STOPPED, signer=ident_b, ts=2.0)
+        sess, audit_log.EVENT_STOPPED, signer=ident_a, ts=2.0)
 
     log = sess / "audit.jsonl"
     events = [json.loads(line) for line in _read_lines(log)]
     # Формат дозволяє ключу B бути самодостатнім у власній події. public_key
     # не входить до підписаного body, тому чинний підпис B лишається валідним.
+    events[1]["auth"] = signing.sign_audit_record(
+        events[1], ident_b, events[0]["auth"]["log_id"])
     events[1]["auth"]["public_key"] = ident_b.public_key_b64
     _write_lines(log, [json.dumps(e, ensure_ascii=False) for e in events])
+    audit_log._write_head(sess, events[-1])
     return sess, ident_a, ident_b
 
 
@@ -209,7 +212,8 @@ class AuditLogSignedTests(unittest.TestCase):
                 e["prev"] = prev
                 e["hash"] = audit_log._record_hash(
                     e["seq"], e["type"], e["ts"],
-                    e.get("artifacts") or {}, e.get("note"), prev)
+                    e.get("artifacts") or {}, e.get("note"), prev,
+                    e.get("signature_policy"))
                 prev = e["hash"]
             _write_lines(log, [json.dumps(e, ensure_ascii=False) for e in events])
             (sess / ".audit.head").write_text(json.dumps({
@@ -992,6 +996,7 @@ class StandaloneEvidenceTamperTests(unittest.TestCase):
             r = self._run(ext, "--expect-key-id", ident.key_id)
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("BROKEN", r.stdout)
+            self.assertIn("signed_stripped", r.stdout)
             self.assertNotIn("UNSIGNED LEGACY", r.stdout)
 
     # ── follow-up крипто-рецензії (а): явно заявлений ключ + непідписаний журнал ──

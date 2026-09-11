@@ -34,6 +34,11 @@ class SttPreset:
     hint_key: str
     license_name: str = "MIT"
     page_url: str = ""
+    # feature/stt-sherpa-parakeet: яким рушієм працює пресет —
+    # "whisper" (faster-whisper/CTranslate2, кеш HuggingFace) або
+    # "sherpa" (sherpa-onnx, пакет у components/stt). Власна модель
+    # користувача завжди трактується як whisper.
+    kind: str = "whisper"
 
 
 # Порядок у комбо: від найлегшої (слабкі ПК) до найточнішої. Turbo лишається
@@ -58,11 +63,35 @@ PRESETS: "list[SttPreset]" = [
         hint_key="stt_preset_turbo_hint",
         page_url="https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     ),
+    # feature/stt-preset-large-v2: попередниця large-v3 як АЛЬТЕРНАТИВА, не
+    # заміна. Публічний бенчмарк на українській (egorsmkv/speech-recognition-uk,
+    # Common Voice 10) дає large-v2 13,72 % WER проти 20,53 % у large-v3 — тож
+    # людям, яким large-v3 «домислює» слова, є з чого обрати. Дефолт (turbo) і
+    # підпис «Найточніша» у large-v3 лишаються до власного A/B-заміру.
+    SttPreset(
+        name="large-v2",
+        label_key="stt_preset_large_v2",
+        hint_key="stt_preset_large_v2_hint",
+        page_url="https://huggingface.co/Systran/faster-whisper-large-v2",
+    ),
     SttPreset(
         name="large-v3",
         label_key="stt_preset_large_v3",
         hint_key="stt_preset_large_v3_hint",
         page_url="https://huggingface.co/Systran/faster-whisper-large-v3",
+    ),
+    # feature/stt-sherpa-parakeet: другий рушій (sherpa-onnx), не Whisper.
+    # NVIDIA Parakeet-TDT-0.6B-v3 — 25 європейських мов, на українській за
+    # публічними вимірами (FLEURS uk 6,79 % WER) точніша за Whisper і в рази
+    # швидша на процесорі. Ваги CC-BY-4.0 (атрибуція в екрані згоди й нотатках);
+    # пакет і маніфест — whisper_core/stt_sherpa_models.py.
+    SttPreset(
+        name="parakeet-tdt-0.6b-v3",
+        label_key="stt_preset_parakeet",
+        hint_key="stt_preset_parakeet_hint",
+        license_name="CC-BY-4.0",
+        page_url="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        kind="sherpa",
     ),
 ]
 
@@ -76,6 +105,13 @@ def get_preset(name: str) -> "SttPreset | None":
 
 def is_preset(name) -> bool:
     return str(name or "").strip() in _BY_NAME
+
+
+def engine_kind(name) -> str:
+    """Вид рушія для імені моделі: "sherpa" лише для відповідного пресета;
+    усе інше (пресети Whisper, власна тека чи HF-id) — "whisper"."""
+    preset = get_preset(name)
+    return preset.kind if preset is not None else "whisper"
 
 
 def is_repo_id(value) -> bool:

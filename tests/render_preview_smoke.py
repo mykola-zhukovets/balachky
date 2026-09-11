@@ -8,7 +8,7 @@
     python -m unittest discover -s tests -p "render_*.py"
     python tests/render_preview_smoke.py
 
-Скріншот — у C:\\Users\\nikol\\Desktop\\balachky-diag\\paste-preview\\.
+Скріншот — у %USERPROFILE%\\Desktop\\balachky-diag\\paste-preview\\.
 """
 import os
 import sys

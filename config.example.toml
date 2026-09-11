@@ -9,6 +9,13 @@ beam_size    = 5
 model_idle_unload_seconds = 600  # 10 хв бездіяльності → звільнити STT/Gemma з RAM/VRAM; 0 = ніколи
 log_level    = "INFO"      # INFO | DEBUG | WARNING; routine-лог у %LOCALAPPDATA%\Balachky\logs
 meeting_encrypt = false     # opt-in AES-GCM encryption for completed meeting artifacts
+history_encrypt = false     # opt-in encryption for dictation-history text
+
+# Інтеграція Telegram opt-in. Bot token окремо захищається Windows DPAPI
+# і ніколи не зберігається у config.toml.
+telegram_enabled = false
+telegram_user_id = 0        # заповнюється після pairing; 0 = не спарено
+telegram_chat_id = 0        # спарений приватний чат; 0 = не спарено
 
 ptt_key      = "ctrl+shift+space"  # push-to-talk: клавіша або комбінація (утримання; змінюється у вікні Налаштувань)
 hotkey_backend = "native"     # механізм глобальних хоткеїв: "native" (WinAPI RegisterHotKey, без хука клавіатури — рекомендовано) | "legacy" (стара бібліотека keyboard; аварійний відкат, якщо native десь не спрацює)

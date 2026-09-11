@@ -45,7 +45,8 @@ class SaveTests(unittest.TestCase):
     def test_collision_gets_numeric_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
             audio = np.zeros(1000, dtype=np.float32)
-            with patch.object(recordings.time, "strftime",
+            import time
+            with patch.object(time, "strftime",
                               return_value="2026-07-16_14-30-05"):
                 a = recordings.save_recording(tmp, audio, 16000)
                 b = recordings.save_recording(tmp, audio, 16000)
@@ -100,10 +101,11 @@ class ListTests(unittest.TestCase):
     def test_lists_newest_first_with_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             audio = np.zeros(8000, dtype=np.float32)     # 0.5 с
-            with patch.object(recordings.time, "strftime",
+            import time
+            with patch.object(time, "strftime",
                               return_value="2026-07-16_10-00-00"):
                 old = recordings.save_recording(tmp, audio, 16000)
-            with patch.object(recordings.time, "strftime",
+            with patch.object(time, "strftime",
                               return_value="2026-07-16_11-00-00"):
                 new = recordings.save_recording(tmp, audio, 16000)
             import os

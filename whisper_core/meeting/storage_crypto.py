@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -36,7 +37,8 @@ _MAX_PLAINTEXT_BYTES_PER_FILE = _MAX_CHUNKS_PER_FILE * CHUNK_SIZE
 _TAG_BYTES = 16
 _DEK_BYTES = 32
 _CRYPTPROTECT_UI_FORBIDDEN = 0x1
-_PASSWORD_CACHE: dict[str, bytes] = {}
+_PASSWORD_CACHE: dict[str, bytearray] = {}   # bytearray: panic-lock зануляє на місце
+_CACHE_LOCK = threading.Lock()   # вставка/видалення записів кешу без гонки з wipe
 _SCRYPT_N = 2**17
 _SCRYPT_R = 8
 _SCRYPT_P = 1
@@ -91,6 +93,11 @@ def _aesgcm_class():
 
 def _derive_file_key(dek: bytes, file_id: bytes) -> bytes:
     """Derive the independent AES key used by one encrypted file."""
+    if not any(dek):
+        # Панічне блокування занулило буфер посеред роботи: HKDF від нулів
+        # публічно відтворюваний, тож чесніше відмовити, ніж мовчки писати
+        # файл, який розшифрує будь-хто.
+        raise VaultKeyLost()
     try:
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -406,18 +413,23 @@ class _VaultCreationLock:
         if self.acquired:
             self._unlink_with_retry(self.path)
 
-def _load_dek(root: Path, password=None) -> bytes:
+def _load_dek(root: Path, password=None) -> bytes | bytearray:
     """Read and unwrap an existing vault key."""
     blob = _read_vault(root)
+    cache_key = str(root.resolve())
     if blob["mode"] == "dpapi":
-        try: dek = _dpapi_unprotect(_unb64(blob["wrapped_dek"]))
-        except (OSError, ValueError, TypeError, KeyError) as exc: raise VaultKeyLost() from exc
+        # Кешуємо і DPAPI-ключ (не лише парольний): інакше панічне блокування
+        # не має жодного місця, де його можна занулити.
+        dek = _PASSWORD_CACHE.get(cache_key)
+        if dek is None:
+            try: dek = bytearray(_dpapi_unprotect(_unb64(blob["wrapped_dek"])))
+            except (OSError, ValueError, TypeError, KeyError) as exc: raise VaultKeyLost() from exc
+            _cache_put(cache_key, dek)
     elif blob["mode"] in _KEYFILE_MODES:
         # Файл-ключ не вводиться текстом: без кешу потрібне unlock_with_keyfile().
-        dek = _PASSWORD_CACHE.get(str(root.resolve()))
+        dek = _PASSWORD_CACHE.get(cache_key)
         if dek is None: raise VaultPasswordRequired("Для цього сховища потрібен файл-ключ")
     else:
-        cache_key = str(root.resolve())
         if password is None:
             dek = _PASSWORD_CACHE.get(cache_key)
             if dek is None: raise VaultPasswordRequired("Для цього сховища потрібен пароль")
@@ -432,12 +444,13 @@ def _load_dek(root: Path, password=None) -> bytes:
                 if len(packed) < 12 + _TAG_BYTES: raise ValueError("short wrapped DEK")
             except (ValueError, TypeError, KeyError) as exc: raise VaultKeyLost() from exc
             try:
-                dek = _aesgcm_class()(kek).decrypt(packed[:12], packed[12:], b"Balachky vault key")
+                dek = bytearray(_aesgcm_class()(kek).decrypt(
+                    packed[:12], packed[12:], b"Balachky vault key"))
             except CryptoUnavailable:
                 raise
             except Exception as exc:      # InvalidTag: стабільний тип для UI
                 raise VaultWrongPassword("Пароль не підходить до цього сховища") from exc
-            _PASSWORD_CACHE[cache_key] = dek
+            _cache_put(cache_key, dek)
     if len(dek) != _DEK_BYTES: raise VaultKeyLost()
     return dek
 
@@ -462,11 +475,11 @@ def is_unlocked(meetings_root) -> bool:
 
 
 def lock_vault(meetings_root) -> None:
-    """«Заблокувати зараз»: викинути розшифрований DEK з пам'яті процесу."""
-    _PASSWORD_CACHE.pop(str(Path(meetings_root).resolve()), None)
+    """«Заблокувати зараз»: занулити й викинути розшифрований DEK з пам'яті."""
+    _cache_drop(str(Path(meetings_root).resolve()))
 
 
-def ensure_dek(meetings_root, password=None) -> bytes:
+def ensure_dek(meetings_root, password=None) -> bytes | bytearray:
     """Return the DEK, creating a DPAPI wrapper only for an empty vault."""
     root = Path(meetings_root)
     key_path = root / KEY_FILE
@@ -482,9 +495,10 @@ def ensure_dek(meetings_root, password=None) -> bytes:
             return _load_dek(root, password)
         if _has_encrypted_artifacts(root):
             raise VaultKeyLost()
-        dek = os.urandom(_DEK_BYTES)
+        dek = bytearray(os.urandom(_DEK_BYTES))
         _write_vault(root, {"version": 1, "mode": "dpapi",
-                            "wrapped_dek": _b64(_dpapi_protect(dek))})
+                            "wrapped_dek": _b64(_dpapi_protect(bytes(dek)))})
+        _cache_put(str(root.resolve()), dek)
     if password is not None:
         set_password(root, password)
     return dek
@@ -507,11 +521,11 @@ def set_password(meetings_root, password) -> "str | None":
     blob = {"version": 1, "mode": "password", **_wrap_dek_with_secret(dek, password),
             "recovery": recovery_slot}
     _write_vault(root, blob)
-    _PASSWORD_CACHE[str(root.resolve())] = dek
+    _cache_put(str(root.resolve()), dek)
     return recovery_code
 
 
-def unlock_with_recovery(meetings_root, code) -> bytes:
+def unlock_with_recovery(meetings_root, code) -> bytes | bytearray:
     """Розблокувати парольне сховище кодом відновлення → DEK (і кешувати його).
 
     Код лишається чинним і після використання: далі UI пропонує задати новий
@@ -525,7 +539,7 @@ def unlock_with_recovery(meetings_root, code) -> bytes:
     if not normalized:
         raise VaultWrongRecovery("Код відновлення порожній")
     try:
-        dek = _unwrap_dek_with_secret(slot, normalized)
+        dek = bytearray(_unwrap_dek_with_secret(slot, normalized))
     except CryptoUnavailable:
         raise
     except (ValueError, TypeError, KeyError) as exc:
@@ -534,7 +548,7 @@ def unlock_with_recovery(meetings_root, code) -> bytes:
         raise VaultWrongRecovery("Код відновлення не підходить") from exc
     if len(dek) != _DEK_BYTES:
         raise VaultKeyLost()
-    _PASSWORD_CACHE[str(root.resolve())] = dek
+    _cache_put(str(root.resolve()), dek)
     return dek
 
 
@@ -557,8 +571,8 @@ def remove_password(meetings_root, password=None) -> None:
     root = Path(meetings_root)
     dek = ensure_dek(root, password)
     _write_vault(root, {"version": 1, "mode": "dpapi",
-                        "wrapped_dek": _b64(_dpapi_protect(dek))})
-    _PASSWORD_CACHE.pop(str(root.resolve()), None)
+                        "wrapped_dek": _b64(_dpapi_protect(bytes(dek)))})
+    _cache_drop(str(root.resolve()))
 
 
 def set_keyfile(meetings_root, keyfile_path, password=None) -> "str | None":
@@ -583,11 +597,11 @@ def set_keyfile(meetings_root, keyfile_path, password=None) -> "str | None":
     blob = {"version": 1, "mode": mode, **_wrap_dek_with_secret(dek, secret),
             "recovery": recovery_slot}
     _write_vault(root, blob)
-    _PASSWORD_CACHE[str(root.resolve())] = dek
+    _cache_put(str(root.resolve()), dek)
     return recovery_code
 
 
-def unlock_with_keyfile(meetings_root, keyfile_path, password=None) -> bytes:
+def unlock_with_keyfile(meetings_root, keyfile_path, password=None) -> bytes | bytearray:
     """Розблокувати сховище файлом-ключем (і паролем у двофакторному режимі) →
     DEK (кешується). Немає keyfile-режиму → VaultKeyLost; двофактор без пароля →
     VaultPasswordRequired; невірний файл/пароль → VaultWrongKeyfile."""
@@ -604,7 +618,7 @@ def unlock_with_keyfile(meetings_root, keyfile_path, password=None) -> bytes:
     else:
         secret = keyfile_bytes
     try:
-        dek = _unwrap_dek_with_secret(blob, secret)
+        dek = bytearray(_unwrap_dek_with_secret(blob, secret))
     except CryptoUnavailable:
         raise
     except (ValueError, TypeError, KeyError) as exc:
@@ -613,7 +627,7 @@ def unlock_with_keyfile(meetings_root, keyfile_path, password=None) -> bytes:
         raise VaultWrongKeyfile("Файл-ключ або пароль не підходять") from exc
     if len(dek) != _DEK_BYTES:
         raise VaultKeyLost()
-    _PASSWORD_CACHE[str(root.resolve())] = dek
+    _cache_put(str(root.resolve()), dek)
     return dek
 
 
@@ -623,14 +637,57 @@ def remove_keyfile(meetings_root) -> None:
     root = Path(meetings_root)
     dek = ensure_dek(root)
     _write_vault(root, {"version": 1, "mode": "dpapi",
-                        "wrapped_dek": _b64(_dpapi_protect(dek))})
-    _PASSWORD_CACHE.pop(str(root.resolve()), None)
+                        "wrapped_dek": _b64(_dpapi_protect(bytes(dek)))})
+    _cache_drop(str(root.resolve()))
 
 
-def _check_dek(dek: bytes) -> bytes:
-    if not isinstance(dek, bytes) or len(dek) != _DEK_BYTES:
+def _check_dek(dek: bytes) -> bytes | bytearray:
+    if not isinstance(dek, (bytes, bytearray)) or len(dek) != _DEK_BYTES:
         raise ValueError("DEK має бути випадковим 32-байтним ключем")
     return dek
+
+
+def _zero_buffer(buf) -> None:
+    """Занулити bytearray на місці (ctypes.memset відпускає GIL)."""
+    if isinstance(buf, bytearray) and len(buf):
+        carr = (ctypes.c_char * len(buf)).from_buffer(buf)
+        ctypes.memset(ctypes.addressof(carr), 0, len(buf))
+
+
+def _cache_put(cache_key: str, dek) -> None:
+    """Покласти DEK у кеш під локом: wipe не повинен промайнути між
+    розшифруванням ключа і його вставкою непомітно."""
+    with _CACHE_LOCK:
+        _PASSWORD_CACHE[cache_key] = dek
+
+
+def _cache_drop(cache_key: str) -> None:
+    """Прибрати запис кешу із зануленням буфера (той самий wipe, що й у паніці:
+    раніше отримані посилання теж бачать нулі, а не живий секрет)."""
+    with _CACHE_LOCK:
+        buf = _PASSWORD_CACHE.pop(cache_key, None)
+    _zero_buffer(buf)
+
+
+def wipe_password_cache() -> None:
+    """Панічне блокування: занулити КОЖЕН кешований DEK на місці, потім
+    прибрати записи з кешу.
+
+    Кеш зберігає ``bytearray`` саме тому, що це дозволяє занулити спільний
+    буфер: будь-хто, хто раніше отримав цей самий об'єкт через ``ensure_dek()``
+    чи розблокування паролем/файлом-ключем/кодом відновлення, побачить нулі
+    через ту саму змінну — а не лише порожній кеш. Це не гарантує, що байти
+    ключа ніде більше не залишились (див. docs/DATA-PRIVACY.md, «Межі
+    шифрування»): похідні ключі файлів і внутрішні буфери бібліотеки
+    шифрування — короткочасні копії поза цим кешем, які ця функція не бачить.
+    Робота в фоні може невдовзі покласти в кеш свіжий ключ — панічне
+    блокування не зупиняє обробку (це межа, а не злам).
+    """
+    with _CACHE_LOCK:
+        buffers = list(_PASSWORD_CACHE.values())
+        _PASSWORD_CACHE.clear()
+    for buf in buffers:
+        _zero_buffer(buf)
 
 
 def _temp_output(dst: Path):

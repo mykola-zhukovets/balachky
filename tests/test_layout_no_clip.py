@@ -126,7 +126,7 @@ class ModelCardHeightTests(unittest.TestCase):
     def _assert_card_labels_fit(self, lang):
         import tempfile
         from pathlib import Path
-        from PySide6.QtCore import QRect, Qt
+        from PySide6.QtCore import QPoint, QRect, Qt
         from PySide6.QtWidgets import QVBoxLayout
         from fronts.desktop.pages.meeting import MeetingPage, WrapLabel
         from whisper_core.protocol import model_manager as mm
@@ -153,7 +153,13 @@ class ModelCardHeightTests(unittest.TestCase):
             multiline = 0
             for lbl in labels:
                 avail = lbl.contentsRect().width()
+                # див. render_meeting_smoke: невикладений віджет теж має
+                # ненульову типову ширину, тож додатково перевіряємо, що
+                # компонування справді змістило підпис від (0, 0).
                 self.assertGreater(avail, 0, f"[{lang}] нульова ширина підпису")
+                self.assertNotEqual(
+                    lbl.pos(), QPoint(0, 0),
+                    f"[{lang}] підпис {lbl.text()!r} лишився у (0, 0) — не розкладений")
                 fm = QFontMetrics(lbl.font())
                 flags = int(Qt.TextWordWrap) | int(lbl.alignment())
                 need = fm.boundingRect(

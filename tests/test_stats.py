@@ -116,5 +116,47 @@ class StreakTests(unittest.TestCase):
             self.assertEqual(streak_days(path, now=now), 2)
 
 
+class PreloadedRecordsAndSingleReadTests(unittest.TestCase):
+    """Оптимізація: пряма передача вже завантаженого списку records і єдине читання."""
+
+    def test_summarize_and_streak_accept_preloaded_records(self):
+        now = 1_700_000_000
+        records = [
+            ("line1", {"ts": now, "final": "один два"}),
+            ("line2", {"ts": now - 86400, "final": "три чотири п'ять"}),
+        ]
+        s = summarize(records, now=now)
+        self.assertEqual(s["today"], {"records": 1, "words": 2})
+        self.assertEqual(s["week"], {"records": 2, "words": 5})
+        self.assertEqual(s["all"], {"records": 2, "words": 5})
+        self.assertEqual(streak_days(records, now=now), 2)
+
+    def test_history_page_refresh_performs_single_read(self):
+        from unittest.mock import patch
+        from PySide6.QtWidgets import QApplication
+        from fronts.desktop.pages.history import HistoryPage
+
+        _ = QApplication.instance() or QApplication([])
+
+        class MockProfile:
+            def __init__(self, path):
+                self.history_path = path
+                self.memory_enabled = True
+
+        class MockController:
+            def __init__(self, path):
+                self.profile = MockProfile(path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.jsonl"
+            path.write_text(json.dumps({"ts": 1_700_000_000, "final": "тест"}) + "\n", encoding="utf-8")
+            ctl = MockController(str(path))
+            page = HistoryPage(ctl)
+
+            with patch("fronts.desktop.pages.history.read_recent", wraps=__import__("whisper_core.history", fromlist=["read_recent"]).read_recent) as mock_read:
+                page.refresh()
+                self.assertEqual(mock_read.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -225,11 +225,9 @@ def copy_diagnostics(cfg, *, lines: int = 80) -> str:
 
 def open_log_dir():
     """Відкрити теку логів у Провіднику (кнопка в Налаштуваннях і в діалозі)."""
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        os.startfile(LOG_DIR)
-    except Exception as e:
-        logging.error("Не вдалося відкрити теку логів: %s", anonymize_path(e))
+    from .links import reveal_in_explorer
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    reveal_in_explorer(LOG_DIR)
 
 
 # --- діалог «Сталася помилка» ---

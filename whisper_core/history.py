@@ -14,6 +14,8 @@ from pathlib import Path
 
 _THREAD_LOCKS = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
+_ENCRYPTED_SUFFIX = ".enc"
+_ENCRYPTION_CONTEXT = "balachky-dictation-history-v1"
 
 
 @contextmanager
@@ -98,8 +100,64 @@ def _atomic_rewrite(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def encrypted_path(history_path) -> Path:
+    """Шлях активної зашифрованої копії поруч із сумісним history.jsonl."""
+    path = Path(history_path)
+    return path.with_name(path.name + _ENCRYPTED_SUFFIX)
+
+
+def is_encrypted(history_path) -> bool:
+    """Чи є активною зашифрована копія історії."""
+    return encrypted_path(history_path).exists()
+
+
+def _read_text(path: Path) -> str:
+    encrypted = encrypted_path(path)
+    if encrypted.exists():
+        from whisper_core.meeting.storage_crypto import (
+            decrypt_to_memory, ensure_dek)
+        plain = decrypt_to_memory(
+            encrypted, ensure_dek(path.parent), context=_ENCRYPTION_CONTEXT)
+        return plain.decode("utf-8")
+    return path.read_text(encoding="utf-8")
+
+
+def _rewrite(path: Path, text: str, *, encrypted: bool) -> None:
+    encrypted_file = encrypted_path(path)
+    if encrypted:
+        from whisper_core.meeting.storage_crypto import encrypt_bytes, ensure_dek
+        encrypt_bytes(
+            text.encode("utf-8"), encrypted_file, ensure_dek(path.parent),
+            context=_ENCRYPTION_CONTEXT)
+        path.unlink(missing_ok=True)
+    else:
+        _atomic_rewrite(path, text)
+        encrypted_file.unlink(missing_ok=True)
+
+
+def set_encryption(history_path, enabled: bool) -> None:
+    """Перевести одну історію між відкритим JSONL і AES-GCM-контейнером.
+
+    Спершу атомарно створюється нова копія, лише потім прибирається стара.
+    Якщо після аварії співіснують обидві, зашифрована копія є канонічною.
+    Відсутню/порожню ще не створену історію не матеріалізуємо.
+    """
+    path = Path(history_path)
+    encrypted = encrypted_path(path)
+    with history_lock(path):
+        if enabled:
+            if encrypted.exists():
+                _read_text(path)  # перевірити ключ і цілісність до cleanup
+                path.unlink(missing_ok=True)
+            elif path.exists():
+                _rewrite(path, path.read_text(encoding="utf-8"), encrypted=True)
+        elif encrypted.exists():
+            _rewrite(path, _read_text(path), encrypted=False)
+
+
 def log_history(history_path, raw: str, final: str, *, source: str = "desktop",
-                enabled: bool = True, audio: str | None = None):
+                enabled: bool = True, audio: str | None = None,
+                encrypt: bool = False):
     """Дописати один рядок JSON. enabled=False (вимкнена пам'ять профілю) → нічого не пише.
 
     ``audio`` — ім'я файлу збереженого аудіо цього диктування (у теці
@@ -121,10 +179,18 @@ def log_history(history_path, raw: str, final: str, *, source: str = "desktop",
             rec["audio"] = audio
         path = Path(history_path)
         with history_lock(path):
-            with path.open("a", encoding="utf-8", newline="\n") as f:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                f.flush()
-                os.fsync(f.fileno())
+            line = json.dumps(rec, ensure_ascii=False) + "\n"
+            if encrypt or encrypted_path(path).exists():
+                try:
+                    previous = _read_text(path)
+                except FileNotFoundError:
+                    previous = ""
+                _rewrite(path, previous + line, encrypted=True)
+            else:
+                with path.open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(line)
+                    f.flush()
+                    os.fsync(f.fileno())
         return rec
     except Exception:
         return None
@@ -136,9 +202,11 @@ def delete_line(history_path, line: str) -> None:
     path = Path(history_path)
     try:
         with history_lock(path):
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = _read_text(path).splitlines()
             lines.remove(line)
-            _atomic_rewrite(path, "\n".join(lines) + ("\n" if lines else ""))
+            _rewrite(
+                path, "\n".join(lines) + ("\n" if lines else ""),
+                encrypted=encrypted_path(path).exists())
     except (OSError, ValueError):
         pass
 
@@ -160,7 +228,7 @@ def update_final(history_path, old_final: str, new_final: str,
     try:
         with history_lock(path):
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                lines = _read_text(path).splitlines()
             except OSError:
                 return False
             for i in range(len(lines) - 1, -1, -1):
@@ -177,7 +245,9 @@ def update_final(history_path, old_final: str, new_final: str,
                     continue
                 rec["final"] = new_final
                 lines[i] = json.dumps(rec, ensure_ascii=False)
-                _atomic_rewrite(path, "\n".join(lines) + ("\n" if lines else ""))
+                _rewrite(
+                    path, "\n".join(lines) + ("\n" if lines else ""),
+                    encrypted=encrypted_path(path).exists())
                 return True
     except OSError:
         return False
@@ -199,7 +269,7 @@ def update_record(history_path, ts, *, final: str | None = None,
     path = Path(history_path)
     try:
         with history_lock(path):
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = _read_text(path).splitlines()
             for i in range(len(lines) - 1, -1, -1):
                 line = lines[i]
                 if not line.strip():
@@ -219,7 +289,9 @@ def update_record(history_path, ts, *, final: str | None = None,
                     changed = True
                 if changed:
                     lines[i] = json.dumps(rec, ensure_ascii=False)
-                    _atomic_rewrite(path, "\n".join(lines) + ("\n" if lines else ""))
+                    _rewrite(
+                        path, "\n".join(lines) + ("\n" if lines else ""),
+                        encrypted=encrypted_path(path).exists())
                 return True
     except OSError:
         return False
@@ -241,7 +313,7 @@ def update_final_by_id(history_path, rec_id, new_final: str, *,
     try:
         with history_lock(path):
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                lines = _read_text(path).splitlines()
             except OSError:
                 return False
             target = None
@@ -268,7 +340,9 @@ def update_final_by_id(history_path, rec_id, new_final: str, *,
             rec["final"] = new_final
             rec["edited"] = True
             lines[target] = json.dumps(rec, ensure_ascii=False)
-            _atomic_rewrite(path, "\n".join(lines) + ("\n" if lines else ""))
+            _rewrite(
+                path, "\n".join(lines) + ("\n" if lines else ""),
+                encrypted=encrypted_path(path).exists())
             return True
     except OSError:
         return False
@@ -294,7 +368,7 @@ def read_recent(source, limit: int | None = None) -> list:
     path = Path(getattr(source, "history_path", source))
     records = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in _read_text(path).splitlines():
             if not line.strip():
                 continue
             try:

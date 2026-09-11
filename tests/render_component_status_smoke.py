@@ -118,9 +118,13 @@ class ComponentStatusSmokeTests(unittest.TestCase):
         win.setAttribute(Qt.WA_DontShowOnScreen, True)
         win.resize(win.minimumWidth(), win.minimumHeight())  # найвужча колонка
         win.show()
-        idx = next(i for i in range(win.pages.count())
-                   if isinstance(win.pages.widget(i), SettingsPage))
-        page = win.pages.widget(idx)
+        # Сторінки головного вікна ліниві (perf: lazy main window tabs): доки
+        # вкладку не відкрили, у стеку стоїть порожній QWidget-заповнювач, і
+        # пошук за isinstance давав StopIteration. Доступ до властивості
+        # win.settings матеріалізує сторінку — далі як раніше.
+        page = win.settings
+        self.assertIsInstance(page, SettingsPage)
+        idx = win.pages.indexOf(page)
         win.set_page(idx)
         _process(self._app, 5)
         from fronts.desktop.i18n import tr

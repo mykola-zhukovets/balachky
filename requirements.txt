@@ -22,7 +22,7 @@ onnxruntime==1.27.0
 mss==10.1.0
 av==18.0.0  # LGPL-збірка (BtbN win64-lgpl-shared, без x264/x265) — див. THIRD-PARTY-NOTICES §1 і SWAP-PLAN
 # Local meeting storage encryption (AES-256-GCM/HKDF/scrypt).
-cryptography>=44,<49
+cryptography>=50,<51
 
 # Desktop GUI (fronts/desktop) — пінимо як і решту: плаваючий PySide6 підтягнув
 # би іншу версію Qt, несумісну з PyInstaller-spec/плагінами, а qtawesome без
@@ -43,6 +43,9 @@ packaging==26.2
 
 # Telegram bot (fronts/telegram, опційно)
 aiogram==3.29.1
+# aiohttp — транзитивна залежність aiogram; підлога проти PYSEC-2026-3545/3546/3547
+# (heap OOB read у парсері відповідей, request smuggling при WebSocket upgrade).
+aiohttp>=3.14.3
 
 # --- Постобробка тексту після STT (feature/punctuation-plus) — ОПЦІЙНО ---
 # Обидва кроки — opt-in і мають graceful degradation: якщо пакета немає, чекбокс

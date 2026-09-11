@@ -151,11 +151,19 @@ class ReverseDictationRenderTests(unittest.TestCase):
     def test_dialog_with_audio_saves_correction(self):
         from fronts.desktop.pages.reverse_dictation import ReverseDictationDialog
         wav = self._ctl.dictation_audio_path(self._rec_audio)
+        # "wav не None" — тавтологія: dictation_audio_path сам повертає None,
+        # якщо файла нема, тож перевіряємо реальний артефакт: файл існує і
+        # має дані понад WAV-заголовок (44 байти), а не порожній запис.
         self.assertIsNotNone(wav)
+        self.assertTrue(wav.exists())
+        self.assertGreater(wav.stat().st_size, 44, "WAV-файл без аудіоданих")
         dlg = ReverseDictationDialog(self._ctl, self._rec_audio, audio_path=wav,
                                      autoplay=False)
         self._widgets.append(dlg)
+        # "dlg._player не None" — тавтологія: перевіряємо, що плеєр отримав
+        # ПРАВИЛЬНЕ джерело (той самий файл), а не просто існування об'єкта.
         self.assertIsNotNone(dlg._player)             # плеєр «Переслухати» є
+        self.assertEqual(dlg._player._path, str(wav))
         dlg._editor.setPlainText("сирий worktree")    # правка клавіатурою
         dlg._on_save()
         self.assertTrue(dlg.saved)
@@ -218,8 +226,11 @@ class ReverseDictationRenderTests(unittest.TestCase):
         dlg = ReverseDictationDialog(self._ctl, self._rec_plain, audio_path=None,
                                      autoplay=False)
         self._widgets.append(dlg)
-        self.assertTrue(hasattr(dlg, "_voice_btn"))
-        dlg._voice_fix()
+        # "hasattr(_voice_btn)" — тавтологія: перевіряє лише наявність імені.
+        # Реальний контракт — кнопка увімкнена й СПРАВДІ клікабельна, тож
+        # клікаємо саме по ній, а не кличемо _voice_fix() напряму в обхід UI.
+        self.assertTrue(dlg._voice_btn.isEnabled())
+        dlg._voice_btn.click()
         self.assertTrue(self._ctl.voiced)             # Command Mode викликано
         self.assertIn("ГОЛОСОВЕ ВИПРАВЛЕННЯ", dlg._editor.toPlainText())
 

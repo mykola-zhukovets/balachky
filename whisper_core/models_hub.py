@@ -1,12 +1,16 @@
 """Агрегація станів та підрахунок розмірів усіх моделей за принципом «всі моделі в UI»."""
 from __future__ import annotations
 
+import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import whisper_core.paths as paths
 import whisper_core.models as stt_models
+import whisper_core.stt_presets as stt_presets
+import whisper_core.stt_sherpa_models as sherpa_models
 import whisper_core.meeting.diarization_models as diar_models
 import whisper_core.protocol.model_manager as protocol_mm
 import whisper_core.tts.voices as tts_voices
@@ -29,15 +33,23 @@ class ModelHubItem:
     is_recommended_active: bool  # whether recommended is currently active
 
 
-def get_dir_size(p: str | Path | None) -> int:
-    """Підрахунок розміру файлу чи папки в байтах."""
-    if not p:
-        return 0
-    p = Path(p)
-    if not p.exists():
-        return 0
-    if p.is_file():
-        return p.stat().st_size
+_DIR_SIZE_CACHE: dict = {}
+_DIR_SIZE_CACHE_LOCK = threading.Lock()
+
+
+def _forget_dir_size(p) -> None:
+    """Скинути кеш розміру теки — для ручного виклику після дій, які міняють
+    вміст теки в обхід install/delete-функцій компонентів (тестам зокрема)."""
+    scope = os.path.abspath(os.fspath(p))
+    with _DIR_SIZE_CACHE_LOCK:
+        _DIR_SIZE_CACHE.pop(scope, None)
+
+
+def _walk_size(p: Path) -> int:
+    """Фактичний рекурсивний обхід теки (без symlink-файлів). Винесено окремо
+    від get_dir_size, щоб кешування огортало саме цей виклик, а тести могли
+    рахувати фактичні обходи лічильником (mock wraps), а не порівнювати
+    виклик get_dir_size сам із собою."""
     total = 0
     try:
         for item in p.rglob('*'):
@@ -48,15 +60,70 @@ def get_dir_size(p: str | Path | None) -> int:
     return total
 
 
+def _dir_signature(scope: str):
+    """Дешевий (O(кількість прямих елементів), НЕ повний обхід) відбиток стану
+    теки: mtime_ns самої теки + mtime_ns кожного прямого елемента (файлу чи
+    підтеки). Install/delete кожного компонента моделей (diarization_models/
+    protocol.model_manager/tts.voices/punctuator) підміняють чи прибирають
+    ЦІЛУ теку компонента АБО її прямий елемент (напр. tts.voices підміняє
+    root/<voice_id> — прямий елемент tts_voices_dir) — одного рівня досить,
+    щоб зловити install/delete. None — теки нема."""
+    try:
+        top = os.stat(scope).st_mtime_ns
+        entries = tuple(sorted(
+            (entry.name, entry.stat(follow_symlinks=False).st_mtime_ns)
+            for entry in os.scandir(scope)))
+    except OSError:
+        return None
+    return (top, entries)
+
+
+def get_dir_size(p: str | Path | None) -> int:
+    """Підрахунок розміру файлу чи папки в байтах.
+
+    Тека — кеш за _dir_signature (шлях + дворівневий mtime-відбиток), той
+    самий підхід, що tts/voices.py::_integrity_fingerprint: доки відбиток не
+    змінився, обхід не повторюється. Зміна файлу ГЛИБШЕ (без зміни mtime
+    жодного прямого елемента теки) — кешем НЕ ловиться: свідомий компроміс
+    заради швидкості, той самий, що й у voices.py."""
+    if not p:
+        return 0
+    p = Path(p)
+    if not p.exists():
+        return 0
+    if p.is_file():
+        return p.stat().st_size
+    scope = os.path.abspath(os.fspath(p))
+    fingerprint = _dir_signature(scope)
+    if fingerprint is None:
+        _forget_dir_size(scope)
+        return 0
+    with _DIR_SIZE_CACHE_LOCK:
+        cached = _DIR_SIZE_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+    total = _walk_size(p)
+    with _DIR_SIZE_CACHE_LOCK:
+        _DIR_SIZE_CACHE[scope] = (fingerprint, total)
+    return total
+
+
 def get_models_hub_status(cfg: Config) -> list[ModelHubItem]:
     """Збір агрегованої інформації по 5 компонентах моделей."""
     items: list[ModelHubItem] = []
 
     # 1. STT (Speech-to-Text)
     stt_name = cfg.model_name or "large-v3-turbo"
-    stt_repo = stt_models.repo_for(stt_name)
-    stt_sz = stt_models.model_snapshot_size(cfg.model_dir, stt_repo) if stt_repo else 0
-    stt_present = stt_sz > 0
+    if stt_presets.engine_kind(stt_name) == "sherpa":
+        # feature/stt-sherpa-parakeet: пакет у components/stt, не HF-кеш
+        package = sherpa_models.package_for(stt_name)
+        stt_dir = sherpa_models.model_dir(stt_name)
+        stt_present = sherpa_models.models_present_fast(stt_dir, package)
+        stt_sz = get_dir_size(stt_dir) if stt_present else 0
+    else:
+        stt_repo = stt_models.repo_for(stt_name)
+        stt_sz = stt_models.model_snapshot_size(cfg.model_dir, stt_repo) if stt_repo else 0
+        stt_present = stt_sz > 0
     stt_key = "models_hub_preset_raw"
     stt_param = stt_name
     if stt_name == "large-v3-turbo":
@@ -64,6 +131,12 @@ def get_models_hub_status(cfg: Config) -> list[ModelHubItem]:
         stt_param = ""
     elif stt_name == "large-v3":
         stt_key = "models_hub_preset_large_v3"
+        stt_param = ""
+    elif stt_name == "large-v2":
+        stt_key = "models_hub_preset_large_v2"
+        stt_param = ""
+    elif stt_name == "parakeet-tdt-0.6b-v3":
+        stt_key = "models_hub_preset_parakeet"
         stt_param = ""
 
     items.append(ModelHubItem(

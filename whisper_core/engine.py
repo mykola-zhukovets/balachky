@@ -98,6 +98,9 @@ MODEL_REVISIONS = {
     "medium": "08e178d48790749d25932bbc082711ddcfdfbc4f",
     # mobiuslabsgmbh/faster-whisper-large-v3-turbo @ main (звірено 2026-07-12)
     "large-v3-turbo": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    # Systran/faster-whisper-large-v2 @ main (звірено 2026-09-06) — альтернатива
+    # large-v3 для української (feature/stt-preset-large-v2)
+    "large-v2": "f0fe81560cb8b68660e564f55dd99207059c092e",
     # Systran/faster-whisper-large-v3 @ main (звірено 2026-07-12)
     "large-v3": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
 }
@@ -297,3 +300,17 @@ class Engine:
                 empty_cache()
             except Exception:
                 pass
+
+
+def make_engine(cfg, revision_override=None):
+    """Фабрика рушія за видом пресета (feature/stt-sherpa-parakeet).
+
+    Єдине місце, де вирішується, який клас будувати: пресети Whisper і власні
+    моделі — ``Engine`` (faster-whisper); пресети виду "sherpa" — ``SherpaEngine``
+    (sherpa-onnx). ``revision_override`` стосується лише кешу HuggingFace, тож
+    для sherpa-рушія ігнорується. Усі фронти будують рушій ЛИШЕ звідси."""
+    from .stt_presets import engine_kind
+    if engine_kind(getattr(cfg, "model_name", "")) == "sherpa":
+        from .stt_sherpa import SherpaEngine
+        return SherpaEngine(cfg)
+    return Engine(cfg, revision_override=revision_override)

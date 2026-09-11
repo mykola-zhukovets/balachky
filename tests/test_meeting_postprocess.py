@@ -143,7 +143,12 @@ class ClipTests(unittest.TestCase):
         self.assertEqual(pcm[3], -32767)
         self.assertEqual(pcm[4], 0)
         self.assertEqual(pcm.max(), 32767)
-        self.assertGreaterEqual(pcm.min(), -32768)
+        # "min() >= -32768" — це межа типу int16, а не контракт кліпу: вона
+        # тримається завжди, навіть при поламаному кліпуванні (переповнення теж
+        # лишається в межах int16, просто зі сміттєвим значенням). Реальний
+        # контракт — мінімум дорівнює саме -32767 (сила кліпу), що вже строго
+        # доведено окремими pcm[1]/pcm[3] вище; тут перевіряємо це й для min().
+        self.assertEqual(pcm.min(), -32767)
 
     def test_half_scale_roundtrips(self):
         pcm = np.frombuffer(pp._float_to_pcm16(np.array([0.5], dtype=np.float32)), dtype="<i2")

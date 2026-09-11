@@ -61,6 +61,9 @@ EXPECTED_PROTOTYPES = {
     "whisper_core/meeting/storage_crypto.py": {
         "CryptProtectData", "CryptUnprotectData", "LocalFree",
     },
+    "whisper_core/telegram_secrets.py": {
+        "CryptProtectData", "CryptUnprotectData", "LocalFree",
+    },
     "whisper_core/offline_package.py": {"GetVolumeInformationW"},
     "whisper_core/screen/win32.py": {
         "CreateCompatibleBitmap", "CreateCompatibleDC", "DeleteDC",

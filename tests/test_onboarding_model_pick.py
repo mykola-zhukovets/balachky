@@ -72,7 +72,10 @@ class OnboardingModelPickTests(unittest.TestCase):
         self.link_hub = str(self.tmp / "linked" / "hub")
 
     def _wizard(self):
-        wizard = onboarding.FirstRunWizard()
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(onboarding, "_has_network", return_value=True):
+            wizard = onboarding.FirstRunWizard()
         self.addCleanup(wizard.deleteLater)
         return wizard
 

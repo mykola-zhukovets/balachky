@@ -429,12 +429,27 @@ class SilenceWarningUiTests(unittest.TestCase):
     запис (перевірка контролера — MeetingStartTests/test_meeting_capture.py)."""
 
     def test_silence_state_shows_persistent_warning(self):
+        from fronts.desktop import i18n
         from fronts.desktop.pages import meeting as meeting_page
+        lang = i18n.current_language()
+        self.addCleanup(i18n.set_language, lang)
+        # "text непорожній" — тавтологія: setText завжди щось пише. Реальний
+        # контракт — банер бере СПРАВЖНІЙ переклад стану тиші, а не застряглий
+        # чи зламаний ключ: тексти uk/en різняться (зламаний ключ дав би той
+        # самий рядок в обох мовах).
+        i18n.set_language("uk")
         page = SimpleNamespace(_silence_warning=_FakeLabel(),
                                _audio_note=_FakeLabel())
         meeting_page.MeetingPage._on_audio_state(page, "sys", "silence")
         self.assertTrue(page._silence_warning.visible)
-        self.assertTrue(page._silence_warning.text)
+        text_uk = page._silence_warning.text
+        i18n.set_language("en")
+        page_en = SimpleNamespace(_silence_warning=_FakeLabel(),
+                                  _audio_note=_FakeLabel())
+        meeting_page.MeetingPage._on_audio_state(page_en, "sys", "silence")
+        text_en = page_en._silence_warning.text
+        self.assertNotEqual(text_uk, "")
+        self.assertNotEqual(text_uk, text_en)
 
     def test_silence_resolved_hides_the_warning(self):
         """Суддівське зауваження 30.07: коли звук зрештою з'являється, банер
@@ -1136,9 +1151,23 @@ class DiarizationDownloadWorkerTests(unittest.TestCase):
         from fronts.desktop.pages.meeting import DiarizationDownloadWorker
         # конструюємо без .start() — потік не запускаємо, лише перевіряємо API
         w = DiarizationDownloadWorker(Path("x"))
-        self.assertTrue(hasattr(w, "finished_ok"))
-        self.assertTrue(hasattr(w, "failed"))
-        self.assertTrue(hasattr(w, "progress"))
+        # hasattr на сигналі — тавтологія, а емітити сигнали самому — перевірка
+        # того, що тест сам і задав. Тому викликаємо run() напряму (без потоку) з
+        # підміненим завантажувачем: справжній ланцюжок download_and_install ->
+        # progress -> finished_ok, і окремо гілка помилки -> failed(str).
+        seen = {}
+        w.progress.connect(lambda done, total: seen.setdefault("progress", (done, total)))
+        w.finished_ok.connect(lambda: seen.setdefault("finished_ok", True))
+        w.failed.connect(lambda msg: seen.setdefault("failed", msg))
+        with patch("whisper_core.meeting.diarization_models.download_and_install",
+                   side_effect=lambda target, cb: cb(3, 10)):
+            w.run()
+        self.assertEqual(seen, {"progress": (3, 10), "finished_ok": True})
+        seen.clear()
+        with patch("whisper_core.meeting.diarization_models.download_and_install",
+                   side_effect=RuntimeError("немає місця")):
+            w.run()
+        self.assertEqual(seen, {"failed": "немає місця"})
 
     def test_meeting_has_no_stale_settings_import(self):
         # саме цей рядок був крашем — читаємо meeting.py як текст

@@ -43,8 +43,8 @@ def _engine_transcribe(cfg, terms, path):
     """Справжня транскрипція одного файлу через Engine. Повертає п'ятірку
     (raw, final, duration, words, segments). Engine важкий (вантажить модель),
     тож імпорт — усередині, аби тести/інші підкоманди його не смикали."""
-    from whisper_core.engine import Engine
-    engine = Engine(cfg)
+    from whisper_core.engine import make_engine
+    engine = make_engine(cfg)
     return engine.transcribe(str(path), terms)
 
 
@@ -96,7 +96,8 @@ def cmd_transcribe(args, *, root=ROOT, transcribe_fn=_engine_transcribe):
     terms = load_terms(prof.terms_path)
     raw, final, dur, _words, segs = transcribe_fn(cfg, terms, p)
     log_history(prof.history_path, raw, final, source="cli",
-                enabled=prof.memory_enabled)
+                enabled=prof.memory_enabled,
+                encrypt=bool(getattr(cfg, "history_encrypt", False)))
     if args.json:
         _print_json({"text": final, "segments": _segments_json(segs),
                      "model": cfg.model_name, "duration": float(dur)})
@@ -328,7 +329,8 @@ def _legacy_main(argv, *, root=ROOT, transcribe_fn=_engine_transcribe):
             continue
         raw, final, dur, _words, _segs = transcribe_fn(cfg, terms, p)
         log_history(prof.history_path, raw, final, source="cli",
-                    enabled=prof.memory_enabled)
+                    enabled=prof.memory_enabled,
+                    encrypt=bool(getattr(cfg, "history_encrypt", False)))
         print(f"### {p.name}  (аудіо {dur:.0f}s)")
         print(f"  {final}")
         if final != raw:

@@ -1,9 +1,11 @@
 """Unit tests for Models Hub status aggregation, disk space calculation, and recommended presets."""
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import whisper_core.models_hub as models_hub
 from whisper_core.config import Config
 from whisper_core.models_hub import (
     ModelHubItem,
@@ -113,6 +115,54 @@ class TestModelsHub(unittest.TestCase):
 
             total = get_dir_size(tmp_path)
             self.assertEqual(total, 3500)
+
+    def test_get_dir_size_caches_repeat_call(self):
+        """Повторний запит розміру тієї самої теки НЕ повторює обхід диска
+        (перевірка фактичних викликів обходу лічильником, не self-порівнянням)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "model.bin").write_bytes(b"A" * 1000)
+
+            with patch("whisper_core.models_hub._walk_size",
+                       wraps=models_hub._walk_size) as walk:
+                first = get_dir_size(tmp_path)
+                second = get_dir_size(tmp_path)
+
+            self.assertEqual(first, 1000)
+            self.assertEqual(second, 1000)
+            self.assertEqual(walk.call_count, 1)
+
+    def test_get_dir_size_recomputes_after_content_change(self):
+        """Новий файл у теці (встановлення моделі) дає новий розрахунок розміру,
+        а не застарілий кешований."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "model.bin").write_bytes(b"A" * 1000)
+            first = get_dir_size(tmp_path)
+
+            time.sleep(0.01)
+            (tmp_path / "extra.bin").write_bytes(b"B" * 500)
+            second = get_dir_size(tmp_path)
+
+            self.assertEqual(first, 1000)
+            self.assertEqual(second, 1500)
+
+    def test_get_dir_size_updates_after_directory_removed(self):
+        """Видалення теки (видалення моделі) дає 0, а не застарілий кешований
+        розмір."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp) / "voice"
+            tmp_path.mkdir()
+            (tmp_path / "model.bin").write_bytes(b"A" * 1000)
+
+            first = get_dir_size(tmp_path)
+            self.assertEqual(first, 1000)
+
+            import shutil
+            shutil.rmtree(tmp_path)
+
+            second = get_dir_size(tmp_path)
+            self.assertEqual(second, 0)
 
     def test_get_total_models_disk_size_with_known_files(self):
         """Розрахунок сумарного обсягу моделей по 5 теках дає точну суму."""

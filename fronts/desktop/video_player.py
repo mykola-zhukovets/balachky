@@ -19,6 +19,7 @@ feature/video-player-mvp. Технологія — Qt Multimedia (QMediaPlayer +
 """
 import logging
 import os
+import time
 
 from PySide6.QtCore import QEvent, QUrl, Qt
 from PySide6.QtGui import QDesktopServices, QGuiApplication
@@ -32,6 +33,7 @@ from .i18n import tr
 from .meeting_transcript_panel import TranscriptPanel
 from .player import _IconButton, _Slider, fmt_time
 from .player_tracks import FollowerGroup, TrackChannel, TrackMixerPanel
+from whisper_core.meeting.speaker_nav import playback_segments
 
 try:                                   # QtMultimedia є у колесі PySide6 (перевірено)
     from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -90,6 +92,14 @@ class VideoPlayerDialog(QDialog):
         self._status_was_visible = False
         self._transcript_panel = None
         self._transcript_was_visible = False
+        # Режим «Грати лише обраного» (навігація за мовцем, issue #19): стан
+        # тримаємо тут і без QtMultimedia — _solo_target/_maybe_solo_jump не
+        # чіпають self._player, тож лишаються тестовними в обох збірках.
+        self._utterances = list(utterances or [])
+        self._solo_enabled = False
+        self._solo_segments = []
+        self._last_solo_seek_mono = 0.0
+        self._solo_finished = False   # пауза після останнього відрізка — один раз
         self.setWindowTitle(
             os.path.basename(self._path) if self._path else tr("video_title"))
         self.setModal(True)
@@ -140,6 +150,8 @@ class VideoPlayerDialog(QDialog):
             self._transcript_panel = TranscriptPanel(
                 utterances, speaker_names, self._splitter)
             self._transcript_panel.seekRequested.connect(self._on_transcript_seek)
+            self._transcript_panel.playbackSettingsChanged.connect(
+                self._on_solo_settings_changed)
             self._splitter.addWidget(self._transcript_panel)
             self._splitter.setStretchFactor(0, 7)     # ~70% відео / 30% текст
             self._splitter.setStretchFactor(1, 3)
@@ -482,6 +494,66 @@ class VideoPlayerDialog(QDialog):
         self._time.setText(f"{fmt_time(pos)} / {fmt_time(dur)}")
         if self._transcript_panel is not None:
             self._transcript_panel.set_active_ms(pos)
+        self._maybe_solo_jump(pos)
+
+    # ---- навігація за мовцем: «Грати лише обраного» (issue #19) ----
+    def _on_solo_settings_changed(self) -> None:
+        """Чіп мовця / перемикач «Грати лише обраного» / зазор у панелі
+        розшифровки змінились — перерахувати склеєні відрізки відтворення
+        (спека 31.07 §3). Вимкнений режим тримає список порожнім — нема що
+        рахувати й нема на що дивитись у ``_maybe_solo_jump``."""
+        panel = self._transcript_panel
+        self._solo_enabled = panel.solo_enabled()
+        self._solo_finished = False
+        if self._solo_enabled:
+            self._solo_segments = playback_segments(
+                self._utterances, panel.current_speaker_filter(), panel.gap_seconds())
+        else:
+            self._solo_segments = []
+
+    def _solo_target(self, pos_ms: int) -> "int | None":
+        """Чиста логіка авто-стрибка (без Qt — див. ``self._solo_segments``):
+        позиція ВСЕРЕДИНІ одного з відрізків → ``None`` (без дії, грати далі).
+        Поза межами — старт НАСТУПНОГО відрізка; відрізків більше нема —
+        ``-1`` (сигнал ``_maybe_solo_jump`` поставити на паузу)."""
+        for start, end in self._solo_segments:
+            if start <= pos_ms <= end:
+                return None
+        for start, end in self._solo_segments:
+            if start > pos_ms:
+                return start
+        return -1
+
+    def _maybe_solo_jump(self, pos_ms: int) -> None:
+        """Перескочити паузу/чужу репліку чи поставити на паузу, коли
+        відрізків обраного мовця більше немає. Гістерезис 300 мс — не
+        смикати ``setPosition`` частіше (спека 31.07 §3.2); перемотка
+        користувачем (слайдер, клік по репліці) окремого скидання не
+        потребує — наступний тік просто рахує ``_solo_target`` з нової
+        позиції, бо він сам по собі без стану."""
+        if not self._solo_enabled or not self._solo_segments:
+            return
+        target = self._solo_target(pos_ms)
+        if target != -1:
+            # Відтворення знову в межах чи попереду відрізка (у т. ч. після
+            # ручної перемотки) — засув паузи знімаємо.
+            self._solo_finished = False
+        if target is None:
+            return
+        if target == -1:
+            # Пауза рівно один раз: інакше кожен тік позиції знову тиснув би
+            # паузу, і кнопка відтворення переставала б працювати.
+            if not self._solo_finished:
+                self._solo_finished = True
+                self._player.pause()
+            return
+        now = time.monotonic()
+        if now - self._last_solo_seek_mono < 0.3:
+            return
+        self._last_solo_seek_mono = now
+        self._player.setPosition(target)
+        if self._group is not None:
+            self._group.broadcast_seek(target)
 
     def _on_duration(self, dur: int):
         self._time.setText(f"{fmt_time(self._player.position())} / {fmt_time(dur)}")

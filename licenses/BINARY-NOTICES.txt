@@ -1,6 +1,6 @@
 BALACHKY PACKAGED BINARY TRACE MANIFEST
 Paths are relative to the Balachky onedir root.
-Binary count: 269
+Binary count: 263
 Version source: PE FileVersion; when absent, owning-package METADATA or companion-runtime PE provenance.
 Hash command: Get-FileHash -Algorithm SHA256 -LiteralPath <file>
 
@@ -25,7 +25,6 @@ _internal/_ssl.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PS
 _internal/_uuid.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	acce4f281d7ffb2dec0997527faf25b1df62ad7bd3032c568ddcf65c90edc867
 _internal/_wmi.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	a980f1e7a29842bd946863fc2693fbeb555a9dc0f9e1630dfed9a2fcdef3ece2
 _internal/_zoneinfo.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	76f1439cda82ab6976df6ba505c4079444703f6d44d8b0259ce59c0ff4279fb4
-_internal/ada92cb5d92a588d1b93__mypyc.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	df5ea1b515f4e6677196f3d8c2f40a00b008d8e09152d08425f794e1b55f890d
 _internal/aiohttp/_http_parser.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	2851a840224d139cc3c73534597b1c29b1ee6094661e27def04b3cd66d4199c8
 _internal/aiohttp/_http_writer.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	4831aaf297de92c195335564e4b13d3df50e3e88f25b22532c5b576ecb3a3a1e
 _internal/aiohttp/_websocket/mask.cp312-win_amd64.pyd	aiohttp 3.14.3 (METADATA)	https://github.com/aio-libs/aiohttp	Apache-2.0	f3fad377929bfcb8afd9c4ceb31a81da2a8562e4d16bf97820c4983adfc984d4
@@ -129,19 +128,15 @@ _internal/av/video/frame.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/Py
 _internal/av/video/plane.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	395f1d6d77e86f607dd62f0bf00946925e2bd6ddd0a338c39b871a37d5fd1b36
 _internal/av/video/reformatter.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	2698ef6ca4971334e28bda4ecf7d16c2f3aa313bf7faaf7ba7a03aceb4f37ea4
 _internal/av/video/stream.pyd	av 18.0.0 (METADATA)	https://github.com/PyAV-Org/PyAV	BSD-3-Clause	9074a698191ead62756c994184eb46e4816e049af88ab684963c9dcb6d8f0c30
-_internal/charset_normalizer/cd.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	be1d8801c9785a52e5bc1b0c77ceca2c88041a5d9b9bac7162d767f712ea10e3
-_internal/charset_normalizer/md.cp312-win_amd64.pyd	charset-normalizer 3.4.9 (METADATA)	https://github.com/jawah/charset_normalizer	MIT	a3d9c05de6a69b7adc024de7b3ffe823e8c72f080e4a89d1aac4b24173945815
-_internal/cryptography/hazmat/bindings/_rust.pyd	cryptography 48.0.1 (METADATA)	https://github.com/pyca/cryptography	Apache-2.0 OR BSD-3-Clause	cbae8065586611b18e9ffba1885af0b3ba9c52b9e79c85ca4a33264c626e159d
+_internal/cryptography/hazmat/bindings/_rust.pyd	cryptography 50.0.1 (METADATA)	https://github.com/pyca/cryptography	Apache-2.0 OR BSD-3-Clause	6a42262974f0e086c1f2defaff4ccd9fb25046cf193422135e2dda5b4b29b2a2
 _internal/ctranslate2/_ext.cp312-win_amd64.pyd	ctranslate2 4.7.2 (METADATA)	https://github.com/OpenNMT/CTranslate2	MIT	cebdbabd69bbe3a24b933584b5fa9fe13534918014abe5a7aa6c92c81feccdb0
 _internal/ctranslate2/ctranslate2.dll	ctranslate2 4.7.2 (METADATA)	https://github.com/OpenNMT/CTranslate2	MIT	dabe01067299cc323c6c19bddeeeafa143c911a65f289cfd5f56747790243a52
 _internal/ctranslate2/cudnn64_9.dll	9.10.2.21 (PE FileVersion)	https://developer.nvidia.com/cudnn	NVIDIA cuDNN Software License Agreement	9edbcdff73b0af070eb160b2ce66e59feca04aa017351d8eedcc5e8e149967d2
 _internal/ctranslate2/libiomp5md.dll	20250910 (PE FileVersion)	https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit-download.html	Intel End User License Agreement for Developer Tools	982233366b0afcda1e0f55a0b134097e35b779613f54ddb69e685e6cd06b755f
 _internal/frozenlist/_frozenlist.cp312-win_amd64.pyd	frozenlist 1.8.0 (METADATA)	https://github.com/aio-libs/frozenlist	Apache-2.0	ac03ce4d67b103af56efa5a436954c6c5e4da0eafec878a31298f2b8ce9c6f96
-_internal/hf_xet/hf_xet.pyd	hf-xet 1.5.2 (METADATA)	https://github.com/huggingface/xet-core	Apache-2.0	1d7086190c8f67568f670d4e1e1493097ce31058a634d9ce5c7f2922875e13e6
-_internal/libcrypto-3-x64.dll	3.5.6 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	ef8dc7e412a064e8bdc9243f8b71dcece44d837794047a69f80b491df8ed25e6
+_internal/hf_xet/hf_xet.pyd	hf-xet 1.5.1 (METADATA)	https://github.com/huggingface/xet-core	Apache-2.0	7567c8ba058af873ec3ad498d8aa33800571121e6421a59ff8ea6f40c28eb4da
 _internal/libcrypto-3.dll	3.0.16 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	ccfffddcd3defb8d899026298af9af43bc186130f8483d77e97c93233d5f27d7
 _internal/libffi-8.dll	CPython 3.12.10 runtime (python312.dll PE FileVersion; component has no version resource)	https://github.com/libffi/libffi	MIT	eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a
-_internal/libssl-3-x64.dll	3.5.6 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	3f73db31036a78cc7f0749c199c8ca594c947ab991b9daed646d73729d1f5c4a
 _internal/libssl-3.dll	3.0.16 (PE FileVersion)	https://github.com/openssl/openssl	Apache-2.0	007142039f04d04e0ed607bda53de095e5bc6a8a10d26ecedde94ea7d2d7eefe
 _internal/llama_cpp/lib/ggml-base.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	ff7c22159b5f261f787d8b7c3f4b6bfad7e576ad78c7f549b45a3ad9a9d8a790
 _internal/llama_cpp/lib/ggml-cpu.dll	llama-cpp-python 0.3.34 (METADATA)	https://github.com/ggml-org/llama.cpp	MIT	e54cfb14e37e68a9144685c5cea158d83cd7aad1833f3e305e00861ba213641f
@@ -252,7 +247,6 @@ _internal/PySide6/VCRUNTIME140_1.dll	14.44.35211.0 (PE FileVersion)	https://lear
 _internal/PySide6/VCRUNTIME140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	c6e841078cd352299a58925991e2552f7251b046253ba895b3ad50cd5cd32ec6
 _internal/python3.dll	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	fb975a606e7fbf74f64260e3f60c3490b4f74a183c0926fd6ed1ac4c52ac7b1c
 _internal/python312.dll	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	9a0e3435aaa680d868150f87ab3e388ad2eebc22f87e036155c7b4eda8cd2120
-_internal/safetensors/_safetensors_rust.pyd	safetensors 0.8.0 (METADATA)	https://github.com/huggingface/safetensors	Apache-2.0	80a2b3f7658854ade855c5fb6192ee38fe2c7fbfd38d1c7c1f4d2c44f67125e4
 _internal/select.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	d4d7181b11db0bd22a6cd5cda6f8583d1f5c77615fd0a6ca33350619d6e0438a
 _internal/sherpa_onnx/lib/_sherpa_onnx.cp312-win_amd64.pyd	sherpa-onnx 1.13.4 (METADATA)	https://github.com/k2-fsa/sherpa-onnx	Apache-2.0	f52edb4c489f9dcbc8d6e5a6fa0e9c38a00b7ea9fc216c5e39a424bc1a1545a1
 _internal/sherpa_onnx/lib/onnxruntime.dll	1.27.0 (PE FileVersion)	https://github.com/microsoft/onnxruntime	MIT	daa77083a45bf525da0dde9e87f85d8eb146f58f9c9aa7124ca84545e1c0f148
@@ -265,15 +259,15 @@ _internal/shiboken6/shiboken6.abi3.dll	shiboken6 6.11.1 (METADATA)	https://code.
 _internal/shiboken6/VCRUNTIME140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	e4d7ea5f4f4ff6d0c208e693853617cdef0ad71cfe5dd5c3ae16c8a6b64c18ea
 _internal/shiboken6/VCRUNTIME140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	8d9c679c825c5fff298d66c41af30f35c289fc101868dfc9635547bada0daba6
 _internal/sqlite3.dll	3.49.1.0 (PE FileVersion)	https://www.sqlite.org	blessing (public domain)	8daa45684bf6688fca28d956b2e8942f2fa98f656675ce68e6d61dd869848a7a
-_internal/tokenizers/tokenizers.pyd	tokenizers 0.22.2 (METADATA)	https://github.com/huggingface/tokenizers	Apache-2.0	7acb83f5b89136597e0d14b788d82917bf2870df94575bf77e12731c4e49c4df
+_internal/tokenizers/tokenizers.pyd	tokenizers 0.23.1 (METADATA)	https://github.com/huggingface/tokenizers	Apache-2.0	619b18e51500ef40a7de56d823d3c34499e59745487562acc619367ac5d8ae39
 _internal/ucrtbase.dll	10.0.26100.1742 (WinBuild.160101.0800) (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	2e5fb14b7bf8540278f3614a12f0226e56a7cc9e64b81cbd976c6fcf2f71cbfb
 _internal/unicodedata.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	208ee1cd3cbad0828433ca7246b05be2b1ff5569983d27d296c0b38888585488
 _internal/vcruntime140_1.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	b322e382ea249b50009f14a9a71ad16729eb6e4b58a8d3b3be6ac66ea6342a22
 _internal/vcruntime140.dll	14.44.35211.0 (PE FileVersion)	https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files	Microsoft Visual C++ Runtime redistributable	c6e841078cd352299a58925991e2552f7251b046253ba895b3ad50cd5cd32ec6
 _internal/winsound.pyd	3.12.10 (PE FileVersion)	https://github.com/python/cpython	PSF-2.0	100e8d676777603c7258daf9b2f23ef001f09f1596d8708de359326fff72bddd
 _internal/yaml/_yaml.cp312-win_amd64.pyd	PyYAML 6.0.3 (METADATA)	https://github.com/yaml/pyyaml	MIT	4fd0e84f50261ed0886cffcdd8008b055af3352546e649c3d741b50eae1f9b5f
-_internal/yarl/_quoting_c.cp312-win_amd64.pyd	yarl 1.24.5 (METADATA)	https://github.com/aio-libs/yarl	Apache-2.0	729d917642f071de55ec31924df4d180d26fafa34561b73f035a5fe1bd8eb0c9
-balachky-protocol-worker.exe	PyInstaller 6.21.0 (METADATA)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	4f342e8d4c41f0f9e9db5056ab24ac9be8a0437329b804c3e9b84b2b7bec1b9c
-Balachky.exe	1.2.4-beta (PE FileVersion)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	317912043364b453cdc33026eabac50d097e2191d6312c98629df13e56d28037
+_internal/yarl/_quoting_c.cp312-win_amd64.pyd	yarl 1.24.2 (METADATA)	https://github.com/aio-libs/yarl	Apache-2.0	5401f0be30ba6e5031e744af35a48280ac529aec37e539c4f354c9748f1544f8
+balachky-protocol-worker.exe	PyInstaller 6.21.0 (METADATA)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	d8f5337156baa7f42221d1abcdb6f49198763b6783eb36d5818ea10d110a2f52
+Balachky.exe	1.2.4-beta (PE FileVersion)	https://pyinstaller.org	PolyForm-NC-1.0.0 + GPL-2.0-or-later WITH Bootloader-exception	05e371bc72af947e81e6e248880edbc3473da0224280c15615541448bbc90ec1
 BINARY TRACE END
 

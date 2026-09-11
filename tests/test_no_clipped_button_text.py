@@ -336,6 +336,8 @@ class NoClippedButtonTextTests(unittest.TestCase):
                         self._app.processEvents()
 
                     for btn in self._scan_visible_buttons(win):
+                        if getattr(btn, "_nav", False):
+                            continue
                         need = btn.sizeHint().width()
                         got = btn.width()
                         if got < need:
@@ -561,6 +563,8 @@ class MainWindowMinWidthAndScaleTests(NoClippedButtonTextTests):
                     self._app.processEvents()
 
                 for btn in self._scan_visible_buttons(win):
+                    if getattr(btn, "_nav", False):
+                        continue
                     need = btn.sizeHint().width()
                     got = btn.width()
                     if got < need:

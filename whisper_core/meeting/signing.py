@@ -50,6 +50,7 @@ class SigningIdentity:
     public_key_b64: str              # Base64 of 32-byte raw public key
     _private_key: object             # Ed25519PrivateKey (cryptography)
     rotation_serial: int = 0
+    replaces_missing_key: bool = False
 
     @property
     def public_key_bytes(self) -> bytes:
@@ -144,10 +145,41 @@ def ensure_signing_identity(meetings_root) -> SigningIdentity:
     (через ``ensure_dek``) і зберігає зашифрований seed. Якщо контейнер є —
     завантажує існуючий ключ.
     """
+    from whisper_core.history import history_lock
+
     root = Path(meetings_root)
-    if (root / _SIGNING_KEY_FILE).exists():
-        return load_signing_identity(root)
-    return _create_signing_identity(root)
+    key_path = root / _SIGNING_KEY_FILE
+    # Той самий portable OS-lock, що захищає історію: існування перевіряємо
+    # повторно вже під ним, тому одночасні перші наради не створять два ключі.
+    with history_lock(key_path):
+        if key_path.exists():
+            return load_signing_identity(root)
+        replaces_missing_key = _has_signed_journals(root)
+        identity = _create_signing_identity(root)
+        identity.replaces_missing_key = replaces_missing_key
+        return identity
+
+
+def _has_signed_journals(meetings_root: Path) -> bool:
+    """Чи містить корінь нарад хоча б один журнал з Ed25519-підписами."""
+    from . import audit_log
+
+    root = Path(meetings_root)
+    if not root.exists():
+        return False
+    try:
+        session_dirs = [path for path in root.iterdir() if path.is_dir()]
+    except OSError as exc:
+        raise SigningKeyMissing(
+            "Не вдалося перевірити чинні журнали; новий ключ не створено"
+        ) from exc
+    for session_dir in session_dirs:
+        events = audit_log.read_events(session_dir)
+        if any(isinstance(event, dict)
+               and isinstance(event.get("auth"), dict)
+               for event in events):
+            return True
+    return False
 
 
 def load_signing_identity(meetings_root) -> SigningIdentity:

@@ -101,7 +101,9 @@ _ALLOWLIST = {
     ("test_tts_voice_download_wired.py", "tts_voice_download_done"): 1,
     ("test_tts_voice_manager.py", "tts_voice_custom"): 1,
     ("test_tts_voice_manager.py", "tts_voice_sample"): 1,
-    ("test_win_hardening.py", "panic_toast_locked"): 4,
+    # 5-й випадок (08.09, панічне блокування, крок тимчасових файлів): поруч
+    # незалежна перевірка assertIn("panic_step_temp_files", failures).
+    ("test_win_hardening.py", "panic_toast_locked"): 5,
 }
 
 

@@ -138,7 +138,7 @@ PySide6, ctranslate2, onnxruntime, av, numpy…). Точка входу — `run
 Спека вже містить усе потрібне: datas (assets\, config.example.toml,
 terms.toml як сід словника), collect для нативних DLL ctranslate2, assets
 faster_whisper (VAD onnx), шрифти qtawesome; excludes (matplotlib, tkinter,
-aiogram, тести).
+тести; воркери також виключають aiogram/fronts.telegram).
 
 ## Крок 2 — димова перевірка exe
 

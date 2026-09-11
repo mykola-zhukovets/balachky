@@ -60,6 +60,30 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(len(rules), 1)
         self.assertEqual(rules[0].match, "Коростень")
 
+    def test_concurrent_learn_thread_safe(self):
+        import concurrent.futures
+        import json
+        p = _profile()
+        n_threads = 8
+        n_items = 20
+
+        def worker(tid):
+            for i in range(n_items):
+                L.learn(p, f"слово_{tid}_{i}", f"вимова_{tid}_{i}")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_threads) as pool:
+            futures = [pool.submit(worker, tid) for tid in range(n_threads)]
+            for f in futures:
+                f.result()
+
+        rules = L.list_rules(p)
+        self.assertEqual(len(rules), n_threads * n_items)
+        raw_lines = (Path(p) / "pronunciation.jsonl").read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(raw_lines), n_threads * n_items)
+        for line in raw_lines:
+            self.assertTrue(line.strip())
+            json.loads(line)
+
     def test_upsert_updates_value(self):
         # СУД БЛОКЕР 1: повторне збереження того самого слова з НОВИМ значенням →
         # активним стає НОВЕ (upsert), не застрягає старе; статус "updated".
@@ -187,7 +211,6 @@ class TestWorkerIntegration(unittest.TestCase):
     span-map (raw-координати оригіналу) — караоке Хвилі 2 лишається коректним."""
 
     def test_lexicon_snapshot_applied_in_worker(self):
-        import os as _os
         import tempfile as _tf
         from whisper_core.tts import worker as W
         from whisper_core.tts.engines.fake import FakeTtsEngine

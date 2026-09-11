@@ -272,7 +272,6 @@ for _rt_dll in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
 _COMMON_EXCLUDES = [
     "matplotlib", "tkinter", "_tkinter",        # не використовуються
     "pytest", "_pytest", "unittest",            # тестові бібліотеки
-    "aiogram",                                  # telegram-фронт не для desktop
 ]
 
 a = Analysis(
@@ -284,7 +283,6 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=_sherpa_runtime_hooks,
     excludes=_COMMON_EXCLUDES + [
-        "fronts.telegram",                         # telegram-фронт не для desktop-збірки
         "IPython", "jedi",
         # GPL-пакети GUI-автоматизації: у коді не імпортуються, але могли б лишитись
         # у venv транзитивно від PyAutoGUI. Явно виключаємо, щоб GPL-код НІКОЛИ не
@@ -421,6 +419,7 @@ if "tts" in _build_components:
         runtime_hooks=_sherpa_runtime_hooks,
         excludes=_COMMON_EXCLUDES + [
             "fronts", "PySide6",                    # воркер БЕЗ Qt/GUI
+            "aiogram", "fronts.telegram",           # воркер БЕЗ telegram
         ],
         noarchive=False,
     )
@@ -469,6 +468,7 @@ if "protocol" in _build_components:
         runtime_hooks=_sherpa_runtime_hooks,
         excludes=_COMMON_EXCLUDES + [
             "fronts", "PySide6",                      # воркер БЕЗ Qt/GUI
+            "aiogram", "fronts.telegram",             # воркер БЕЗ telegram
             "torch", "torchaudio", "transformers", "styletts2_inference",
             "tts_uk", "vocos",                        # і без TTS-стека
         ],

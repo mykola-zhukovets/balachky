@@ -613,6 +613,7 @@ STRINGS = {
         "rec_scan": "Перевірити стандартні папки",
         "rec_not_in_folder": "У цій папці моделі немає.",
         "rec_scan_none": "У звичайних папках моделі немає.",
+        "rec_license_line": "Ліцензія моделі: <a href=\"{url}\">{license}</a>. Автор моделі — NVIDIA; програма лише завантажує її за Вашою згодою.",
 
         # --- Налаштування ---
         "set_restart": "запрацює після перезапуску програми",
@@ -673,7 +674,9 @@ STRINGS = {
         "models_hub_tts_ram": "~0,5 ГБ ОЗП",
         "models_hub_punc_ram": "~200 МБ ОЗП",
         "models_hub_preset_turbo": "Швидка (large-v3-turbo)",
+        "models_hub_preset_large_v2": "Точна, альтернатива (large-v2)",
         "models_hub_preset_large_v3": "Найточніша (large-v3)",
+        "models_hub_preset_parakeet": "Parakeet (нова, українська та європейські мови)",
         "models_hub_preset_pyannote": "Pyannote 3.0",
         "models_hub_not_configured": "Не налаштовано",
         "models_hub_preset_gemma_fast": "Швидка (Gemma 4 E4B)",
@@ -736,12 +739,13 @@ STRINGS = {
         "set_screen_protection_state_disable_failed": "Не вдалося зняти захист екрана. Перезапустіть Балачки перед записом екрана, бо їхні вікна можуть лишатися прихованими.",
         "set_panic_hotkey": "Комбінація панічного блокування",
         "set_panic_hotkey_hint": "Затисніть, щоб заблокувати сховище й згорнути вікно.",
-        "hint_panic_hotkey": "Вивантажує ключі шифрування з пам’яті, видаляє тимчасові файли Балачок, очищає буфер обміну та згортає вікно. Якщо якусь дію не завершено, програма назве її.",
-        "panic_toast_locked": "Сховище заблоковано, тимчасові файли видалено, буфер обміну очищено, вікно згорнуто",
+        "hint_panic_hotkey": "Прибирає ключі шифрування з пам’яті програми й збережені голоси співрозмовників, видаляє тимчасові файли Балачок, очищає буфер обміну та згортає вікно. Це не гарантує, що байти ключа ніде більше не залишились (наприклад, у файлі підкачки). Якщо якусь дію не завершено, програма назве її.",
+        "panic_toast_locked": "Сховище заблоковано, збережені голоси прибрано, тимчасові файли видалено, буфер обміну очищено, вікно згорнуто",
         "panic_toast_partial": "Панічне блокування виконано не повністю: не вдалося {items}. Закрийте інші програми й натисніть комбінацію ще раз, щоб довершити очищення.",
         "panic_step_meeting_cache": "видалити відкриті тимчасові копії нарад",
         "panic_step_temp_files": "видалити тимчасові файли",
-        "panic_step_keys": "вивантажити ключі шифрування з пам’яті",
+        "panic_step_keys": "прибрати ключі шифрування з пам’яті програми",
+        "panic_step_voice_memory": "прибрати збережені голоси співрозмовників",
         "panic_step_clipboard": "очистити буфер обміну",
         "panic_step_window": "згорнути вікно",
         "set_about_eyebrow": "ПРО ПРОГРАМУ",
@@ -801,10 +805,20 @@ STRINGS = {
         "stt_preset_turbo_hint": "large-v3-turbo, ~1,5 ГБ на диску. Швидка модель, яка підходить більшості користувачів. Якщо не знаєте, що обрати, оберіть її.",
         "stt_preset_turbo_cpu": "На процесорі: працює жваво, вимоги до "
                                 "оперативної пам’яті помірні.",
+        "stt_preset_large_v2": "Точна, альтернатива (large-v2)",
+        "stt_preset_large_v2_hint": "large-v2, ~2,9 ГБ на диску. Попередниця найточнішої моделі: працює так само повільно, а точність на Ваших записах може бути як вищою, так і нижчою — перевірте на своїх записах. Корисна, якщо найточніша модель домислює слова.",
+        "stt_preset_large_v2_cpu": "На процесорі: працює повільніше, потребує "
+                                   "більше оперативної пам’яті й часу.",
         "stt_preset_large_v3": "Найточніша (large-v3)",
         "stt_preset_large_v3_hint": "Найвища якість, але працює повільніше. Займає ~2,9 ГБ на диску. На процесорі потребує більше часу, для відеокарти достатньо ~4 ГБ пам’яті.",
         "stt_preset_large_v3_cpu": "На процесорі: працює повільніше, потребує "
                                    "більше оперативної пам’яті й часу.",
+        # feature/stt-sherpa-parakeet: другий рушій (sherpa-onnx), працює на процесорі
+        "stt_preset_parakeet": "Parakeet — українська та європейські мови",
+        "stt_preset_parakeet_hint": "Parakeet, ~670 МБ на диску. Модель NVIDIA для 25 європейських мов: на наших записах українською робила менше помилок за швидку модель і працює швидко навіть на процесорі — відеокарта не потрібна. Найточніша модель на відеокарті лишається точнішою.",
+        "stt_preset_parakeet_cpu": "На процесорі: працює швидко, оперативної пам’яті "
+                                   "потрібно близько 2 ГБ.",
+        "stt_sherpa_note": "Мову ця модель визначає сама, тому вибір мови розпізнавання на неї не діє; підсвітки непевних слів для неї немає.",
         # {vram}/{compute} підставляє settings.py (таблиця _GPU_VRAM під точність)
         "stt_hw_gpu": "На відеокарті: {vram} відеопам’яті ({compute}), швидко.",
         # вибір точності обчислень (compute_type) — керує відеопам’яттю/якістю
@@ -918,6 +932,66 @@ STRINGS = {
         "set_upd_dl_failed": "Не вдалося завантажити оновлення",
         "set_autostart_title": "Запускати разом з Windows",
         "set_autostart_fail": "Не вдалося змінити автозапуск. Перевірте права Windows і спробуйте знову. Деталі записані в журналі.",
+
+
+        # --- Telegram / Віддалений доступ ---
+        "set_telegram_eyebrow": "TELEGRAM",
+        "set_telegram_title": "Розшифровка в Telegram",
+        "set_telegram_body": "Надсилайте боту голосові повідомлення в приватному чаті. Балачки розшифрують їх на цьому комп’ютері й повернуть текст туди ж. Це працює, поки комп’ютер увімкнений, а Балачки запущені.",
+        "set_telegram_privacy": "Голосове й готова розшифровка проходять через сервери Telegram у звичайному чаті з ботом (Bot API). Це не секретний чат із наскрізним шифруванням (E2EE). Балачки розшифровують голосове на Вашому комп’ютері, не надсилають його іншим службам розпізнавання й не додають до історії.",
+        "set_telegram_token_label": "Ключ доступу бота (token)",
+        "set_telegram_token_placeholder": "Вставте ключ від BotFather",
+        "set_telegram_token_hint": "Після перевірки Балачки збережуть ключ під захистом Вашого облікового запису Windows. Він не потрапить до файлу налаштувань чи звіту про помилку.",
+        "set_telegram_connect": "Перевірити й підключити",
+        "set_telegram_replace_token": "Замінити ключ…",
+        "set_telegram_enable": "Увімкнути Telegram-бота",
+        "set_telegram_status_label": "Стан",
+        "set_telegram_status_not_configured": "Не налаштовано",
+        "set_telegram_status_checking": "Перевіряю ключ…",
+        "set_telegram_status_waiting_pair": "Очікує підключення приватного чату",
+        "set_telegram_status_active": "Працює: {bot_name}",
+        "set_telegram_status_disabled": "Вимкнено",
+        "set_telegram_status_no_connection": "Немає зв’язку",
+        "set_telegram_status_error": "Помилка",
+        "set_telegram_status_shutdown_unconfirmed": "Зупинку бота не підтверджено. Спробуйте від’єднати його ще раз.",
+        "set_telegram_pair_expires": "Посилання діє до {expires_at}",
+        "set_telegram_pair_instruction": "Telegram відкриється з готовим запрошенням. Натисніть /start, щоб підключити цей приватний чат.",
+        "set_telegram_pair_open": "Підключити приватний чат…",
+        "set_telegram_pair_open_hint": "Відкриє Вашого бота в Telegram з одноразовим посиланням. Воно діє 10 хвилин і спрацьовує лише один раз.",
+        "telegram_reply_pair_success": "Цей приватний чат підключено до Балачок. Тепер надішліть голосове повідомлення.",
+        "telegram_error_pair_link": "Це одноразове посилання вже не діє. Поверніться до Налаштувань Балачок і натисніть “Підключити приватний чат…” ще раз.",
+        "set_telegram_disconnect": "Від’єднати…",
+        "set_telegram_disconnect_title": "Від’єднати Telegram-бота?",
+        "set_telegram_disconnect_body": "Балачки зупинять бота й видалять ключ лише з цього комп’ютера разом із даними підключеного акаунта. Від’єднання не відкликає ключ у BotFather і не видаляє повідомлення чи резервні копії Telegram.",
+        "set_telegram_disconnect_confirm": "Від’єднати бота",
+        "set_telegram_disconnect_keep": "Залишити підключеним",
+        "set_telegram_botfather_title": "Створіть свого бота",
+        "set_telegram_botfather_body": "У Telegram відкрийте офіційний @BotFather, надішліть /newbot і дотримуйтеся підказок. Створіть окремого бота для Балачок, а отриманий ключ вставте нижче.",
+        "set_telegram_botfather_open": "Відкрити BotFather…",
+        "telegram_reply_start": "Щоб підключити цей приватний чат, відкрийте Налаштування Балачок на комп’ютері й натисніть “Підключити приватний чат…”. Після підключення надсилайте сюди голосові повідомлення.",
+        "telegram_reply_help": "Надішліть голосове повідомлення в приватному чаті. Ліміт: {limit_mib} МіБ і не довше {limit_minutes} хвилин.\n\n/status: перевірити стан бота\n/privacy: дізнатися, як обробляється голосове",
+        "telegram_reply_status": "Бот працює. Балачки готові розшифровувати приватні голосові на Вашому комп’ютері.",
+        "telegram_reply_privacy": "Голосове й готова розшифровка проходять через сервери Telegram у звичайному чаті з ботом (Bot API). Це не секретний чат із наскрізним шифруванням (E2EE). Балачки розшифровують голосове на Вашому комп’ютері, не надсилають його іншим службам розпізнавання й не додають до історії.",
+        "set_telegram_error_token_invalid": "Бота не підключено: Telegram не прийняв цей ключ. Перевірте, чи скопіювали його повністю; якщо ключ відкликано, отримайте новий у BotFather.",
+        "set_telegram_error_no_network": "Балачки не можуть зв’язатися з Telegram: немає доступу до мережі або Telegram тимчасово недоступний. Перевірте інтернет. Підключення відновиться автоматично.",
+        "set_telegram_error_bot_in_use": "Бот уже запущений в іншій програмі або на іншому комп’ютері, тому Балачки не можуть його ввімкнути. Зупиніть бота там і спробуйте ще раз.",
+        "set_telegram_error_webhook": "Бот уже підключений до іншого сервісу через веб-підключення (webhook), тому Балачки не отримують його повідомлення. Вимкніть це підключення в іншому сервісі або створіть нового бота в BotFather.",
+        "telegram_error_unauthorized": "Цей акаунт не підключений до бота. Підключіть свій приватний чат у Налаштуваннях Балачок.",
+        "telegram_error_private_only": "Бот працює лише в приватному чаті. Відкрийте чат із ботом напряму й надішліть голосове там.",
+        "telegram_error_file_too_large": "Це голосове завелике: ліміт {limit_mib} МіБ. Запишіть коротше повідомлення й надішліть його.",
+        "telegram_error_voice_too_long": "Це голосове довше за {limit_minutes} хвилин, тому Балачки його не прийняли. Запишіть коротше повідомлення й надішліть його.",
+        "telegram_error_queue_full": "Балачки вже розшифровують одне голосове, а ще одне чекає. Це повідомлення не прийнято. Дочекайтеся завершення й надішліть його знову.",
+        "telegram_error_model_missing": "Розшифровка не почалась: модель розпізнавання ще не завантажена. Відкрийте Налаштування Балачок на комп’ютері, оберіть модель і завантажте її.",
+        "telegram_error_generic": "Балачки не завершили розшифровку через збій. Надішліть голосове ще раз. Якщо помилка повториться, перевірте розпізнавання голосу в програмі на комп’ютері.",
+        "telegram_reply_unsupported": "Бот приймає лише голосові повідомлення Telegram у приватному чаті. Відкрийте чат із ботом і запишіть голосове там.",
+        "telegram_progress_received": "Прийнято",
+        "telegram_progress_transcribing": "Розшифровую…",
+        "telegram_progress_done": "Готово",
+        "telegram_transcript_filename": "розшифровка-{timestamp}.txt",
+        "nav_remote": "Віддалено",
+        "hist_from_remote": "з іншого пристрою",
+        "remote_feed_title": "Голосові з інших пристроїв",
+        "remote_feed_empty": "Тут з’являтимуться голосові повідомлення, надіслані боту в Telegram.",
 
         # --- Історія ---
         "hist_subtitle": "Минулі розшифровки — з голосу і з файлів. "
@@ -1342,10 +1416,27 @@ STRINGS = {
         "meeting_exp_txt": "Текст (.txt)",
         "meeting_exp_md": "Markdown (.md)",
         "meeting_exp_json": "Структурований JSON (.json)",
+        "meeting_exp_srt": "Субтитри для відеоплеєра (.srt)",
+        "meeting_exp_vtt": "Субтитри для сайтів (.vtt)",
         "meeting_save_json": "Зберегти .json",
         "meeting_exp_source_labels": "Хто говорить (Я / Співрозмовники)",
         "meeting_saved": "Збережено: {name}",
         "meeting_save_fail": "Не вдалося зберегти файл.",
+        # issue #16: «Спробувати іншою моделлю» для наради.
+        "meeting_retry_model_menu": "Спробувати іншою моделлю",
+        "meeting_retry_model_none": "Інших встановлених моделей немає",
+        "meeting_retry_model_missing": "Аудіо цієї наради не знайдено — його "
+                                       "перемістили або видалили.",
+        "meeting_retry_model_busy": "Повторне розпізнавання цієї наради вже триває.",
+        "meeting_retry_model_running": "Розпізнаю нараду іншою моделлю…",
+        "meeting_retry_model_fail": "Не вдалося розпізнати нараду іншою моделлю.",
+        "meeting_retry_model_done": "Готово. Додано ще одну версію розшифровки.",
+        "meeting_retry_model_edits_note": "У тексті є ваші правки — вони "
+                                          "збережені окремо і нікуди не зникнуть.",
+        "meeting_version_menu": "Версія",
+        "meeting_version_original": "Оригінал",
+        "meeting_version_edit_locked": "Правки доступні лише для оригіналу — "
+                                       "перемкніться на оригінал, щоб редагувати.",
         "meeting_open_folder": "Відкрити папку наради",
         "meeting_obsidian_send": "До Obsidian",
         "meeting_obsidian_open": "Відкрити в Obsidian",
@@ -1372,22 +1463,28 @@ STRINGS = {
                                    "SHA-256 {sha}). Основні аудіо та текст збережено.",
         # блокер Т56: пошкоджений журнал цілісності
         "meeting_audit_corrupt_row": "“Пошкоджений запис”",
-        # Текст живе у трей-сповіщенні (showMessage): Windows ріже балон після
-        # ~256 знаків, тож причина, наслідок і дія мусять уміститися до межі.
-        "meeting_audit_corrupt_warn": "Журнал перевірок цієї наради пошкоджено: нові дії "
-                                      "більше не фіксуються, і пакет для комісії покаже "
-                                      "позначку “пошкоджено”. Саме аудіо й текст цілі — "
-                                      "збережіть їх окремою копією, якщо знадобляться "
-                                      "як доказ.",
-        "meeting_audit_deleted_warn": "Журнал перевірок наради не оновлено — "
-                                      "програма вважає цю нараду видаленою. "
-                                      "Перевірте, чи відкрили правильну нараду.",
-        "meeting_audit_timeout_warn": "Подію журналу цілісності не записано — "
-                                      "журнал зайнятий іншим процесом. "
+        # Короткий текст для трей-тосту (showMessage): Windows відкидає тости довші
+        # ~256 символів, тож деталі, які не влізли, людина бачить у журналі наради.
+        "meeting_audit_corrupt_warn": "Журнал наради пошкоджено: нові дії "
+                                      "до нього більше не записуються, а пакет "
+                                      "перевірки вважатиметься пошкодженим. Аудіо та "
+                                      "розшифровка цілі — збережіть окрему копію, якщо вони "
+                                      "потрібні як доказ.",
+        "meeting_audit_deleted_warn": "Подію журналу перевірки не записано, "
+                                      "бо програма вважає цю нараду видаленою. "
+                                      "Перевірте, чи відкрили потрібну нараду.",
+        "meeting_audit_timeout_warn": "Подію журналу цілісності не записано, "
+                                      "бо журнал зайнятий іншим процесом. "
                                       "Спробуйте ще раз.",
-        "meeting_audit_unavailable_warn": "Подію журналу цілісності не записано — "
-                                          "журнал недоступний. Перевірте доступ "
+        "meeting_audit_unavailable_warn": "Подію журналу цілісності не записано, "
+                                          "бо журнал недоступний. Перевірте доступ "
                                           "до папки наради й спробуйте ще раз.",
+        "meeting_audit_signing_warn": "Нові події до цієї наради неможливо записати "
+                                      "без попереднього ключа підпису. Події нових "
+                                      "нарад підписуватимуться новим ключем.",
+        "meeting_audit_signing_rotated_warn": "Створено новий ключ підпису. Старі "
+                                              "наради лишаються підписані попереднім ключем — "
+                                              "нові події до них додати неможливо.",
         # feature/evidence-plus: підтвердження перегляду (принцип «чотирьох очей»)
         "meeting_review_button": "Підтвердити перегляд",
         "meeting_review_title": "Підтвердження перегляду",
@@ -1544,6 +1641,14 @@ STRINGS = {
         "meeting_search_prev": "Попередній збіг",
         "meeting_search_next": "Наступний збіг",
         "meeting_search_close": "Закрити пошук",
+        "meeting_speaker_filter_all": "Усі",
+        "meeting_speaker_filter_hint": "Показати лише репліки цього мовця",
+        "meeting_speaker_filter_row": "Ряд фільтрів мовців",
+        "meeting_speaker_prev": "Попередня репліка мовця",
+        "meeting_speaker_next": "Наступна репліка мовця",
+        "meeting_speaker_solo": "Грати лише обраного",
+        "meeting_speaker_gap": "Зазор між репліками",
+        "meeting_speaker_gap_s": "{n} с",
         "rec_label": "Диктофон",
         "rec_start": "Почати запис",
         "rec_stop": "Зупинити й зберегти",
@@ -2073,8 +2178,12 @@ STRINGS = {
         "set_meeting_encrypt": "Шифрувати завершені наради",
         "set_meeting_encrypt_hint": "Наради шифруються після зупинки. Під час запису аудіо, відео й службові файли лежать на цьому комп’ютері відкрито. Типово ключ захищає Ваш обліковий запис Windows (DPAPI).",
         "set_meeting_encrypt_password_warn": "Якщо сховище закрите паролем, а програма аварійно завершиться під час запису, відкриті файли лишаться, доки Ви не відкриєте сховище й програма їх не дошифрує.",
-        "hint_meeting_encrypt": "Шифрування захищає збережені наради від перегляду сторонніми. Запис, який триває просто зараз, і відкрита програма лишаються незахищеними від прямого доступу в Windows.",
-        "meeting_error_key_lost": "Файл ключа сховища (“.vaultkey”) пошкоджено або зник. Зашифровані наради не можна відкрити в програмі: код відновлення тут не допоможе, бо зберігався в тому самому файлі. Єдиний шлях — повернути на місце резервну копію цього файлу, якщо вона є.",
+        "hint_meeting_encrypt": "Шифрування захищає збережені наради від перегляду сторонніми. Запис, який триває просто зараз, та відкрите вікно програми лишаються незахищеними від прямого доступу у Windows.",
+        "set_history_encrypt_label": "Захист історії",
+        "set_history_encrypt": "Шифрувати текст в історії диктування",
+        "set_history_encrypt_hint": "Збережені тексти диктувань буде зашифровано на цьому комп’ютері. Ключ захищає Ваш обліковий запис Windows; типово ця опція вимкнена.",
+        "history_encrypt_error": "Не вдалося змінити захист історії. Перевірте доступ до папки профілю й спробуйте ще раз.",
+        "meeting_error_key_lost": "Файл ключа сховища (“.vaultkey”) пошкоджено або видалено. Зашифровані наради відкрити у програмі не вдасться: код відновлення тут не допоможе, бо зберігався в тому ж файлі. Єдиний спосіб повернути доступ — відновити резервну копію цього файла, якщо вона є.",
         # Той самий VaultPasswordRequired прилітає і для сховища з файлом-ключем,
         # тому текст не називає лише пароль. Код відновлення (unlock_with_recovery
         # у storage_crypto.py) відкриває сховище в усіх цих режимах — тож текст
@@ -2799,6 +2908,7 @@ STRINGS = {
         "rec_scan": "Check standard folders",
         "rec_not_in_folder": "There’s no model in that folder.",
         "rec_scan_none": "The model isn’t in the standard folders.",
+        "rec_license_line": "Model license: <a href=\"{url}\">{license}</a>. The model is made by NVIDIA; the app only downloads it with your consent.",
 
         # --- Settings ---
         "set_restart": "takes effect after you restart the app",
@@ -2878,7 +2988,9 @@ STRINGS = {
         "models_hub_tts_ram": "~0.5 GB RAM",
         "models_hub_punc_ram": "~200 MB RAM",
         "models_hub_preset_turbo": "Fast (large-v3-turbo)",
+        "models_hub_preset_large_v2": "Accurate, alternative (large-v2)",
         "models_hub_preset_large_v3": "Most accurate (large-v3)",
+        "models_hub_preset_parakeet": "Parakeet (new, Ukrainian and European languages)",
         "models_hub_preset_pyannote": "Pyannote 3.0",
         "models_hub_not_configured": "Not configured",
         "models_hub_preset_gemma_fast": "Fast (Gemma 4 E4B)",
@@ -2941,12 +3053,13 @@ STRINGS = {
         "set_screen_protection_state_disable_failed": "Screen protection couldn’t be turned off. Restart Balachky before recording your screen because its windows may remain hidden.",
         "set_panic_hotkey": "Panic lock shortcut",
         "set_panic_hotkey_hint": "Hold to lock the vault and minimize the window.",
-        "hint_panic_hotkey": "Unloads encryption keys from memory, deletes Balachky temporary files, clears the clipboard, and minimizes the window. If any action cannot be completed, Balachky names it.",
-        "panic_toast_locked": "Vault locked, temporary files deleted, clipboard cleared, window minimized",
+        "hint_panic_hotkey": "Clears encryption keys from the program’s memory and saved voiceprints of interlocutors, deletes Balachky temporary files, clears the clipboard, and minimizes the window. This does not guarantee the key bytes are gone everywhere else (for example, the page file). If any action cannot be completed, Balachky names it.",
+        "panic_toast_locked": "Vault locked, saved voices removed, temporary files deleted, clipboard cleared, window minimized",
         "panic_toast_partial": "Panic lock did not complete fully: could not {items}. Close other apps and press the shortcut again to finish clearing.",
         "panic_step_meeting_cache": "delete open temporary meeting copies",
         "panic_step_temp_files": "delete temporary files",
-        "panic_step_keys": "unload encryption keys from memory",
+        "panic_step_keys": "clear encryption keys from the program’s memory",
+        "panic_step_voice_memory": "remove saved voiceprints of interlocutors",
         "panic_step_clipboard": "clear the clipboard",
         "panic_step_window": "minimize the window",
         "set_about_eyebrow": "ABOUT",
@@ -3020,12 +3133,30 @@ STRINGS = {
                                  "most people. If unsure, pick this one.",
         "stt_preset_turbo_cpu": "On a processor: runs briskly, RAM needs are "
                                 "moderate.",
+        "stt_preset_large_v2": "Accurate, alternative (large-v2)",
+        "stt_preset_large_v2_hint": "large-v2, ~2.9 GB on disk. The predecessor of "
+                                    "the most accurate model: just as slow, and its accuracy "
+                                    "on your recordings may be higher or lower — check on your "
+                                    "own recordings. Useful when the most accurate model "
+                                    "invents words.",
+        "stt_preset_large_v2_cpu": "On a processor: runs slower, needs more RAM "
+                                   "and time.",
         "stt_preset_large_v3": "Most accurate (large-v3)",
         "stt_preset_large_v3_hint": "The best quality, but slower. Uses ~2.9 GB of "
                                     "disk space. It takes longer on a processor and "
                                     "needs about 4 GB of graphics memory.",
         "stt_preset_large_v3_cpu": "On a processor: runs slower, needs more RAM "
                                    "and time.",
+        # feature/stt-sherpa-parakeet: second engine (sherpa-onnx), runs on the processor
+        "stt_preset_parakeet": "Parakeet — Ukrainian and European languages",
+        "stt_preset_parakeet_hint": "Parakeet, ~670 MB on disk. An NVIDIA model for 25 European "
+                                    "languages: on our Ukrainian recordings it made fewer mistakes "
+                                    "than the fast model and runs fast even on a processor — no "
+                                    "graphics card needed. The most accurate model on a graphics "
+                                    "card is still more accurate.",
+        "stt_preset_parakeet_cpu": "On a processor: runs fast, needs about 2 GB of RAM.",
+        "stt_sherpa_note": "This model detects the language itself, so the recognition language "
+                           "setting does not apply to it; it has no uncertain-word highlighting.",
         "stt_hw_gpu": "On a graphics card: {vram} of video memory ({compute}), fast.",
         "set_compute": "Compute precision",
         "set_compute_int8": "Economy (int8) — least video memory",
@@ -3178,6 +3309,66 @@ STRINGS = {
         "set_autostart_fail": "Couldn’t change the startup setting. Check "
                               "Windows permissions and try again. Technical "
                               "details were saved to the log.",
+
+
+        # --- Telegram / Remote access ---
+        "set_telegram_eyebrow": "TELEGRAM",
+        "set_telegram_title": "Transcribe in Telegram",
+        "set_telegram_body": "Send the bot voice messages in a private chat. Balachky transcribes them on this computer and returns the text to the same chat. This works while your computer is on and Balachky is running.",
+        "set_telegram_privacy": "Your voice message and finished transcript pass through Telegram’s servers in a regular bot chat (Bot API). This isn’t a Secret Chat and doesn’t use end-to-end encryption (E2EE). Balachky transcribes the message on your computer, doesn’t send it to another transcription service, and doesn’t add it to your history.",
+        "set_telegram_token_label": "Bot access key (token)",
+        "set_telegram_token_placeholder": "Paste the key from BotFather",
+        "set_telegram_token_hint": "After Telegram accepts it, Balachky stores the key protected by your Windows account. It isn’t written to settings files or error reports.",
+        "set_telegram_connect": "Check and connect",
+        "set_telegram_replace_token": "Replace key…",
+        "set_telegram_enable": "Turn on the Telegram bot",
+        "set_telegram_status_label": "Status",
+        "set_telegram_status_not_configured": "Not set up",
+        "set_telegram_status_checking": "Checking key…",
+        "set_telegram_status_waiting_pair": "Waiting to connect a private chat",
+        "set_telegram_status_active": "Running as {bot_name}",
+        "set_telegram_status_disabled": "Off",
+        "set_telegram_status_no_connection": "No connection",
+        "set_telegram_status_error": "Error",
+        "set_telegram_status_shutdown_unconfirmed": "Bot shutdown wasn’t confirmed. Try disconnecting it again.",
+        "set_telegram_pair_expires": "Link expires at {expires_at}",
+        "set_telegram_pair_instruction": "Telegram will open with the invitation ready. Tap /start to connect this private chat.",
+        "set_telegram_pair_open": "Connect private chat…",
+        "set_telegram_pair_open_hint": "Opens your bot in Telegram with a one-time link. The link works once and expires after 10 minutes.",
+        "telegram_reply_pair_success": "This private chat is now connected to Balachky. Send a voice message when you’re ready.",
+        "telegram_error_pair_link": "This one-time link is no longer valid. Return to Balachky settings and select “Connect private chat…” again.",
+        "set_telegram_disconnect": "Disconnect…",
+        "set_telegram_disconnect_title": "Disconnect your Telegram bot?",
+        "set_telegram_disconnect_body": "Balachky will stop the bot and remove the key and paired account details only from this computer. Disconnecting doesn’t revoke the token in BotFather or delete Telegram messages or backups.",
+        "set_telegram_disconnect_confirm": "Disconnect bot",
+        "set_telegram_disconnect_keep": "Keep connected",
+        "set_telegram_botfather_title": "Create your bot",
+        "set_telegram_botfather_body": "Open the official @BotFather account in Telegram, send /newbot, and follow its prompts. Create a separate bot for Balachky, then paste the key below.",
+        "set_telegram_botfather_open": "Open BotFather…",
+        "telegram_reply_start": "To connect this private chat, open Balachky settings on your computer and select “Connect private chat…”. Once connected, send your voice messages here.",
+        "telegram_reply_help": "Send a voice message in a private chat. The limit is {limit_mib} MiB and {limit_minutes} minutes.\n\n/status: check whether the bot is ready\n/privacy: see how your voice message is handled",
+        "telegram_reply_status": "The bot is connected. Balachky is ready to transcribe private voice messages on your computer.",
+        "telegram_reply_privacy": "Your voice message and finished transcript pass through Telegram’s servers in a regular bot chat (Bot API). This isn’t a Secret Chat and doesn’t use end-to-end encryption (E2EE). Balachky transcribes the message on your computer, doesn’t send it to another transcription service, and doesn’t add it to your history.",
+        "set_telegram_error_token_invalid": "The bot wasn’t connected because Telegram rejected this key. Make sure you copied the entire key; if it was revoked, get a new one from BotFather.",
+        "set_telegram_error_no_network": "Balachky can’t reach Telegram because the network is unavailable or Telegram is temporarily down. Check your internet connection. Balachky will reconnect automatically.",
+        "set_telegram_error_bot_in_use": "The bot is already running in another app or on another computer, so Balachky can’t start it. Stop the bot there and try again.",
+        "set_telegram_error_webhook": "The bot is connected to another service through a web connection (webhook), so Balachky can’t receive its messages. Remove that connection in the other service or create a new bot in BotFather.",
+        "telegram_error_unauthorized": "This account isn’t connected to the bot. Connect your private chat from Balachky settings.",
+        "telegram_error_private_only": "The bot only works in a private chat. Open the bot’s chat and send the voice message there.",
+        "telegram_error_file_too_large": "This voice message is too large. The limit is {limit_mib} MiB. Record a shorter message and send that instead.",
+        "telegram_error_voice_too_long": "This voice message is longer than {limit_minutes} minutes, so Balachky didn’t accept it. Record a shorter message and send that instead.",
+        "telegram_error_queue_full": "Balachky is transcribing one voice message and another is waiting. This message wasn’t accepted. Wait for one to finish, then send this one again.",
+        "telegram_error_model_missing": "Transcription didn’t start because the recognition model hasn’t been downloaded. Open Balachky settings on your computer, choose a model, and download it.",
+        "telegram_error_generic": "Balachky couldn’t finish transcribing this voice message because something went wrong. Send it again. If the error returns, check voice recognition in the app on your computer.",
+        "telegram_reply_unsupported": "The bot only accepts Telegram voice messages in a private chat. Open the bot’s chat and record a voice message there.",
+        "telegram_progress_received": "Received",
+        "telegram_progress_transcribing": "Transcribing…",
+        "telegram_progress_done": "Done",
+        "telegram_transcript_filename": "transcript-{timestamp}.txt",
+        "nav_remote": "Remote access",
+        "hist_from_remote": "from another device",
+        "remote_feed_title": "Voice from other devices",
+        "remote_feed_empty": "Voice messages sent to the bot in Telegram will appear here.",
 
         # --- History ---
         "hist_subtitle": "Past transcripts — from your voice and from files. "
@@ -3654,10 +3845,28 @@ STRINGS = {
         "meeting_exp_txt": "Text (.txt)",
         "meeting_exp_md": "Markdown (.md)",
         "meeting_exp_json": "Structured JSON (.json)",
+        "meeting_exp_srt": "Subtitles for video player (.srt)",
+        "meeting_exp_vtt": "Subtitles for websites (.vtt)",
         "meeting_save_json": "Save .json",
         "meeting_exp_source_labels": "Who’s speaking (Me / Others)",
         "meeting_saved": "Saved: {name}",
         "meeting_save_fail": "Couldn’t save the file.",
+        # issue #16: “Try another model” for a meeting.
+        "meeting_retry_model_menu": "Try another model",
+        "meeting_retry_model_none": "No other installed models",
+        "meeting_retry_model_missing": "This meeting’s audio was not found — "
+                                       "it was moved or deleted.",
+        "meeting_retry_model_busy": "Re-transcribing this meeting is already running.",
+        "meeting_retry_model_running": "Re-transcribing the meeting with another model…",
+        "meeting_retry_model_fail": "Couldn’t re-transcribe the meeting with "
+                                    "another model.",
+        "meeting_retry_model_done": "Done. Another transcript version was added.",
+        "meeting_retry_model_edits_note": "Your edits to the text are kept "
+                                          "separately and won’t be lost.",
+        "meeting_version_menu": "Version",
+        "meeting_version_original": "Original",
+        "meeting_version_edit_locked": "Edits are only available for the "
+                                       "original — switch to Original to edit.",
         "meeting_open_folder": "Open meeting folder",
         "meeting_obsidian_send": "To Obsidian",
         "meeting_obsidian_open": "Open in Obsidian",
@@ -3701,6 +3910,13 @@ STRINGS = {
         "meeting_audit_unavailable_warn": "The integrity journal event wasn’t recorded "
                                           "because the journal is unavailable. Check "
                                           "access to the meeting folder and try again.",
+        "meeting_audit_signing_warn": "No more events can be added to this meeting "
+                                      "without the previous signing key. Events in "
+                                      "new meetings will be signed with the new key.",
+        "meeting_audit_signing_rotated_warn": "A new signing key was created. "
+                                              "Existing meetings remain signed with "
+                                              "the previous key, and no more events "
+                                              "can be added to them.",
         # feature/evidence-plus: second-officer review (four-eyes principle)
         "meeting_review_button": "Confirm review",
         "meeting_review_title": "Confirm review",
@@ -3869,6 +4085,14 @@ STRINGS = {
         "meeting_search_prev": "Previous match",
         "meeting_search_next": "Next match",
         "meeting_search_close": "Close search",
+        "meeting_speaker_filter_all": "All",
+        "meeting_speaker_filter_hint": "Show only this speaker’s lines",
+        "meeting_speaker_filter_row": "Speaker filter row",
+        "meeting_speaker_prev": "Previous speaker line",
+        "meeting_speaker_next": "Next speaker line",
+        "meeting_speaker_solo": "Play only the selected speaker",
+        "meeting_speaker_gap": "Gap between lines",
+        "meeting_speaker_gap_s": "{n} s",
         "rec_label": "Voice recorder",
         "rec_start": "Start recording",
         "rec_stop": "Stop and save",
@@ -4498,6 +4722,10 @@ STRINGS = {
         "set_meeting_encrypt_hint": "Meetings are encrypted after you stop them. During recording, audio, video, and service files are stored unencrypted on this computer. By default, your Windows account protects the key (DPAPI).",
         "set_meeting_encrypt_password_warn": "If the vault is password-protected and the app crashes during recording, the unencrypted files remain until you open the vault and the app finishes encrypting them.",
         "hint_meeting_encrypt": "Encryption protects saved meetings from being viewed by others. A recording in progress and an open app window remain unprotected from direct access in Windows.",
+        "set_history_encrypt_label": "History protection",
+        "set_history_encrypt": "Encrypt text in dictation history",
+        "set_history_encrypt_hint": "Saved dictation text will be encrypted on this computer. Your Windows account protects the key; this option is off by default.",
+        "history_encrypt_error": "History protection couldn’t be changed. Check access to the profile folder and try again.",
         "meeting_error_key_lost": "The vault key file (“.vaultkey”) is damaged or missing. Encrypted meetings cannot be opened in the app: a recovery code will not help here, since it was stored in that same file. The only way back is to restore a backup of this file, if you have one.",
         "meeting_error_vault_locked": "The meeting didn’t start: the recording vault is locked. On the “Meeting” page, enter your password or key file. Forgot your password? Click the “Forgot password” link — a recovery code will unlock the vault.",
         "set_vault_pw_label": "Vault password",

@@ -405,7 +405,7 @@ class DesktopMigrationsTests(unittest.TestCase):
             self.assertEqual((cpu_cfg.device, cpu_cfg.compute_type), ("cpu", "int8"))
             return cpu
 
-        with patch("fronts.desktop.app.Engine", side_effect=build_cpu):
+        with patch("fronts.desktop.app.make_engine", side_effect=build_cpu):
             result = DesktopApp._transcribe_with_fallback(
                 controller, "same-audio", object())
         self.assertEqual(result, expected)
@@ -857,8 +857,87 @@ class DeleteModelTests(unittest.TestCase):
             (snap / "model.bin").write_bytes((repo / "blobs" / "model.bin").read_bytes())
             (snap / "config.json").write_bytes((repo / "blobs" / "config.json").read_bytes())
 
+            # Запис у snapshots/<rev>/ лежить на два рівні глибше за теку моделі,
+            # тож дворівневий відбиток кешу (perf/models-size-cache) його не
+            # бачить — і другий виклик міг би повернути закешоване значення, а
+            # не перерахувати дедуп. Регрес-тест перевіряє САМЕ перерахунок,
+            # тому кеш скидаємо явно (суд 06.09: без цього тест ловив мутацію
+            # «дедуп вимкнено» лише у 2 прогонах із 5).
+            from whisper_core.models import _forget_dir_size_cache
+            _forget_dir_size_cache(repo)
+
             # та сама модель, ті самі байти — обіцяний розмір не має подвоїтись
             self.assertEqual(model_snapshot_size(hub, REPO_ID), 4196)
+
+    def test_model_snapshot_size_caches_repeat_call(self):
+        """Повторний запит розміру тієї самої моделі НЕ повторює обхід диска
+        (перевірка фактичних викликів обходу лічильником, не self-порівнянням).
+
+        Відбиток тек (_dir_signature) замоканий на СТАЛЕ значення — реальний
+        mtime_ns теки на цій машині "тремтить" від фонових процесів (індексатор/
+        антивірус чіпають %TEMP% асинхронно навіть без жодних наших записів), і
+        тест на наносекундну стабільність реального mtime між двома викликами
+        поспіль був би недетермінованим не через баг, а через шум ОС. Кеш-логіку
+        (порівняння відбитків) це тестує так само точно, без гонки з диском."""
+        import whisper_core.models as models_module
+        from whisper_core.models import model_snapshot_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = Path(tmp) / "hub"
+            hub.mkdir()
+            self._make_repo(hub, blobs=(("model.bin", 4096), ("config.json", 100)))
+
+            with patch("whisper_core.models._dir_signature",
+                      return_value=("frozen", ())), \
+                 patch("whisper_core.models._dir_size",
+                      wraps=models_module._dir_size) as walk:
+                first = model_snapshot_size(hub, REPO_ID)
+                second = model_snapshot_size(hub, REPO_ID)
+
+            self.assertEqual(first, 4196)
+            self.assertEqual(second, 4196)
+            self.assertEqual(walk.call_count, 1)
+
+    def test_model_snapshot_size_recomputes_after_content_change(self):
+        """Зміна відбитка теки (новий blob) дає новий розрахунок розміру, а не
+        застарілий кешований — той самий шум реального mtime_ns на цій машині
+        (див. попередній тест), тож відбиток контрольовано підмінюємо на два
+        різні значення й перевіряємо саму логіку інвалідації кешу."""
+        from whisper_core.models import model_snapshot_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = Path(tmp) / "hub"
+            hub.mkdir()
+            repo = self._make_repo(hub, blobs=(("model.bin", 2048),))
+
+            with patch("whisper_core.models._dir_signature", return_value=("sig1", ())):
+                first = model_snapshot_size(hub, REPO_ID)
+            self.assertEqual(first, 2048)
+
+            (repo / "blobs" / "extra.bin").write_bytes(b"y" * 500)
+            with patch("whisper_core.models._dir_signature", return_value=("sig2", ())):
+                second = model_snapshot_size(hub, REPO_ID)
+
+            self.assertEqual(second, 2548)
+
+    def test_model_snapshot_size_updates_after_install_and_delete(self):
+        """Показаний розмір моделі оновлюється і після встановлення (теку
+        щойно створено), і після видалення (теки більше нема) — не лишається
+        застарілим кешованим значенням."""
+        from whisper_core.models import delete_model, model_snapshot_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = Path(tmp) / "hub"
+            hub.mkdir()
+
+            self.assertEqual(model_snapshot_size(hub, REPO_ID), 0)  # ще не встановлено
+
+            self._make_repo(hub, blobs=(("model.bin", 2048), ("config.json", 8)))
+            self.assertEqual(model_snapshot_size(hub, REPO_ID), 2056)  # встановлено
+
+            freed = delete_model(hub, MODEL_NAME)
+            self.assertEqual(freed, 2056)
+            self.assertEqual(model_snapshot_size(hub, REPO_ID), 0)     # видалено
 
 
 # feature/bulk-import

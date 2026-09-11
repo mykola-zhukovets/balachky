@@ -65,6 +65,13 @@ function Step([string]$Message) {
 
 Step "Преліт: перевірка шляхів"
 
+if (-not (Test-Path $BuildVenv)) {
+    $fallbackVenv = Join-Path $Root ".venv"
+    if (Test-Path $fallbackVenv) {
+        $BuildVenv = $fallbackVenv
+    }
+}
+
 $buildPython = Join-Path $BuildVenv "Scripts\python.exe"
 $pyinstallerExe = Join-Path $BuildVenv "Scripts\pyinstaller.exe"
 $specPath = Join-Path $Root "balachky.spec"

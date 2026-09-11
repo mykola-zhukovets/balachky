@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QPoint, QUrl
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from fronts.desktop.i18n import current_language, set_language, tr
@@ -260,7 +260,10 @@ class TestModelsHubCardLabelsNoWrap(unittest.TestCase):
     def _assert_labels_fit(self, lang):
         from PySide6.QtGui import QFontMetrics
         self._i18n.set_language(lang)
-        _APP.processEvents()
+        self.win.set_page(self.win.pages.indexOf(self.settings))
+        self.settings._tabs.setCurrentIndex(0)
+        for _ in range(5):
+            _APP.processEvents()
         for cid in ("stt", "diarization", "protocol", "tts", "punctuator"):
             row = self.settings._models_hub_rows[cid]
             box = row["box"]
@@ -270,9 +273,16 @@ class TestModelsHubCardLabelsNoWrap(unittest.TestCase):
                 f"[{lang}/{cid}] підписів картки замало — тест виродився")
             for lbl in labels:
                 avail = lbl.contentsRect().width()
+                # невикладений підпис теж має типову ненульову ширину, тож
+                # додатково перевіряємо, що компонування картки справді
+                # змістило його від (0, 0) — інакше "avail > 0" сліпий до
+                # вилучення підпису з layout'а картки.
                 self.assertGreater(
                     avail, 0,
                     f"[{lang}/{cid}] нульова доступна ширина підпису")
+                self.assertNotEqual(
+                    lbl.pos(), QPoint(0, 0),
+                    f"[{lang}/{cid}] підпис {lbl.text()!r} лишився у (0, 0) — не розкладений")
                 fm = QFontMetrics(lbl.font())
                 text_w = fm.horizontalAdvance(lbl.text())
                 self.assertLessEqual(

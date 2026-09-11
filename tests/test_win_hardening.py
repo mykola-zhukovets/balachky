@@ -1288,6 +1288,75 @@ class TestPanicLockReal(unittest.TestCase):
         self.assertEqual(len(notices), 1)
         self.assertEqual(failures, ())
 
+    def test_panic_zeroes_shared_dek_buffer_via_prior_reference(self):
+        """«Вивантажує з пам'яті» мусить бути правдою: занулює СПІЛЬНИЙ
+        bytearray, тож той самий об'єкт, отриманий раніше (наприклад через
+        ensure_dek()), бачить нулі — а не лишається з живим секретом, поки
+        зникає лише запис у словнику-кеші."""
+        root_key = str(self.temp_root / "vault-root")
+        dek = bytearray(b"K" * 32)
+        storage_crypto._PASSWORD_CACHE[root_key] = dek
+        held_reference = dek  # хтось раніше отримав саме цей об'єкт
+
+        app = self._panic_app()
+        with patch("whisper_core.win_hardening.clear_clipboard", return_value=True):
+            failures = DesktopApp.trigger_panic_lock(app)
+
+        self.assertEqual(failures, ())
+        self.assertEqual(len(storage_crypto._PASSWORD_CACHE), 0)
+        self.assertEqual(held_reference, bytearray(32),
+                          "рання посилання на ключ має побачити нулі, а не старий секрет")
+
+    def test_panic_removes_biometric_voice_memory(self):
+        from whisper_core.meeting import voice_memory
+
+        profile_dir = self.temp_root / "profile"
+        profile_dir.mkdir()
+        profile = SimpleNamespace(dir=profile_dir)
+        voice_memory.add_or_update_voice(profile, "Оксана", [1.0] + [0.0] * 191)
+        voice_memory.save_pending_centroids(profile, "sess1", {"speaker_00": [1.0, 0.0]})
+        self.assertTrue((profile_dir / "voices.json").is_file())
+        self.assertTrue((profile_dir / "voice_pending" / "sess1.json").is_file())
+
+        app = self._panic_app()
+        app.profile = profile
+        with patch("whisper_core.win_hardening.clear_clipboard", return_value=True):
+            failures = DesktopApp.trigger_panic_lock(app)
+
+        self.assertEqual(failures, ())
+        self.assertFalse((profile_dir / "voices.json").exists())
+        self.assertFalse((profile_dir / "voice_pending").exists())
+
+    def test_panic_reports_voice_memory_file_that_stays_locked(self):
+        from fronts.desktop.i18n import tr
+        from whisper_core.meeting import voice_memory
+
+        profile_dir = self.temp_root / "profile-locked"
+        profile_dir.mkdir()
+        profile = SimpleNamespace(dir=profile_dir)
+        voice_memory.add_or_update_voice(profile, "Ігор", [1.0] + [0.0] * 191)
+        locked = profile_dir / "voices.json"
+        real_unlink = Path.unlink
+
+        def deny_locked(path, *args, **kwargs):
+            if path == locked:
+                raise PermissionError("file is locked")
+            return real_unlink(path, *args, **kwargs)
+
+        app = self._panic_app()
+        app.profile = profile
+        with patch.object(Path, "unlink", deny_locked), \
+                self.assertLogs(level="ERROR") as logs, \
+                patch("whisper_core.win_hardening.clear_clipboard", return_value=True):
+            failures = DesktopApp.trigger_panic_lock(app)
+
+        notice = app.tray.notify.call_args.args[0]
+        self.assertTrue(locked.exists())
+        self.assertIn("voices.json", "\n".join(logs.output))
+        self.assertIn("panic_step_voice_memory", failures)
+        self.assertIn(tr("panic_step_voice_memory"), notice)
+        self.assertNotEqual(notice, tr("panic_toast_locked"))
+
     def test_panic_step_failure_is_reported_instead_of_full_success(self):
         from fronts.desktop.i18n import tr
 

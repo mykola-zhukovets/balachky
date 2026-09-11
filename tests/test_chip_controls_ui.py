@@ -137,8 +137,11 @@ class ValueSliderChipTests(unittest.TestCase):
 
     def test_slider_fixed_width_not_full(self):
         # Т48: слайдер компактний (фіксована ширина), не тягнеться на всю сторінку.
+        # "maximumWidth > 0" не має зубів: типове (не встановлене) значення
+        # QWIDGETSIZE_MAX теж більше нуля. Фіксована ширина — це коли мінімум
+        # і максимум РІВНІ (саме так працює setFixedWidth), тож звіряємо їх.
         c = self._chip()
-        self.assertGreater(c._slider.maximumWidth(), 0)
+        self.assertEqual(c._slider.maximumWidth(), c._slider.minimumWidth())
         self.assertLess(c._slider.maximumWidth(), 16777215)   # QWIDGETSIZE_MAX
 
     def test_value_change_updates_label_and_emits(self):

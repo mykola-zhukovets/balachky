@@ -17,7 +17,7 @@
     python tests/render_meeting_smoke.py                   # standalone-раннер
 
 Скріншоти станів (спокій/запис/сесії) — у
-C:\\Users\\nikol\\Desktop\\balachky-diag\\meeting-ui\\.
+%USERPROFILE%\\Desktop\\balachky-diag\\meeting-ui\\.
 
 Teardown жорсткий: перед знесенням віджета ЯВНО спиняємо всі його QTimer
 (таймер, що тікає під час GC/деструкції = типова причина 0xC000041D), потім
@@ -392,7 +392,7 @@ class MeetingRenderTests(unittest.TestCase):
         мають мінімум за fontMetrics. Міряємо ТИМИ САМИМИ метриками, що ними
         QLabel малює текст (як scripts/visual_gate.py), тож тест не залежить від
         підміни шрифту offscreen."""
-        from PySide6.QtCore import QRect, Qt
+        from PySide6.QtCore import QPoint, QRect, Qt
         from PySide6.QtGui import QFontMetrics
         from PySide6.QtWidgets import QVBoxLayout, QWidget
         from fronts.desktop.pages.meeting import WrapLabel
@@ -420,7 +420,15 @@ class MeetingRenderTests(unittest.TestCase):
             "підписів карток моделі ШІ не знайдено — тест виродився")
         for lbl in labels:
             avail = lbl.contentsRect().width()
+            # "avail > 0" тривіально проходить і для підпису, вилученого з
+            # компонування карток: невикладений віджет лишається з типовою
+            # ненульовою шириною. Компонування карток має відступи, тож
+            # реально розкладений підпис ніколи не лишається у (0, 0) —
+            # це і перевіряємо, а не голу ненульовість ширини.
             self.assertGreater(avail, 0, f"нульова ширина у {lbl.text()!r}")
+            self.assertNotEqual(
+                lbl.pos(), QPoint(0, 0),
+                f"підпис {lbl.text()!r} лишився у (0, 0) — не розкладений компонуванням")
             flags = int(Qt.TextWordWrap) | int(lbl.alignment())
             need = QFontMetrics(lbl.font()).boundingRect(
                 QRect(0, 0, avail, 1 << 20), flags, lbl.text()).height()
@@ -538,7 +546,7 @@ class MeetingRenderTests(unittest.TestCase):
         page.refresh()
         self._pump()
 
-        self.assertTrue(page._players)
+        self.assertEqual(len(page._players), 1)   # рівно одна нарада у _metas
         player = page._players[-1]
         calls = []
         player.play_from = lambda t, until=None: calls.append(t)
@@ -703,7 +711,11 @@ class MeetingRenderTests(unittest.TestCase):
             len(security), 1,
             "значок стану захисту готової картки — єдиний і має підказку "
             "meeting_security_open_tip")
-        self.assertTrue(security[0].toolTip(), "підказка значка непорожня")
+        # "toolTip() непорожній" — тавтологія: список вже відфільтровано за
+        # непорожньою підказкою. Реальний контракт — значок відкритої наради
+        # має вигляд WARN (жовтий), а не queued/done/error.
+        self.assertEqual(security[0]._kind, StatusTag.WARN,
+                          "значок відкритої наради має бути виду WARN")
 
     def test_process_button_names_result_and_is_visually_prominent(self):
         """Канон побудови сторінок 30.07 п.1-2: живий тест власника — головна
@@ -1232,7 +1244,7 @@ class MeetingRenderTests(unittest.TestCase):
         self._pump()
 
         # плеєр створено; підмінюємо play_from на запис викликів
-        self.assertTrue(page._players)
+        self.assertEqual(len(page._players), 1)   # рівно одна нарада у _metas
         player = page._players[-1]
         calls = []
         player.play_from = lambda t, until=None: calls.append(t)
@@ -1262,7 +1274,7 @@ class MeetingRenderTests(unittest.TestCase):
         page.refresh()
         self._pump()
 
-        self.assertTrue(page._players)
+        self.assertEqual(len(page._players), 1)   # рівно одна нарада у _metas
         player = page._players[-1]
         self.assertIsInstance(player, MultiTrackPlayer)
         self.assertEqual([c.key for c in player._panel.channels], ["mic", "sys"])
@@ -1286,7 +1298,7 @@ class MeetingRenderTests(unittest.TestCase):
         page.refresh()
         self._pump()
 
-        self.assertTrue(page._players)
+        self.assertEqual(len(page._players), 1)   # рівно одна нарада у _metas
         player = page._players[-1]
         self.assertIsInstance(player, InlinePlayer)
         self.assertNotIsInstance(player, MultiTrackPlayer)

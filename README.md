@@ -51,6 +51,8 @@ A deleted meeting first goes to a trash bin and stays there for 7 days — you c
 
 Optional speaker separation (diarization) can mark speakers in the transcript of the Windows system-sound track. You can then replace generic labels with names. If this component is not installed, the meeting can still be recorded and transcribed.
 
+From the meeting page, the transcript can also be exported as subtitles for a video player or a website (SRT, VTT), with speaker names (Me / Others) included if you choose.
+
 The optional local AI protocol turns a completed transcript into a **draft for review** with a summary, decisions, tasks, supporting excerpts, and timestamps. It is not a final record, and important details should be checked against the recording.
 
 > Balachky does not notify participants or collect their consent. Before recording, you are responsible for telling the people involved and following the rules that apply where you are.
@@ -91,7 +93,7 @@ Keep separate dictionaries for different contexts. Import or export them, and le
 
 ### 2. History and exports
 
-Dictation history stays on your computer. Search earlier dictations, review statistics, copy or correct the text, delete entries, and export the results you need.
+Dictation history stays on your computer, with voice messages from other devices (received through remote dictation) shown in their own section. Search earlier dictations, review statistics, copy or correct the text, delete entries, and export the results you need.
 
 ### 3. Offline package
 
@@ -110,6 +112,8 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 - **Meeting protection:** completed meeting files can be encrypted with a separate key. Working files may remain unencrypted while recording is in progress, so the current protection state matters. Integrity records and export tools are available for later verification.
 - **Local AI protocol:** uses a separate local model and component. Its result is a draft that needs review.
 - **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.3-beta installer.
+- **Recognition models:** two options join the default. `Parakeet` (NVIDIA, via sherpa-onnx) covers Ukrainian and 24 other European languages and runs on the processor — no graphics card needed; on our own 20-recording Ukrainian sample, it made fewer mistakes (4.55% of words) than the default model on a graphics card (5.84%). `large-v2` is an alternative to the most accurate model, `large-v3`, for recordings where that one invents words; on the same sample, `large-v3` measured 1.95% word errors and `large-v2` measured 3.25%. The Parakeet package (~670 MB) downloads with your consent, with every file checked, and its license (CC-BY-4.0) is shown before the download.
+- **Remote dictation via Telegram:** connect your personal bot to send voice messages from mobile devices to your PC for local STT transcription (details: [docs/TELEGRAM.md](docs/TELEGRAM.md)).
 - **Voice navigation:** built-in commands let you move between supported document fields and cells. Voice editing depends on a separate local component.
 - **Command line and MCP:** the CLI and MCP server are tools for running Balachky from source. They are not standard features of the Windows installer. See [MCP server documentation](docs/MCP-SERVER.md).
 
@@ -123,6 +127,7 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 | Download an optional component | When you select it during setup or enable it later |
 | Check for updates | When you check manually; periodically only if automatic checks are enabled |
 | Download an app update | When you accept an update, or automatically if you separately enable background downloads |
+| Remote dictation via Telegram | Only while a bot is connected: Balachky exchanges data with `api.telegram.org` to receive voice messages and send back transcripts |
 
 Balachky does not send your voice, audio files, recordings, transcripts, dictionaries, or AI protocol drafts to a server for processing. The app does not require an account.
 

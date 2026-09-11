@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import MethodType, SimpleNamespace
 
@@ -288,6 +289,7 @@ class NavSmokeTests(unittest.TestCase):
         from fronts.desktop.main_window import _PAGES, DictationPage, FilesPage
         from fronts.desktop.pages.meeting import MeetingPage
         from fronts.desktop.pages.screen import ScreenPage
+        from fronts.desktop.pages.remote import RemotePage
         from fronts.desktop.pages.history import HistoryPage
         from fronts.desktop.pages.vocab import VocabPage
         from fronts.desktop.pages.settings import SettingsPage
@@ -298,9 +300,14 @@ class NavSmokeTests(unittest.TestCase):
         # (а) стільки сторінок, скільки пунктів навігації
         self.assertEqual(win.pages.count(), len(_PAGES))
 
-        # (б) строгий порядок класів у стеку
+        # (б) клік по кожному пункту → відкривається саме його сторінка відповідного типу
         expected = [DictationPage, FilesPage, MeetingPage, ScreenPage,
-                    HistoryPage, VocabPage, SettingsPage, SearchPage]
+                    RemotePage, HistoryPage, VocabPage, SettingsPage, SearchPage]
+        # Сторінки ліниві (perf/lazy-pages): у стеку до першого відкриття стоять
+        # QWidget-заповнювачі, тому спершу матеріалізуємо всі й лише тоді звіряємо
+        # порядок класів зі списком навігації.
+        for i in range(win.pages.count()):
+            win._ensure_page(i)
         actual = [type(win.pages.widget(i)) for i in range(win.pages.count())]
         self.assertEqual(actual, expected)
 
@@ -308,6 +315,7 @@ class NavSmokeTests(unittest.TestCase):
         for i in range(len(_PAGES)):
             win.set_page(i)
             self.assertEqual(win.pages.currentIndex(), i)
+            self.assertIsInstance(win.pages.currentWidget(), expected[i])
 
     def test_search_nav_button_opens_search_page(self):
         """feature/global-search: пункт «Пошук» веде САМЕ на SearchPage (а не на
@@ -372,7 +380,7 @@ class NavSmokeTests(unittest.TestCase):
         win = self._window()
         win.resize(1000, 720)
         win.show()
-        win.set_page(5)                    # індекс «Словники» у _PAGES
+        win.set_page(win.pages.indexOf(win.vocab))
         self._app.processEvents()
 
         # (а) повні підписи кнопок дій — жодного обрізання
@@ -402,7 +410,7 @@ class NavSmokeTests(unittest.TestCase):
         win = self._window()
         win.resize(1280, 1044)            # клієнтська висота як на 1080p
         win.show()
-        win.set_page(5)                   # «Словники»
+        win.set_page(win.pages.indexOf(win.vocab))
         self._app.processEvents()
 
         self.assertIsNotNone(
@@ -520,6 +528,13 @@ class NavSmokeTests(unittest.TestCase):
         controller.set_model = MethodType(DesktopApp.set_model, controller)
         controller.installed_model_names = MethodType(
             DesktopApp.installed_model_names, controller)
+        # «Порожній кеш» має стосуватись і пакетів другого рушія (components/stt),
+        # які не залежать від cfg.model_dir — інакше на машині з завантаженим
+        # Parakeet меню чесно покаже його, а тест хибно почервоніє (суд 07.09).
+        no_sherpa = mock.patch("whisper_core.stt_sherpa_models.models_present_fast",
+                               return_value=False)
+        no_sherpa.start()
+        self.addCleanup(no_sherpa.stop)
         win = MainWindow(controller)
         self._win = win
 

@@ -160,6 +160,7 @@ class ElidedLabel(QLabel):
 _PAGES = [("fa6s.microphone", "nav_dictation"), ("fa6s.folder-open", "nav_audio"),
           ("fa6s.users", "nav_meeting"),        # feature/meeting-ui
           ("fa6s.desktop", "nav_screen"),
+          ("fa6s.tower-broadcast", "nav_remote"),
           ("fa6s.clock-rotate-left", "nav_history"),
           ("fa6s.book", "nav_dictionaries"), ("fa6s.gear", "nav_settings"),
           ("fa6s.magnifying-glass", "nav_search")]   # feature/global-search (останній — не зсуває індекси)
@@ -1810,8 +1811,8 @@ class MainWindow(QMainWindow):
         # стискання, суд 31.07), а не підйомом мінімуму.
         self.setMinimumSize(1000, 640)
         # геометрія переживає перезапуск (QSettings → реєстр Windows)
-        self._settings = QSettings("Balachky", "Balachky")
-        geo = self._settings.value("geometry")
+        self._qsettings = QSettings("Balachky", "Balachky")
+        geo = self._qsettings.value("geometry")
         if geo is not None:
             self.restoreGeometry(geo)
         else:
@@ -1954,28 +1955,22 @@ class MainWindow(QMainWindow):
 
         self.pages = _TiledStack()   # тайл «Б з жуком» на всю висоту (drawTiledPixmap)
         self.pages.reload_background(getattr(controller, "cfg", None))
-        self.dictation = DictationPage(controller)
-        self.pages.addWidget(self.dictation)
-        self.files = FilesPage(controller)
-        self.pages.addWidget(self.files)
-        from .pages.meeting import MeetingPage   # feature/meeting-ui
-        from .pages.screen import ScreenPage
-        from .pages.history import HistoryPage
-        from .pages.vocab import VocabPage
-        from .pages.settings import SettingsPage
-        from .pages.search import SearchPage   # feature/global-search
-        self.meeting = MeetingPage(controller)   # index 2 (між Аудіофайли й Історія)
-        self.pages.addWidget(self.meeting)
-        self.screen = ScreenPage(controller)     # index 3 (кнопка «Запис екрана»)
-        self.pages.addWidget(self.screen)
-        self.history = HistoryPage(controller)
-        self.pages.addWidget(self.history)
-        self.vocab = VocabPage(controller)
-        self.pages.addWidget(self.vocab)
-        self.settings = SettingsPage(controller)
-        self.pages.addWidget(self.settings)
-        self.search = SearchPage(controller)   # index 7 (останній — після Налаштувань)
-        self.pages.addWidget(self.search)
+        self._dictation = DictationPage(controller)
+        self.pages.addWidget(self._dictation)
+
+        self._files = None
+        self._meeting = None
+        self._screen = None
+        self._remote = None   # feature/telegram-desktop-integration
+        self._history = None
+        self._vocab = None
+        self._settings_page = None
+        self._search = None
+
+        # Заповнюємо плейсхолдерами для збереження індексів 1..7 у стеку
+        for _ in range(1, len(_PAGES)):
+            self.pages.addWidget(QWidget())
+
         self._nav.idClicked.connect(self._on_nav_click)   # ТЗ п.3: fade-перехід + test_log
         self.set_page(0)
 
@@ -1998,8 +1993,104 @@ class MainWindow(QMainWindow):
         # (С7). Лямбда відкладає резолв методу до активації (тест-дублі без нього).
         quit_sc.activated.connect(lambda: self.controller.request_quit())
 
+    @property
+    def dictation(self) -> DictationPage:
+        return self._dictation
+
+    @property
+    def files(self):
+        if self._files is None:
+            self._files = FilesPage(self.controller)
+            self._replace_page_widget(1, self._files)
+        return self._files
+
+    @property
+    def meeting(self):
+        if self._meeting is None:
+            from .pages.meeting import MeetingPage   # feature/meeting-ui
+            self._meeting = MeetingPage(self.controller)
+            self._replace_page_widget(2, self._meeting)
+        return self._meeting
+
+    @property
+    def screen(self):
+        if self._screen is None:
+            from .pages.screen import ScreenPage
+            self._screen = ScreenPage(self.controller)
+            self._replace_page_widget(3, self._screen)
+        return self._screen
+
+    @property
+    def remote(self):
+        if self._remote is None:
+            from .pages.remote import RemotePage     # feature/telegram-desktop-integration
+            self._remote = RemotePage(self.controller)
+            self._replace_page_widget(4, self._remote)
+        return self._remote
+
+    @property
+    def history(self):
+        if self._history is None:
+            from .pages.history import HistoryPage
+            self._history = HistoryPage(self.controller)
+            self._replace_page_widget(5, self._history)
+        return self._history
+
+    @property
+    def vocab(self):
+        if self._vocab is None:
+            from .pages.vocab import VocabPage
+            self._vocab = VocabPage(self.controller)
+            self._replace_page_widget(6, self._vocab)
+        return self._vocab
+
+    @property
+    def settings(self):
+        if self._settings_page is None:
+            from .pages.settings import SettingsPage
+            self._settings_page = SettingsPage(self.controller)
+            self._replace_page_widget(7, self._settings_page)
+        return self._settings_page
+
+    @property
+    def search(self):
+        if self._search is None:
+            from .pages.search import SearchPage   # feature/global-search
+            self._search = SearchPage(self.controller)
+            self._replace_page_widget(8, self._search)
+        return self._search
+
+    def _replace_page_widget(self, index: int, widget: QWidget):
+        old = self.pages.widget(index)
+        if old is not widget:
+            self.pages.removeWidget(old)
+            old.deleteLater()
+            self.pages.insertWidget(index, widget)
+
+    def _ensure_page(self, index: int):
+        if index == 0:
+            return self.dictation
+        elif index == 1:
+            return self.files
+        elif index == 2:
+            return self.meeting
+        elif index == 3:
+            return self.screen
+        elif index == 4:
+            return self.remote        # feature/telegram-desktop-integration
+        elif index == 5:
+            return self.history
+        elif index == 6:
+            return self.vocab
+        elif index == 7:
+            return self.settings
+        elif index == 8:
+            return self.search
+        return None
+
     def _on_nav_click(self, index: int):
         """Клік nav-кнопки: дія-логер (режим тестування) + fade-перехід."""
+        self._ensure_page(index)
         from .crash import test_log
         test_log("nav_click", page=_PAGES[index][1], index=index)
         motion.fade_switch(self.pages, index)
@@ -2008,11 +2099,13 @@ class MainWindow(QMainWindow):
         """Клік по шапці сайдбара → вкладка «Про програму» в Налаштуваннях
         (раніше відкривала окреме модальне вікно — власник просив прибрати
         спливання і вести напряму в потрібний пункт Налаштувань)."""
-        self.set_page(self.pages.indexOf(self.settings))
-        self.settings.select_about_tab()
+        settings_page = self.settings
+        self.set_page(self.pages.indexOf(settings_page))
+        settings_page.select_about_tab()
 
     def set_page(self, index: int):
         """Перемкнути вкладку програмно (старт, скріншоти): кнопка + сторінка."""
+        self._ensure_page(index)
         self._nav.button(index).setChecked(True)
         from .crash import test_log
         test_log("page_switch", page=_PAGES[index][1], index=index)
@@ -2085,7 +2178,7 @@ class MainWindow(QMainWindow):
 
     def remember_geometry(self):
         """Запам'ятати розмір/позицію вікна (виклик: закриття вікна та вихід)."""
-        self._settings.setValue("geometry", self.saveGeometry())
+        self._qsettings.setValue("geometry", self.saveGeometry())
 
     def closeEvent(self, event):
         """Закриття вікна → у трей, застосунок продовжує слухати PTT.
@@ -2093,6 +2186,6 @@ class MainWindow(QMainWindow):
         self.remember_geometry()
         event.ignore()
         self.hide()
-        if not self._settings.value("close_hint_shown", False, type=bool):
-            self._settings.setValue("close_hint_shown", True)
+        if not self._qsettings.value("close_hint_shown", False, type=bool):
+            self._qsettings.setValue("close_hint_shown", True)
             self.controller.tray.notify(tr("close_hint"))

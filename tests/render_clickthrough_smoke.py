@@ -106,13 +106,14 @@ class ClickthroughSmokeTests(unittest.TestCase):
         from fronts.desktop.main_window import _PAGES, DictationPage, FilesPage
         from fronts.desktop.pages.meeting import MeetingPage
         from fronts.desktop.pages.screen import ScreenPage
+        from fronts.desktop.pages.remote import RemotePage
         from fronts.desktop.pages.history import HistoryPage
         from fronts.desktop.pages.vocab import VocabPage
         from fronts.desktop.pages.settings import SettingsPage
         from fronts.desktop.pages.search import SearchPage
 
         expected = [DictationPage, FilesPage, MeetingPage, ScreenPage,
-                    HistoryPage, VocabPage, SettingsPage, SearchPage]
+                    RemotePage, HistoryPage, VocabPage, SettingsPage, SearchPage]
         self.assertEqual(len(expected), len(_PAGES))
 
         win = self._window()

@@ -433,6 +433,12 @@ class MeetingPage(QWidget):
         audio_state = getattr(controller, "meeting_audio_state", None)
         if audio_state is not None:      # сумісність з ранніми controller-фейками
             audio_state.connect(self._on_audio_state)
+        # issue #16 (за судом, блокер 1): повторний прогін тепер фоновий потік —
+        # єдина точка, де сторінка дізнається про фінал (busy/vault/missing/
+        # fail/ok), а НЕ повернене значення _start_retranscribe.
+        retranscribe_done = getattr(controller, "meeting_retranscribe_done", None)
+        if retranscribe_done is not None:
+            retranscribe_done.connect(self._on_retranscribe_done)
 
     def _build_settings_disclosure(self) -> QWidget:
         """Розкривна секція «Налаштування наради» (аудит Миколи 22.07): у спокої
@@ -2009,6 +2015,11 @@ class MeetingPage(QWidget):
 
         body = TranscriptViewer(text, utterances, player, empty_placeholder)
         body._text = text
+        # issue #16 (за судом, блокер 3): версія розшифровки, обрана на картці —
+        # None = оригінал, інакше ім'я моделі. Копіювання/експорт/панель
+        # редагування читають САМЕ ці два атрибути (не окремий стан
+        # _switch_version), інакше перемикач лишається декоративним.
+        body._version = None
         lay.addWidget(body)
 
 
@@ -2138,17 +2149,31 @@ class MeetingPage(QWidget):
         act_txt.triggered.connect(
             lambda _=False, b=body, s=saved, sid=session_id, c=src_chk:
             self._save_txt(b._text if c.isChecked()
-                           else self._render_txt(sid, show_source=False), sid, s))
+                           else self._render_txt(sid, show_source=False,
+                                                  stem=self._export_stem(b)), sid, s))
 
         act_md = export_menu.addAction(tr("meeting_exp_md"))
         act_md.triggered.connect(
-            lambda _=False, s=saved, ttl=title, sid=session_id, c=src_chk:
-            self._save_md(sid, ttl, s, show_source=c.isChecked()))
+            lambda _=False, s=saved, ttl=title, sid=session_id, c=src_chk, b=body:
+            self._save_md(sid, ttl, s, show_source=c.isChecked(),
+                          stem=self._export_stem(b)))
 
         act_json = export_menu.addAction(tr("meeting_exp_json"))
         act_json.triggered.connect(
-            lambda _=False, s=saved, sid=session_id:
-            self._save_json(sid, s))
+            lambda _=False, s=saved, sid=session_id, b=body:
+            self._save_json(sid, s, stem=self._export_stem(b)))
+
+        act_srt = export_menu.addAction(tr("meeting_exp_srt"))
+        act_srt.triggered.connect(
+            lambda _=False, s=saved, sid=session_id, c=src_chk, b=body:
+            self._save_subtitles(sid, "srt", s, show_source=c.isChecked(),
+                                 stem=self._export_stem(b)))
+
+        act_vtt = export_menu.addAction(tr("meeting_exp_vtt"))
+        act_vtt.triggered.connect(
+            lambda _=False, s=saved, sid=session_id, c=src_chk, b=body:
+            self._save_subtitles(sid, "vtt", s, show_source=c.isChecked(),
+                                 stem=self._export_stem(b)))
 
         export_menu.addSeparator()
 
@@ -2189,10 +2214,50 @@ class MeetingPage(QWidget):
 
         btns.addWidget(exp_btn)
 
+        # issue #16: «Спробувати іншою моделлю» — той самий підхід, що
+        # MainWindow._retry_model_menu для аудіофайлів: меню будується в
+        # момент кліку зі списку встановлених моделей. За судом (блокер 1):
+        # прогін тепер фоновий — кнопка неактивна, поки він триває для цієї
+        # наради (retranscribe_active), інакше повторний клік запускав би
+        # другий потік поверх першого.
+        retry_btn = GlassButton(tr("meeting_retry_model_menu"))
+        retry_btn.setAccessibleName(tr("meeting_retry_model_menu"))
+        try:
+            retry_btn.setEnabled(not self.controller.retranscribe_active(session_id))
+        except Exception:
+            pass
+        retry_btn.clicked.connect(
+            lambda _=False, b=retry_btn, sid=session_id: self._retranscribe_menu(b, sid))
+        btns.addWidget(retry_btn)
+
+        # Перемикач версій розшифровки з'являється лише коли є що перемикати —
+        # хоча б один повторний прогін уже додав transcript-<модель>.*.
+        try:
+            versions = self.controller.meeting_transcript_versions(session_id)
+        except Exception:
+            versions = []
+        if versions:
+            version_btn = GlassButton(tr("meeting_version_menu"))
+            version_btn.setAccessibleName(tr("meeting_version_menu"))
+            version_menu = QMenu(version_btn)
+            act_orig = version_menu.addAction(tr("meeting_version_original"))
+            act_orig.triggered.connect(
+                lambda _=False, b=body: self._switch_version(session_id, b, None))
+            for model_version in versions:
+                act_v = version_menu.addAction(model_version)
+                act_v.triggered.connect(
+                    lambda _=False, b=body, v=model_version:
+                    self._switch_version(session_id, b, v))
+            version_btn.clicked.connect(
+                lambda _=False: version_menu.exec(
+                    version_btn.mapToGlobal(version_btn.rect().bottomLeft())))
+            btns.addWidget(version_btn)
+
         # feature/transcript-editing: правка транскрипту сесії (opt-in). Пише назад
         # у transcript.txt; transcript.json (структурне джерело) лишається. Німу
         # сесію (порожній текст) не редагуємо — нема чого правити.
         panel = None
+        version_note = None
         if text and getattr(self.controller.cfg, "transcript_editing_enabled", False):
             from .edit_search import TranscriptEditPanel
 
@@ -2212,6 +2277,18 @@ class MeetingPage(QWidget):
                 ai_edit_fn=lambda sel, rep: self.controller.voice_edit_selection(
                     sel, rep, self))
             btns.addWidget(panel.edit_button)
+            # issue #16 (за судом, блокер 3): НЕоригінальна версія на картці —
+            # панель редагування ховається з коротким поясненням. Збереження
+            # тексту чужої моделі у transcript.txt затерло б правку людини
+            # (write_meeting_transcript пише лише .txt, а .json — джерело
+            # правди для НЕЇ ЖОДНОЇ версії, крім оригіналу).
+            version_note = QLabel(tr("meeting_version_edit_locked"))
+            version_note.setProperty("muted", True)
+            version_note.setWordWrap(True)
+            version_note.hide()
+            body._edit_panel = panel
+            body._edit_button = panel.edit_button
+            body._edit_note = version_note
         lay.addWidget(btns_widget)
         # Чекбокс «Хто говорить» — ОКРЕМИМ рядком під кнопками: у ряду з кнопками
         # дій його довгий підпис не вміщався на 1000px і стискав кнопки, ріжучи
@@ -2222,6 +2299,8 @@ class MeetingPage(QWidget):
         lay.addLayout(src_row)
         if panel is not None:
             lay.addWidget(panel)
+        if version_note is not None:
+            lay.addWidget(version_note)
         # feature/chain-of-custody: рядок цілісності — hint-статус + журнал подій.
         self._add_integrity_row(lay, session_id)
         lay.addWidget(saved)
@@ -2500,21 +2579,9 @@ class MeetingPage(QWidget):
     @staticmethod
     def _reveal_in_folder(path) -> None:
         """Відкрити Провідник із виділеним файлом (Windows); поза Windows або
-        при збої — просто відкрити теку. Той самий прийом, що
-        DesktopApp.show_screen_recording_in_folder (app.py), але для довільного
-        шляху, обраного користувачем через «Зберегти зведення»."""
-        import subprocess
-        import sys
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-        p = Path(path)
-        if sys.platform.startswith("win") and p.is_file():
-            try:
-                subprocess.Popen(["explorer", "/select,", str(p)])
-                return
-            except OSError:
-                logging.exception("Не вдалося відкрити провідник із виділенням %s", p)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.parent)))
+        при збої — просто відкрити теку."""
+        from ..links import reveal_in_explorer
+        reveal_in_explorer(path)
 
     def _fill_pending_card(self, lay, session_id, status):
         btns = QHBoxLayout()
@@ -2562,7 +2629,7 @@ class MeetingPage(QWidget):
         saved_lbl.setText(tr("meeting_saved", name=os.path.basename(out)))
         saved_lbl.show()
 
-    def _save_json(self, session_id, saved_lbl: QLabel):
+    def _save_json(self, session_id, saved_lbl: QLabel, stem: str = "transcript"):
         suggested = f"{session_id}.json"
         out, _ = QFileDialog.getSaveFileName(
             self, tr("meeting_save_json"), suggested, "JSON (*.json)")
@@ -2571,7 +2638,7 @@ class MeetingPage(QWidget):
         try:
             import json
             from whisper_core.meeting import postprocess as mpost
-            utterances = self.controller.read_meeting_utterances(session_id)
+            utterances = self.controller.read_meeting_utterances(session_id, stem=stem)
             with open(out, "w", encoding="utf-8") as stream:
                 json.dump(
                     mpost.to_transcript_json(utterances),
@@ -2589,13 +2656,170 @@ class MeetingPage(QWidget):
             "meeting_saved", name=os.path.basename(out)))
         saved_lbl.show()
 
-    def _render_txt(self, session_id, *, show_source: bool) -> str:
-        """Перебудувати текст транскрипту з transcript.json із/без міток джерела.
+    # issue #16: людяні назви моделей у меню «Спробувати іншою моделлю» — ті
+    # самі ключі, що MainWindow._MODEL_LABEL_KEYS для аудіофайлів.
+    _MODEL_LABEL_KEYS = {
+        "large-v3-turbo": "set_model_fast",
+        "large-v3": "set_model_precise",
+    }
+
+    def _retranscribe_menu(self, anchor, session_id):
+        """Меню вибору встановленої моделі для повторного розпізнавання
+        наради. Будується в момент кліку (склад моделей на диску міг
+        змінитись); аудіо зникло — чесний тост, меню навіть не будуємо (той
+        самий підхід, що MainWindow._retry_model_menu для файлів).
+
+        N4 (issue #16, за судом): активну модель, якою нараду вже розпізнано
+        ПЕРШИМ прогоном, з переліку виключаємо — «спробувати іншою» тією
+        самою моделлю нічого нового не дає. Визначити її не вдалось
+        (старий provenance без потрібного поля тощо) — лишаємо всі, без
+        здогадок."""
+        try:
+            available = self.controller.meeting_audio_available(session_id)
+        except Exception:
+            available = False
+        if not available:
+            motion.toast(self, tr("meeting_retry_model_missing"))
+            return
+        menu = QMenu(anchor)
+        try:
+            names = self.controller.installed_model_names()
+        except Exception:
+            names = []
+        try:
+            original_model = self.controller.meeting_original_model(session_id)
+        except Exception:
+            original_model = None
+        if original_model:
+            names = [name for name in names if name != original_model]
+        if not names:
+            a = menu.addAction(tr("meeting_retry_model_none"))
+            a.setEnabled(False)
+        for name in names:
+            label = (tr(self._MODEL_LABEL_KEYS[name])
+                     if name in self._MODEL_LABEL_KEYS else name)
+            a = menu.addAction(label)
+            a.triggered.connect(
+                lambda _=False, sid=session_id, m=name: self._start_retranscribe(sid, m))
+        menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _start_retranscribe(self, session_id, model_name):
+        """Запустити повторне розпізнавання (issue #16, за судом, блокер 1):
+        контролер сам спускає важкий ASR у фоновий потік і сам повертає
+        busy/vault/missing/fail/ok через meeting_retranscribe_done — тут лише
+        тости «правки»/«триває» плюс сам виклик start_retranscribe_meeting.
+        Фінал (успіх/невдача/busy) картка дізнається ВИКЛЮЧНО зі слота
+        _on_retranscribe_done, а не з повернутого сюди значення."""
+        try:
+            edited = self.controller.meeting_transcript_edited(session_id)
+        except Exception:
+            edited = False
+        if edited:
+            motion.toast(self, tr("meeting_retry_model_edits_note"))
+        started = self.controller.start_retranscribe_meeting(session_id, model_name)
+        if started:
+            motion.toast(self, tr("meeting_retry_model_running"))
+            self.refresh()   # кнопка «Спробувати іншою моделлю» стає неактивною
+
+    _RETRANSCRIBE_REASON_KEYS = {
+        "missing": "meeting_retry_model_missing",
+        "busy": "meeting_retry_model_busy",
+        "fail": "meeting_retry_model_fail",
+        "ok": "meeting_retry_model_done",
+    }
+
+    def _on_retranscribe_done(self, session_id, model_name, reason):
+        """Слот сигналу контролера meeting_retranscribe_done (issue #16, за
+        судом, блокер 1): ЄДИНЕ місце, де картка дізнається про фінал
+        повторного прогону — і успішного, і будь-якого з чесних відмов
+        (busy теж приходить сюди, не з return-значення start_...).
+        "vault" — тихо, без тосту помилки: meeting_vault_needed уже показав
+        діалог пароля окремим сигналом."""
+        if reason != "vault":
+            key = self._RETRANSCRIBE_REASON_KEYS.get(reason, "meeting_retry_model_fail")
+            motion.toast(self, tr(key))
+        self.refresh()
+
+    def _export_stem(self, body) -> str:
+        """Ім'я файлової пари для експорту (issue #16, за судом, блокер 3):
+        версія, обрана на картці (``body._version``) — "transcript" для
+        оригіналу, інакше "transcript-<модель>". Копіювання (b._text) уже
+        версійне саме собою; це — для решти експортів, що самі перечитують
+        артефакти з диска (.txt без міток джерела, .md, .json, .srt/.vtt)."""
+        version = getattr(body, "_version", None)
+        return f"transcript-{version}" if version else "transcript"
+
+    def _switch_version(self, session_id, body, version):
+        """Перемкнути ОБРАНУ версію розшифровки картки (issue #16, за судом,
+        блокер 3): вибір живе НА КАРТЦІ (``body._version``/``body._text``),
+        бо копіювання, усі формати експорту й панель редагування читають
+        саме ці два атрибути — раніше перемикач лише робив setText і був
+        декоративним (усі дії й далі мовчки брали оригінал).
+
+        НЕоригінальна версія (``version is not None``) ховає панель
+        редагування з поясненням: збереження чужого тексту в transcript.txt
+        затерло б правку людини (write_meeting_transcript пише лише .txt,
+        а .json лишається структурним джерелом ЛИШЕ для оригіналу)."""
+        try:
+            text = self.controller.meeting_transcript_text(session_id, version)
+        except Exception:
+            motion.toast(self, tr("meeting_retry_model_fail"))
+            return
+        body._version = version
+        body._text = text or tr("meeting_error_silence")
+        body.setText(body._text)
+        edit_panel = getattr(body, "_edit_panel", None)
+        edit_button = getattr(body, "_edit_button", None)
+        edit_note = getattr(body, "_edit_note", None)
+        if edit_panel is not None:
+            edit_panel.setVisible(version is None)
+        if edit_button is not None:
+            edit_button.setEnabled(version is None)
+        if edit_note is not None:
+            edit_note.setVisible(version is not None)
+
+    def _save_subtitles(self, session_id, fmt: str, saved_lbl: QLabel, *,
+                        show_source: bool = True, stem: str = "transcript"):
+        """Експорт субтитрів (.srt/.vtt) з іменами мовців — тим самим ланцюжком,
+        що й .json: контролер читає артефакти (шифровану сесію теж), сторінка
+        лише пише файл. Помилка — видимий напис, а не порожній файл зі
+        “збережено”. Закрите сховище — контролер уже подав сигнал на пароль,
+        тут мовчки виходимо. ``show_source`` — чекбокс “Хто говорить”.
+        ``stem`` (issue #16, за судом) — версія розшифровки, обрана на картці."""
+        from whisper_core.meeting.storage_crypto import VaultPasswordRequired
+        suggested = f"{session_id}.{fmt}"
+        filt = tr("files_filt_srt") if fmt == "srt" else tr("files_filt_vtt")
+        out, _ = QFileDialog.getSaveFileName(
+            self, tr("meeting_save_as"), suggested, filt)
+        if not out:
+            return
+        try:
+            content = self.controller.meeting_subtitles(
+                session_id, fmt, show_source=show_source, stem=stem)
+            with open(out, "w", encoding="utf-8", newline="") as stream:
+                stream.write(content)
+        except VaultPasswordRequired:
+            return
+        except Exception:
+            logging.exception("Експорт субтитрів наради не вдався (%s)", fmt)
+            saved_lbl.setText(tr("meeting_save_fail"))
+            saved_lbl.show()
+            return
+        import os
+        self.controller.log_meeting_export(session_id, fmt, out)
+        saved_lbl.setText(tr(
+            "meeting_saved", name=os.path.basename(out)))
+        saved_lbl.show()
+
+    def _render_txt(self, session_id, *, show_source: bool,
+                    stem: str = "transcript") -> str:
+        """Перебудувати текст транскрипту з <stem>.json із/без міток джерела.
         Використовується, коли чекбокс «мітки джерела» знято — інакше експорт бере
-        готовий (можливо, відредагований) transcript.txt із картки."""
+        готовий (можливо, відредагований) transcript.txt із картки. ``stem``
+        (issue #16, за судом) — версія розшифровки, обрана на картці."""
         from whisper_core.meeting import postprocess as mpost
         from whisper_core.meeting import session as msession
-        utterances = self.controller.read_meeting_utterances(session_id)
+        utterances = self.controller.read_meeting_utterances(session_id, stem=stem)
         meta = msession.load_meta(self.controller._meeting_session_dir(session_id))
         speaker_names = meta.speaker_names if meta is not None else None
         return mpost.to_transcript_text(
@@ -2603,13 +2827,15 @@ class MeetingPage(QWidget):
             others_label=tr("meeting_speaker_others"),
             speaker_names=speaker_names, show_source=show_source)
 
-    def _save_md(self, session_id, title, saved_lbl: QLabel, *, show_source: bool = True):
+    def _save_md(self, session_id, title, saved_lbl: QLabel, *, show_source: bool = True,
+                stem: str = "transcript"):
         """Зберегти нараду в Markdown (frontmatter + секції за мітками мовців).
-        Репліки беремо з transcript.json (структура з мітками); без нього
-        (стара сесія) — порожній transcript, лише frontmatter."""
+        Репліки беремо з <stem>.json (структура з мітками); без нього
+        (стара сесія) — порожній transcript, лише frontmatter. ``stem``
+        (issue #16, за судом) — версія розшифровки, обрана на картці."""
         from whisper_core.meeting import postprocess as mpost
         from whisper_core.meeting import session as msession
-        utterances = self.controller.read_meeting_utterances(session_id)
+        utterances = self.controller.read_meeting_utterances(session_id, stem=stem)
         # Діаризація зберігає назви мовців у meeting.json; .txt уже містить
         # відрендерені назви, а Markdown будується наново з transcript.json.
         meta = msession.load_meta(self.controller._meeting_session_dir(session_id))

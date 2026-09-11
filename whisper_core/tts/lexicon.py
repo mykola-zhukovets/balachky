@@ -355,15 +355,17 @@ def _active_rules(events: list) -> list:
 
 
 def _append_event(profile, event: dict) -> None:
+    from whisper_core.history import history_lock
     path = _journal_path(profile)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
-        f.flush()
-        try:
-            os.fsync(f.fileno())
-        except OSError:
-            pass
+    with history_lock(path):
+        with path.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
 
 
 def _now_iso() -> str:

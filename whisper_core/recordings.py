@@ -19,7 +19,6 @@ import logging
 import os
 import re
 import threading
-import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,14 +50,8 @@ def _float_to_pcm16(mono: np.ndarray) -> bytes:
 def _alloc_path(root: Path) -> Path:
     """Шлях запису = локальний час старту; колізія (два записи за секунду) →
     суфікс -1, -2… (як у session._alloc_dir)."""
-    root.mkdir(parents=True, exist_ok=True)
-    base = time.strftime("%Y-%m-%d_%H-%M-%S")
-    p = root / f"{base}.wav"
-    n = 1
-    while p.exists():
-        p = root / f"{base}-{n}.wav"
-        n += 1
-    return p
+    from .paths import alloc_timestamped_path
+    return alloc_timestamped_path(root, ".wav")
 
 
 def save_recording(root, audio, sample_rate: int) -> "Path | None":

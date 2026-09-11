@@ -42,14 +42,8 @@ def _manifest_path(root: Path) -> Path:
 def _alloc_wav(root: Path) -> Path:
     """Ім'я кліпу = локальний час; колізія (два за секунду) → суфікс -1, -2…
     Той самий формат, що recordings.save_recording (РРРР-ММ-ДД_гг-хх-сс.wav)."""
-    root.mkdir(parents=True, exist_ok=True)
-    base = time.strftime("%Y-%m-%d_%H-%M-%S")
-    p = root / f"{base}.wav"
-    n = 1
-    while p.exists():
-        p = root / f"{base}-{n}.wav"
-        n += 1
-    return p
+    from .paths import alloc_timestamped_path
+    return alloc_timestamped_path(root, ".wav")
 
 
 def _wav_duration(path: Path) -> "float | None":

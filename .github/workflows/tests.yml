@@ -1,0 +1,121 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+      - 'feature/**'
+      - 'fix/**'
+      - 'perf/**'
+  pull_request:
+    branches:
+      - master
+      - 'feature/**'
+      - 'fix/**'
+      - 'perf/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Автоматичні рівні QA-гейта (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    # Що свідомо не виконується в CI:
+    # 1. Рівень 1.5/1.5b: візуальний гейт (scripts/visual_gate.py потребує живого вікна Windows
+    #    зі справжніми системними шрифтами DirectWrite; offscreen спотворює геометрію шрифтів).
+    # 2. Рівень 2: живий запуск застосунку (run_app.py потребує повноцінного інтерактивного
+    #    сеансу Windows, системного трею та реального аудіо).
+    # 3. Рівень 3: заморожена збірка (PyInstaller build_app.py та тестування dist/Balachky.exe
+    #    виконуються на виділеній складальній машині).
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
+    steps:
+      - name: Отримання вихідного коду
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Налаштування Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Встановлення залежностей
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Інструменти гейта поза requirements.txt; піни збігаються з локальним venv (07.09).
+          pip install pyflakes==3.4.0 pytest==9.1.1
+
+      - name: Рівень 0 - статичний аналіз pyflakes
+        run: python -m pyflakes fronts/desktop whisper_core
+
+      - name: Рівень 0 - перевірка лінивих імпортів (check_lazy_imports)
+        run: python dev/check_lazy_imports.py
+
+      - name: Рівень 0 - перевірка відсутності трейлерів у комітах (check_ai_trailers)
+        # Канонічного remote dev у CI немає, тому база діапазону — origin/master
+        # (перевіряються лише коміти гілки, яких ще нема в master).
+        run: python dev/check_ai_trailers.py --base origin/master
+
+      - name: Рівень 0 - перевірка синтаксису (compileall)
+        run: python -m compileall -q fronts whisper_core
+
+      - name: Рівень 1 - юніт-тести (unittest discover)
+        run: python -m unittest discover -s tests
+
+      - name: Рівень 1 - димові тести інтерфейсу (render_*_smoke)
+        shell: pwsh
+        run: |
+          $smokes = Get-ChildItem tests -Filter "render_*_smoke.py" | Sort-Object Name
+          foreach ($f in $smokes) {
+            $mod = "tests." + $f.BaseName
+            Write-Host "-> $mod"
+            if (Select-String -Path $f.FullName -Pattern "unittest\.TestCase" -Quiet) {
+              python -m unittest $mod
+            } else {
+              python -m "tests.$($f.BaseName)"
+            }
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Димовий тест $mod завершився помилкою ($LASTEXITCODE)"
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Рівень 1 - тести pytest поза discover (pytest_only_modules)
+        shell: pwsh
+        run: |
+          $pytestOnly = Get-Content "dev/pytest_only_modules.txt" |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and -not $_.StartsWith("#") } |
+            ForEach-Object { "tests/$_" }
+          python -m pytest @pytestOnly -q --no-header -p no:cacheprovider
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Рівень 1 - перевірка покриття набору тестів (check_gate_coverage)
+        run: python dev/check_gate_coverage.py
+
+      - name: Збереження логів при збої
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: balachky-logs
+          # Тільда у path на Windows-runner не розгортається — беремо явний шлях.
+          path: ${{ env.LOCALAPPDATA }}\Balachky\logs
+          if-no-files-found: ignore

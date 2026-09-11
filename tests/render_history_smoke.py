@@ -1,133 +1,160 @@
-"""Render-smoke вкладки «Історія» (ПОЗА unittest discover — живий QWidget).
+"""Render-smoke вкладки «Історія» (живий QWidget сторінки історії).
 
-Перевіряє два виправлення з живого тесту Миколи:
-  - зауваж. 8: панель статистики (зведення + економія) ПРИХОВАНА при вході;
+Перевіряє:
+  - зауваження 8: панель статистики (зведення + економія) прихована при вході;
     кнопка «Статистика» показує/ховає її (toggle).
-  - зауваж. 9: пошук по історії матчить і ДАТУ запису (як показано в картці),
+  - зауваження 9: пошук по історії матчить і дату запису (як показано в картці),
     а не лише текст розшифровки.
-
-Запуск: QT_QPA_PLATFORM=offscreen python tests/render_history_smoke.py
-(так само підхоплює dev/qa_gate.ps1 як render_*_smoke).
+  - аудит 31.07: поведінка порожнього стану за увімкненої та вимкненої історії,
+    кнопка увімкнення пам'яті та зникнення порожнього стану після появи першого запису.
 """
+from __future__ import annotations
+
 import json
 import os
 import sys
 import tempfile
 import time
+import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from fronts.desktop.i18n import set_language  # noqa: E402
+from fronts.desktop.pages.history import HistoryPage  # noqa: E402
 
 
 class MockProfile:
-    def __init__(self, p):
+    def __init__(self, p: Path | str) -> None:
         self.history_path = p
         self.memory_enabled = True
 
 
 class MockCtl:
-    def __init__(self, p):
+    def __init__(self, p: Path | str) -> None:
         self.profile = MockProfile(p)
-        self.toggled = []
+        self.toggled: list[bool] = []
 
-    def toggle_memory(self, on):
+    def toggle_memory(self, on: bool) -> None:
         self.toggled.append(on)
         self.profile.memory_enabled = on
 
 
-def _write_history(path, records):
+def _write_history(path: Path, records: list[dict]) -> None:
     path.write_text(
         "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
 
 
-def main() -> int:
-    QApplication.instance() or QApplication([])
-    from fronts.desktop.i18n import set_language
-    from fronts.desktop.pages.history import HistoryPage
+class RenderHistorySmokeTests(unittest.TestCase):
+    """Димові тести рендерингу та взаємодії зі сторінкою історії."""
 
-    set_language("uk")
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication([])
 
-    # дві дати, як відрендерить картка: "%d.%m.%Y %H:%M"
-    ts_new = time.mktime(time.strptime("2026-07-17 10:00", "%Y-%m-%d %H:%M"))
-    ts_old = time.mktime(time.strptime("2026-07-12 09:30", "%Y-%m-%d %H:%M"))
-    date_new = time.strftime("%d.%m.%Y", time.localtime(ts_new))   # 17.07.2026
-    date_new_short = time.strftime("%d.%m", time.localtime(ts_new))  # 17.07
+    def setUp(self) -> None:
+        set_language("uk")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        hp = Path(tmp) / "history.jsonl"
-        _write_history(hp, [
-            {"ts": ts_old, "final": "стара розшифровка про яблука"},
-            {"ts": ts_new, "final": "нова розшифровка про груші"},
-        ])
-        page = HistoryPage(MockCtl(hp))
+    def tearDown(self) -> None:
+        set_language("uk")
 
-        # --- зауваж. 8: статистика прихована при вході ---
-        assert page._stats_panel.isHidden(), "статистика має бути прихована на старті"
-        page._toggle_stats()
-        assert not page._stats_panel.isHidden(), "клік «Статистика» має показати панель"
-        page._toggle_stats()
-        assert page._stats_panel.isHidden(), "повторний клік має сховати панель"
+    def test_stats_panel_toggle_and_date_search(self) -> None:
+        """Перевірка перемикання панелі статистики та пошуку за датою і текстом."""
+        # дві дати, як відрендерить картка: "%d.%m.%Y %H:%M"
+        ts_new = time.mktime(time.strptime("2026-07-17 10:00", "%Y-%m-%d %H:%M"))
+        ts_old = time.mktime(time.strptime("2026-07-12 09:30", "%Y-%m-%d %H:%M"))
+        date_new = time.strftime("%d.%m.%Y", time.localtime(ts_new))  # 17.07.2026
+        date_new_short = time.strftime("%d.%m", time.localtime(ts_new))  # 17.07
 
-        # --- зауваж. 9: пошук по даті ---
-        page.refresh()
-        assert len(page._cards) == 2, f"очікувалось 2 картки, є {len(page._cards)}"
+        with tempfile.TemporaryDirectory() as tmp:
+            hp = Path(tmp) / "history.jsonl"
+            _write_history(
+                hp,
+                [
+                    {"ts": ts_old, "final": "стара розшифровка про яблука"},
+                    {"ts": ts_new, "final": "нова розшифровка про груші"},
+                ],
+            )
+            page = HistoryPage(MockCtl(hp))
+            try:
+                # --- зауваження 8: статистика прихована при вході ---
+                self.assertTrue(page._stats_panel.isHidden(), "статистика має бути прихована на старті")
+                page._toggle_stats()
+                self.assertFalse(page._stats_panel.isHidden(), "клік «Статистика» має показати панель")
+                page._toggle_stats()
+                self.assertTrue(page._stats_panel.isHidden(), "повторний клік має сховати панель")
 
-        def _visible_texts(query):
-            page._search.setText(query)
-            return [t for card, t in page._cards if not card.isHidden()]
+                # --- зауваження 9: пошук по даті ---
+                page.refresh()
+                self.assertEqual(len(page._cards), 2, f"очікувалось 2 картки, є {len(page._cards)}")
 
-        vis = _visible_texts(date_new)               # повна дата 17.07.2026
-        assert len(vis) == 1, f"дата {date_new}: очікувалась 1 картка, {len(vis)}"
-        assert "груші" in vis[0], "по даті знайшлась не та картка"
+                def _visible_texts(query: str) -> list[str]:
+                    page._search.setText(query)
+                    return [t for card, t, *_ in page._cards if not card.isHidden()]
 
-        vis_short = _visible_texts(date_new_short)   # коротка дата 17.07
-        assert len(vis_short) == 1, f"дата {date_new_short}: {len(vis_short)} карток"
+                vis = _visible_texts(date_new)  # повна дата 17.07.2026
+                self.assertEqual(len(vis), 1, f"дата {date_new}: очікувалась 1 картка, {len(vis)}")
+                self.assertIn("груші", vis[0], "по даті знайшлась не та картка")
 
-        vis_text = _visible_texts("яблука")          # пошук по тексту ще працює
-        assert len(vis_text) == 1 and "яблука" in vis_text[0], "пошук по тексту зламано"
+                vis_short = _visible_texts(date_new_short)  # коротка дата 17.07
+                self.assertEqual(len(vis_short), 1, f"дата {date_new_short}: {len(vis_short)} карток")
 
-        vis_all = _visible_texts("")                 # порожній запит → усі видимі
-        assert len(vis_all) == 2, "порожній запит має показати всі картки"
+                vis_text = _visible_texts("яблука")  # пошук по тексту ще працює
+                self.assertEqual(len(vis_text), 1, "пошук по тексту зламано")
+                self.assertIn("яблука", vis_text[0], "пошук по тексту повернув не той запис")
 
-        # --- аудит 31.07: порожній стан (0 записів) ---
-        empty_hp = Path(tmp) / "history-empty.jsonl"
-        _write_history(empty_hp, [])
-        ctl = MockCtl(empty_hp)
-        empty_page = HistoryPage(ctl)
-        empty_page.refresh()
-        assert empty_page._stack.currentIndex() == 0, \
-            "0 записів мали показати порожній стан"
-        assert empty_page._empty.button.text() == "", \
-            "історія УВІМКНЕНА: кнопки в порожньому стані бути не мусить"
+                vis_all = _visible_texts("")  # порожній запит → усі видимі
+                self.assertEqual(len(vis_all), 2, "порожній запит має показати всі картки")
+            finally:
+                page.deleteLater()
+                self._app.processEvents()
 
-        # вимкнена історія — реальна кнопка «Увімкнути історію», не відсилання
-        # у трей (аудит: раніше текст вказував на невірне місце дії)
-        ctl.profile.memory_enabled = False
-        empty_page.refresh()
-        assert empty_page._stack.currentIndex() == 0
-        assert empty_page._empty.button.text(), \
-            "історія ВИМКНЕНА: кнопка «Увімкнути історію» мусить бути видима"
-        empty_page._empty.button.click()
-        assert ctl.toggled == [True], "кнопка мала увімкнути пам'ять через controller"
-        assert ctl.profile.memory_enabled is True
+    def test_empty_state_and_memory_toggle(self) -> None:
+        """Перевірка порожнього стану та активації пам'яті через кнопку."""
+        ts_new = time.mktime(time.strptime("2026-07-17 10:00", "%Y-%m-%d %H:%M"))
 
-        # після увімкнення й появи запису — порожній стан зникає (перевірка
-        # факту, не рядка): дописуємо один запис і оновлюємо сторінку.
-        _write_history(empty_hp, [{"ts": ts_new, "final": "перший запис"}])
-        empty_page.refresh()
-        assert empty_page._stack.currentIndex() == 1, \
-            "перший запис мав прибрати порожній стан і показати стрічку"
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_hp = Path(tmp) / "history-empty.jsonl"
+            _write_history(empty_hp, [])
+            ctl = MockCtl(empty_hp)
+            empty_page = HistoryPage(ctl)
+            try:
+                empty_page.refresh()
+                self.assertEqual(
+                    empty_page._stack.currentIndex(), 0, "0 записів мали показати порожній стан"
+                )
+                self.assertEqual(
+                    empty_page._empty.button.text(), "", "історія УВІМКНЕНА: кнопки в порожньому стані бути не мусить"
+                )
 
-        empty_page.deleteLater()
-        page.deleteLater()
+                # вимкнена історія — реальна кнопка «Увімкнути історію», не відсилання
+                # у трей (аудит: раніше текст вказував на невірне місце дії)
+                ctl.profile.memory_enabled = False
+                empty_page.refresh()
+                self.assertEqual(empty_page._stack.currentIndex(), 0)
+                self.assertTrue(
+                    bool(empty_page._empty.button.text()),
+                    "історія ВИМКНЕНА: кнопка «Увімкнути історію» мусить бути видима",
+                )
+                empty_page._empty.button.click()
+                self.assertEqual(ctl.toggled, [True], "кнопка мала увімкнути пам'ять через controller")
+                self.assertIs(ctl.profile.memory_enabled, True)
 
-    print("RENDER HISTORY SMOKE OK")
-    return 0
+                # після увімкнення й появи запису — порожній стан зникає:
+                # дописуємо один запис і оновлюємо сторінку.
+                _write_history(empty_hp, [{"ts": ts_new, "final": "перший запис"}])
+                empty_page.refresh()
+                self.assertEqual(
+                    empty_page._stack.currentIndex(), 1, "перший запис мав прибрати порожній стан і показати стрічку"
+                )
+            finally:
+                empty_page.deleteLater()
+                self._app.processEvents()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    unittest.main()

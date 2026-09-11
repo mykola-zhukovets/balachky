@@ -51,16 +51,24 @@ def _pattern_for(language: str):
     return pattern
 
 
+_RE_SPACES = re.compile(r"[ \t]+")
+_RE_NEWLINES = re.compile(r" *\n *")
+_RE_PUNCT_BEFORE = re.compile(r" ([,.!?:)])")
+_RE_OPEN_PAREN = re.compile(r"(\() ")
+_RE_DUPE_PUNCT = re.compile(r"([,.!?:])\1+")
+_RE_CAPITALIZE_AFTER = re.compile(r"([.!?] )(\w)")
+
+
 def _tidy(text: str) -> str:
     """Прибрати артефакти підстановки: зайві пробіли навколо знаків, подвоєні
     знаки; після «. », «? », «! » — наступне слово з великої літери."""
-    text = re.sub(r"[ \t]+", " ", text)                 # подвоєні пробіли → один
-    text = re.sub(r" *\n *", "\n", text)                # пробіли навколо \n геть
-    text = re.sub(r" ([,.!?:)])", r"\1", text)          # пробіл перед знаком геть
-    text = re.sub(r"(\() ", r"\1", text)                # пробіл після «(» геть
-    text = re.sub(r"([,.!?:])\1+", r"\1", text)         # подвоєні однакові знаки
-    text = re.sub(r"([.!?] )(\w)",
-                  lambda m: m.group(1) + m.group(2).upper(), text)
+    text = _RE_SPACES.sub(" ", text)                 # подвоєні пробіли → один
+    text = _RE_NEWLINES.sub("\n", text)              # пробіли навколо \n геть
+    text = _RE_PUNCT_BEFORE.sub(r"\1", text)         # пробіл перед знаком геть
+    text = _RE_OPEN_PAREN.sub(r"\1", text)           # пробіл після «(» геть
+    text = _RE_DUPE_PUNCT.sub(r"\1", text)           # подвоєні однакові знаки
+    text = _RE_CAPITALIZE_AFTER.sub(
+        lambda m: m.group(1) + m.group(2).upper(), text)
     return text.rstrip(" \t")
 
 

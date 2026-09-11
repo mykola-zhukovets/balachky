@@ -30,7 +30,7 @@ class EngineLoadThreadTests(_QtBase):
     def test_run_emits_ready_on_success(self):
         import fronts.desktop.app as appmod
         sentinel = object()
-        with mock.patch.object(appmod, "Engine", return_value=sentinel) as eng:
+        with mock.patch.object(appmod, "make_engine", return_value=sentinel) as eng:
             thr = appmod._EngineLoadThread(SimpleNamespace(name="cfg"))
             ready, rec = [], []
             thr.ready.connect(ready.append)
@@ -44,7 +44,7 @@ class EngineLoadThreadTests(_QtBase):
         """Routine-лог не вимагає від часткового cfg model/device/compute полів."""
         import fronts.desktop.app as appmod
         sentinel = object()
-        with mock.patch.object(appmod, "Engine", return_value=sentinel):
+        with mock.patch.object(appmod, "make_engine", return_value=sentinel):
             thr = appmod._EngineLoadThread(SimpleNamespace())
             ready = []
             thr.ready.connect(ready.append)
@@ -55,7 +55,7 @@ class EngineLoadThreadTests(_QtBase):
         import fronts.desktop.app as appmod
         from whisper_core.engine import ModelRevisionUnavailable
         err = ModelRevisionUnavailable("m", None, "abc", False)
-        with mock.patch.object(appmod, "Engine", side_effect=err):
+        with mock.patch.object(appmod, "make_engine", side_effect=err):
             thr = appmod._EngineLoadThread(SimpleNamespace())
             ready, rec = [], []
             thr.ready.connect(ready.append)
@@ -91,7 +91,7 @@ class EngineLoadThreadTests(_QtBase):
             box["timeout"] = True    # петля НЕ мала дожити до цього — це був би hang
             loop.quit()
 
-        with mock.patch.object(appmod, "Engine", side_effect=boom):
+        with mock.patch.object(appmod, "make_engine", side_effect=boom):
             thr = appmod._EngineLoadThread(SimpleNamespace())
             thr.ready.connect(_ready)
             thr.needs_recovery.connect(_recovery)
@@ -115,7 +115,7 @@ class EngineLoadThreadTests(_QtBase):
         """Синхронна перевірка каналу: сирий виняток → failed, не ready/recovery."""
         import fronts.desktop.app as appmod
         boom = OSError("Unable to open file model.bin")
-        with mock.patch.object(appmod, "Engine", side_effect=boom):
+        with mock.patch.object(appmod, "make_engine", side_effect=boom):
             thr = appmod._EngineLoadThread(SimpleNamespace())
             ready, rec, fail = [], [], []
             thr.ready.connect(ready.append)

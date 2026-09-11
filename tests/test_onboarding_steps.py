@@ -17,8 +17,11 @@ class OnboardingStepCounterTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self, gpu_possible):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
         with patch.object(FirstRunWizard, "_gpu_step_possible",
-                          return_value=gpu_possible):
+                          return_value=gpu_possible), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         self.addCleanup(wiz.deleteLater)
         self.addCleanup(lambda: wiz.done(0))
@@ -59,7 +62,10 @@ class OnboardingVoiceStepTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self, gpu_possible=False):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         def _cleanup():
             wiz._detach_worker()
@@ -223,8 +229,11 @@ class OnboardingTrayTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def test_tray_alive_during_wizard(self):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
         with patch.object(FirstRunWizard, "_gpu_step_possible",
-                          return_value=False):
+                          return_value=False), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         self.addCleanup(wiz.deleteLater)
         self.addCleanup(lambda: wiz.done(0))
@@ -311,8 +320,13 @@ class OnboardingPresenceChecksTests(unittest.TestCase):
     def setUpClass(cls):
         cls._app = QApplication.instance() or QApplication([])
 
-    def _wizard(self, gpu_possible=True):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible):
+    def _wizard(self, gpu_possible=True, network=True):
+        """Мережевий стан — явний параметр тесту, не властивість раннера
+        (issue #36): конструктор майстра сам ходить у мережу на кроці
+        «Додаткові можливості», тож без підміни результат тесту залежав би
+        від того, чи раннер онлайн."""
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible), \
+                patch("fronts.desktop.onboarding._has_network", return_value=network):
             wiz = FirstRunWizard()
         def _cleanup():
             wiz._detach_worker()
@@ -432,16 +446,35 @@ class OnboardingPresenceChecksTests(unittest.TestCase):
                 self.assertTrue(is_dl, "коли моделі діаризації є на диску, is_downloaded=True")
                 self.assertFalse(chk.isEnabled(), "коли моделі діаризації є на диску, чекбокс деактивовано (уже на комп'ютері)")
 
-    def test_diarization_models_absent_offers_download_checkbox(self):
+    def test_diarization_models_absent_with_network_offers_download_checkbox(self):
+        """Мережа є: чекбокс докачки активний (issue #36 — раніше залежало
+        від того, чи раннер CI справді онлайн, тепер мережа підмінена)."""
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as tmp_dir:
             diar_dir = Path(tmp_dir)
             with patch("whisper_core.paths.diarization_models_dir", return_value=diar_dir):
-                wiz = self._wizard()
+                wiz = self._wizard(network=True)
                 chk, _sz, is_dl = wiz._extra_chks["diarization"]
                 self.assertFalse(is_dl, "коли моделей діаризації немає, is_downloaded=False")
-                self.assertTrue(chk.isEnabled(), "коли моделей діаризації немає, чекбокс активний для завантаження")
+                self.assertTrue(chk.isEnabled(), "коли моделей діаризації немає й мережа є, чекбокс активний для завантаження")
+
+    def test_diarization_models_absent_without_network_disables_checkbox_with_explanation(self):
+        """Мережі немає: чекбокс докачки деактивовано, і поруч є чесне
+        пояснення для людини (issue #36 — друга гілка того самого падіння)."""
+        import tempfile
+        from pathlib import Path
+        from fronts.desktop.i18n import tr
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            diar_dir = Path(tmp_dir)
+            with patch("whisper_core.paths.diarization_models_dir", return_value=diar_dir):
+                wiz = self._wizard(network=False)
+                chk, _sz, is_dl = wiz._extra_chks["diarization"]
+                self.assertFalse(is_dl, "коли моделей діаризації немає, is_downloaded=False")
+                self.assertFalse(chk.isEnabled(), "без мережі докачку не пропонуємо — чекбокс деактивовано")
+                labels = [lbl.text() for lbl in wiz.findChildren(QLabel)]
+                self.assertIn(tr("onb_extra_no_net"), labels,
+                              "без мережі поруч мусить бути пояснення для людини")
 
 
 class OnboardingHonestStepsTests(unittest.TestCase):
@@ -453,7 +486,10 @@ class OnboardingHonestStepsTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self, gpu_possible=False):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=gpu_possible), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         def _cleanup():
             wiz._detach_worker()

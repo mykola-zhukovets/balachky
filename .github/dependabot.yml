@@ -1,0 +1,13 @@
+# Dependabot: лише сповіщення й PR безпеки для Python-залежностей.
+# Планові оновлення версій вимкнено (open-pull-requests-limit: 0): піни у
+# requirements.txt узгоджені з PyInstaller-збіркою і змінюються лише вручну
+# з гейтом, тож автоматичні PR на кожну нову версію створювали б шум.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels:
+      - "area/security"

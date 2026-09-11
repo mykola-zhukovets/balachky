@@ -38,6 +38,8 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Callable, Any
 
 import whisper_core.cuda_runtime as cuda_runtime
+import whisper_core.stt_presets as stt_presets
+import whisper_core.stt_sherpa_models as sherpa_models
 import whisper_core.meeting.diarization_models as diar_models
 import whisper_core.models as stt_models
 import whisper_core.paths as paths
@@ -219,6 +221,27 @@ def get_available_components(cfg: Config) -> list[ComponentExportInfo]:
                         "dereferenced": True,
                     }
                 ))
+
+    # 1b. STT: пакети другого рушія (sherpa-onnx) — feature/stt-sherpa-parakeet
+    for preset in stt_presets.PRESETS:
+        if preset.kind != "sherpa":
+            continue
+        package = sherpa_models.package_for(preset.name)
+        pkg_dir = sherpa_models.model_dir(preset.name)
+        if package is None or not sherpa_models.models_present_fast(pkg_dir, package):
+            continue
+        fc, sz = _get_dir_file_count_and_size(pkg_dir)
+        result.append(ComponentExportInfo(
+            id=f"asr_sherpa_{package.id}",
+            type="asr_sherpa",
+            display_name=f"Модель розпізнавання ({preset.name})",
+            size_bytes=sz,
+            file_count=fc,
+            source_dir=pkg_dir,
+            payload_rel_path=f"payload/asr-sherpa/{package.id}",
+            checksum_file=f"checksums/asr-sherpa-{package.id}.sha256",
+            details={"preset": preset.name},
+        ))
 
     # 2. CUDA Runtime
     if cuda_runtime.runtime_ready():
@@ -717,6 +740,12 @@ def import_destination(comp: dict, cfg: Config):
         cache_root = Path(stt_models.resolve_cache_dir(cfg.model_dir))
         dest = cache_root / ("models--" + repo.replace("/", "--")) / "snapshots" / revision
         return dest if paths.safe_under(cache_root, dest) else None
+
+    if ctype == "asr_sherpa":
+        preset = _safe_segment(details.get("preset"))
+        if not preset or sherpa_models.package_for(preset) is None:
+            return None
+        return sherpa_models.model_dir(preset)
 
     if ctype == "cuda_runtime":
         return cuda_runtime.cuda_dir()

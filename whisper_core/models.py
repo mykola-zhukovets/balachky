@@ -13,6 +13,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +22,7 @@ _FALLBACK_REPOS = {
     "small": "Systran/faster-whisper-small",
     "medium": "Systran/faster-whisper-medium",
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "large-v2": "Systran/faster-whisper-large-v2",
     "large-v3": "Systran/faster-whisper-large-v3",
 }
 
@@ -83,6 +85,25 @@ _MODEL_DOWNLOAD_MANIFESTS = {
         ModelDownloadAsset(
             "model.bin", 1617884929,
             "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da"),
+    ),
+    # feature/stt-preset-large-v2: розміри й SHA-256 звірено 2026-09-06 з
+    # HuggingFace API (lfs.oid для model.bin, X-Linked-Size) і локальним хешем
+    # трьох малих файлів; tokenizer.json і vocabulary.txt побайтово ті самі, що
+    # у small/medium (спільний токенізатор Whisper v2).
+    ("Systran/faster-whisper-large-v2",
+     "f0fe81560cb8b68660e564f55dd99207059c092e"): (
+        ModelDownloadAsset(
+            "config.json", 2796,
+            "d86b7a7664a12559d644aa210a32ce9a7e03913e794b7ea4fb7182de69e273a7"),
+        ModelDownloadAsset(
+            "tokenizer.json", 2203239,
+            "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"),
+        ModelDownloadAsset(
+            "vocabulary.txt", 459861,
+            "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"),
+        ModelDownloadAsset(
+            "model.bin", 3086912962,
+            "bf2a9746382e1aa7ffff6b3a0d137ed9edbd9670c3b87e5d35f5e85e70d0333a"),
     ),
     ("Systran/faster-whisper-large-v3",
      "edaa852ec7e145841d8ffdb056a99866b5f0a478"): (
@@ -421,6 +442,16 @@ def resolve_model_state(cfg) -> ModelState:
     """Суто ФАЙЛОВА (без мережі) детекція: чи готовий рушій стартувати офлайн.
     PINNED_OK → пінований знімок на місці; OTHER_REVISION_PRESENT → є інший
     повний знімок (revision несе його sha); ABSENT → нічого повного нема."""
+    # feature/stt-sherpa-parakeet: пакети другого рушія живуть не в кеші HF,
+    # а в components/stt — їхній стан визначає власна перевірка (розмір файлів;
+    # повний SHA робить сам рушій при завантаженні, як і Whisper-гілка).
+    from .stt_presets import engine_kind
+    if engine_kind(cfg.model_name) == "sherpa":
+        from . import stt_sherpa_models as sherpa_models
+        package = sherpa_models.package_for(cfg.model_name)
+        present = sherpa_models.models_present_fast(
+            sherpa_models.model_dir(cfg.model_name), package)
+        return ModelState(PINNED_OK if present else ABSENT, None)
     repo = repo_for(cfg.model_name)
     pinned = revision_for(cfg.model_name)
     cache_dir = resolve_cache_dir(cfg.model_dir)
@@ -505,12 +536,66 @@ def _dir_size(path) -> int:
     return total
 
 
+_SIZE_CACHE: dict = {}
+_SIZE_CACHE_LOCK = threading.Lock()
+
+
+def _forget_dir_size_cache(path) -> None:
+    """Скинути кеш розміру теки моделі — викликати одразу після встановлення чи
+    видалення, щоб model_snapshot_size не повернув застарілий розмір."""
+    scope = os.path.abspath(os.fspath(path))
+    with _SIZE_CACHE_LOCK:
+        _SIZE_CACHE.pop(scope, None)
+
+
+def _dir_signature(scope: str):
+    """Дешевий (O(кількість прямих елементів), НЕ повний обхід) відбиток стану
+    теки: mtime_ns самої теки + mtime_ns кожного прямого елемента (файлу чи
+    підтеки). HF-кеш кладе нові blob-и/знімки як прямі елементи вже наявних
+    підтек blobs/snapshots — одного рівня досить, щоб зловити install/delete,
+    не перечитуючи всі файли моделі. None — теки нема."""
+    try:
+        top = os.stat(scope).st_mtime_ns
+        entries = tuple(sorted(
+            (entry.name, entry.stat(follow_symlinks=False).st_mtime_ns)
+            for entry in os.scandir(scope)))
+    except OSError:
+        return None
+    return (top, entries)
+
+
+def _cached_dir_size(path) -> int:
+    """Розмір теки з кешем за _dir_signature (шлях + дворівневий mtime-відбиток)
+    — той самий підхід, що tts/voices.py::_integrity_fingerprint. Install/
+    delete моделей у застосунку підміняють чи прибирають ЦІЛУ теку моделі
+    атомарно (os.replace/shutil.rmtree), а докачка HF-кешу кладе нові blob-и
+    прямими елементами наявних blobs/snapshots — обидва сигнали ловляться.
+    Зміна файлу ГЛИБШЕ (без зміни mtime жодного прямого елемента теки) —
+    кешем НЕ ловиться: свідомий компроміс заради швидкості, той самий, що
+    й у voices.py."""
+    scope = os.path.abspath(os.fspath(path))
+    fingerprint = _dir_signature(scope)
+    if fingerprint is None:
+        _forget_dir_size_cache(scope)
+        return 0
+    with _SIZE_CACHE_LOCK:
+        cached = _SIZE_CACHE.get(scope)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+    total = _dir_size(path)
+    with _SIZE_CACHE_LOCK:
+        _SIZE_CACHE[scope] = (fingerprint, total)
+    return total
+
+
 def model_snapshot_size(model_dir, repo_id) -> int:
     """Фактичний розмір теки моделі repo_id на диску у байтах (0 — теки нема).
-    Використовується UI для «звільнити N» ще ДО підтвердження видалення."""
+    Використовується UI для «звільнити N» ще ДО підтвердження видалення.
+    Кешується за mtime_ns теки (_cached_dir_size) — повторний виклик без
+    install/delete не повторює обходу диска."""
     repo_dir = (Path(resolve_cache_dir(model_dir))
                 / ("models--" + repo_id.replace("/", "--")))
-    return _dir_size(repo_dir)
+    return _cached_dir_size(repo_dir)
 
 
 def _within(path: str, root: str) -> bool:
@@ -554,4 +639,6 @@ def delete_model(model_dir, model_name) -> int:
         raise ValueError(f"Теки моделі {repo_id} нема в {root}")
     freed = _dir_size(real_repo)
     shutil.rmtree(real_repo)
+    _forget_dir_size_cache(repo_dir)             # ключ кешу — шлях ДО realpath (як у model_snapshot_size)
+    _forget_dir_size_cache(real_repo)             # і сам real_repo — про всяк випадок (symlink-корінь)
     return freed

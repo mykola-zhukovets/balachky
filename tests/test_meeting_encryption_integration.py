@@ -46,7 +46,9 @@ class LiveMeetingVaultIntegrationTests(unittest.TestCase):
             meeting = self._legacy_session(root)
 
             # Real current-user DPAPI envelope round-trip.
-            dek = crypto.ensure_dek(root)
+            # Знімок значення: після lock_vault ключ занулюється НА МІСЦІ (панічне
+            # блокування 08.09), тож посилання на кешований буфер стало б нулями.
+            dek = bytes(crypto.ensure_dek(root))
             self.assertEqual(crypto.ensure_dek(root), dek)
             self.assertEqual(crypto.vault_mode(root), "dpapi")
             self.assertEqual(session.migrate_unencrypted_sessions(root, dek), 1)

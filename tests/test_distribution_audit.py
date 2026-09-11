@@ -21,7 +21,6 @@ FORBIDDEN_MODULES = {
     "matplotlib",
     "tkinter",
     "_tkinter",
-    "aiogram",
 }
 ESPEAK_PATTERN = re.compile(
     r"(?i)(?<![a-z])e-?speak(?:-ng)?(?![a-z])"
@@ -292,5 +291,4 @@ def test_pyav_hook_collects_subtitles_stream_and_pyd_binaries():
     assert any("stream" in name for name in pyd_names), (
         f"collect_dynamic_libs('av') must collect stream*.pyd extensions, got: {pyd_names}"
     )
-
 

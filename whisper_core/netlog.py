@@ -27,9 +27,12 @@ from pathlib import Path
 from . import paths
 
 #: типи легітимного виходу
-MODEL = "model"      #: завантаження моделі / компонента постобробки
-UPDATE = "update"    #: перевірка або завантаження оновлення програми
-OTHER = "other"      #: будь-що інше → allowed=False (у нормі не трапляється)
+MODEL = "model"          #: завантаження моделі / компонента постобробки
+UPDATE = "update"        #: перевірка або завантаження оновлення програми
+TELEGRAM = "telegram"    #: вихід до Telegram Bot API (за окремим увімкненням)
+OTHER = "other"          #: будь-що інше → allowed=False (у нормі не трапляється)
+
+_KNOWN_KINDS = (MODEL, UPDATE, TELEGRAM, OTHER)
 
 #: скільки останніх записів тримаємо (журнал у нормі майже порожній)
 _MAX = 500
@@ -51,11 +54,12 @@ def record(host, *, kind: str = OTHER, allowed: bool = False,
 
     Ніколи не кидає: помилку запису ковтаємо, щоб логування не зламало саме
     завантаження. Повертає створений запис (для тестів/діагностики)."""
+    is_known = kind in _KNOWN_KINDS
     entry = {
         "ts": time.time(),
         "host": str(host or "?"),
-        "kind": kind if kind in (MODEL, UPDATE, OTHER) else OTHER,
-        "allowed": bool(allowed),
+        "kind": kind if is_known else OTHER,
+        "allowed": bool(allowed) if is_known else False,
         "detail": str(detail or ""),
     }
     line = json.dumps(entry, ensure_ascii=False)

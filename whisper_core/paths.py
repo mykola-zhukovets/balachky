@@ -60,6 +60,12 @@ def user_dir() -> Path:
     return USER_DIR
 
 
+def telegram_token_path() -> Path:
+    """Bot token: локальний профіль Windows, ніколи корінь dev-репозиторію."""
+    local_app_data = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+    return local_app_data / "Balachky" / "telegram" / "bot-token.json"
+
+
 # ПРИВАТНІСТЬ / ОДНА СПІЛЬНА ФУНКЦІЯ (замість латок у кожному місці логування):
 # військова та медична аудиторія продукту — обліковий запис Windows часто
 # несе ПІБ, позивний чи звання. anonymize_path заміняє сегмент
@@ -314,3 +320,20 @@ def bundled_terms_example() -> "Path | None":
         return None
     p = _DATA_DIR / "terms.toml"
     return p if p.exists() else None
+
+
+def alloc_timestamped_path(root: "Path | str", suffix: str = ".wav") -> Path:
+    """Шлях файлу на основі локального часу старту: %Y-%m-%d_%H-%M-%S{suffix}.
+
+    При колізії (два виклики за секунду) додає суфікс -1, -2... Створює теку root.
+    Спільна уніфікована генерація для recordings.py та corpus.py."""
+    import time
+    root_path = Path(root)
+    root_path.mkdir(parents=True, exist_ok=True)
+    base = time.strftime("%Y-%m-%d_%H-%M-%S")
+    p = root_path / f"{base}{suffix}"
+    n = 1
+    while p.exists():
+        p = root_path / f"{base}-{n}{suffix}"
+        n += 1
+    return p

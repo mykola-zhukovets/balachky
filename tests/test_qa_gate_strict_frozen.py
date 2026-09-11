@@ -20,6 +20,24 @@ COMMIT = "1" * 40
 
 @unittest.skipUnless(PWSH, "PowerShell is required for the release QA runner")
 class StrictFrozenReleaseQaTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Сторонній Balachky.exe робить перевірку ізоляції безглуздою.
+
+        Раніше залишений процес (напр. від ручного димового тесту зібраного
+        застосунку) давав два загадкові падіння з текстом про другий екземпляр.
+        Тепер тест одразу називає винуватця: pid і шлях."""
+        stray = subprocess.run(
+            [PWSH, "-NoProfile", "-Command",
+             "Get-Process -Name Balachky -ErrorAction SilentlyContinue |"
+             " ForEach-Object { \"$($_.Id) $($_.Path)\" }"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        running = [ln.strip() for ln in stray.stdout.splitlines() if ln.strip()]
+        if running:
+            raise AssertionError(
+                "перед перевіркою вже запущено Balachky: " + "; ".join(running)
+                + " — закрийте застосунок або зупиніть цей процес")
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name) / "repo"

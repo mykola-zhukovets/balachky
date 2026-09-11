@@ -274,6 +274,38 @@ def clear_pending_centroids(profile) -> None:
             log.exception("Помилка видалення voice_pending %s", p)
 
 
+def panic_wipe(profile) -> bool:
+    """Панічне блокування: прибрати сховище голосів і чергу необроблених
+    зразків (voice_pending/). Біометрія не входить у шифрування нарад, тож
+    панічне блокування мусить чистити її окремим кроком.
+
+    Повертає True, якщо все прибрано; False — якщо щось лишилося (наприклад,
+    заблокований файл), щоб виклик міг чесно звітувати цей крок як часткову
+    відмову, а не мовчазний успіх."""
+    path = _voices_file(profile)
+    ok = True
+    for candidate in (path, path.with_suffix(".tmp")):
+        try:
+            candidate.unlink(missing_ok=True)
+        except OSError:
+            log.exception("Panic: не вдалося видалити %s", candidate)
+            ok = False
+
+    pending_dir = _pending_dir(profile)
+    if pending_dir.is_dir():
+        for item in list(pending_dir.iterdir()):
+            try:
+                item.unlink()
+            except OSError:
+                log.exception("Panic: не вдалося видалити %s", item)
+                ok = False
+        try:
+            pending_dir.rmdir()
+        except OSError:
+            ok = False
+    return ok
+
+
 def list_voices(profile) -> list[dict[str, Any]]:
     """Повернути відсортований список збережених профілів голосів."""
     voices = load_voices(profile)
@@ -296,6 +328,7 @@ __all__ = [
     "match_voice",
     "delete_voice",
     "clear_voices",
+    "panic_wipe",
     "list_voices",
     "save_pending_centroids",
     "take_pending_centroid",

@@ -244,20 +244,23 @@ class DownloadWorker(QThread):
 
     def run(self):
         try:
-            approx_size = 3_100_000_000 if "large-v3" in self._repo_id and "turbo" not in self._repo_id else 1_600_000_000
-            check_free_space(self._cache_dir, approx_size)
+            rev = self._revision
+            if rev is None:
+                # feature/stt-preset-large-v2: ревізію шукаємо по ВСІХ пресетах
+                # з даних (whisper_core.stt_presets), а не по захардкодженому
+                # списку — новий пресет не може мовчки лишитись без піна.
+                from whisper_core import stt_presets
+                for preset in stt_presets.PRESETS:
+                    if repo_for(preset.name) == self._repo_id:
+                        rev = revision_for(preset.name)
+                        break
+            manifest = model_download_manifest(self._repo_id, rev)
+            # Місце на диску — за фактичною сумою маніфесту, не за евристикою
+            # «large-v3 → 3,1 ГБ, інакше 1,6 ГБ» (вона брехала б для large-v2).
+            check_free_space(self._cache_dir, sum(a.size for a in manifest))
             # доказова офлайновість: єдиний легітимний вихід — завантаження моделі
             netlog.record("huggingface.co", kind=netlog.MODEL, allowed=True,
                           detail=self._repo_id)
-
-            rev = self._revision
-            if rev is None:
-                for model_name in ("small", "medium", "large-v3-turbo",
-                                   "large-v3"):
-                    if repo_for(model_name) == self._repo_id:
-                        rev = revision_for(model_name)
-                        break
-            manifest = model_download_manifest(self._repo_id, rev)
             snap_dir = Path(self._cache_dir) / ("models--" + self._repo_id.replace("/", "--")) / "snapshots" / rev
             snap_dir.mkdir(parents=True, exist_ok=True)
 
@@ -292,6 +295,46 @@ class DownloadWorker(QThread):
                         anonymize_path(self._cache_dir))
             self.finished_ok.emit()
 
+
+
+class SherpaDownloadWorker(QThread):
+    """Докачує пакет моделі другого рушія (sherpa-onnx) у components/stt.
+    feature/stt-sherpa-parakeet. Той самий контракт сигналів, що й у
+    DownloadWorker (HF-кеш), тож діалог відновлення підключає їх однаково.
+    Мережа, звірка розміру/SHA-256 і атомарна активація — у
+    whisper_core.stt_sherpa_models.download_and_install."""
+    progress = Signal(object, object)
+    finished_ok = Signal()
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, preset_name: str, parent=None):
+        super().__init__(parent)
+        self._preset = str(preset_name or "")
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        self._cancel.set()
+
+    def run(self):
+        try:
+            from whisper_core import stt_sherpa_models as sherpa_models
+            package = sherpa_models.package_for(self._preset)
+            if package is None:
+                raise ValueError(f"Невідомий пакет моделі: {self._preset}")
+            sherpa_models.download_and_install(
+                sherpa_models.model_dir(self._preset), package,
+                progress_cb=lambda done, total: self.progress.emit(done, total),
+                cancel_check=self._cancel.is_set)
+        except InterruptedError:
+            logging.info("Докачку пакета %s скасовано", self._preset)
+            self.cancelled.emit()
+        except Exception as e:
+            logging.error("Не вдалося докачати пакет %s: %s", self._preset, e)
+            self.failed.emit(str(e))
+        else:
+            logging.info("Пакет моделі %s готовий", self._preset)
+            self.finished_ok.emit()
 
 
 class ExtraComponentWorker(QThread):

@@ -801,9 +801,9 @@ class VocabPage(QWidget):
             shutil.copy2(src, path)
 
     def _open_terms_file(self):
+        from ..links import reveal_in_explorer
         p = self.controller.profile.terms_path
-        if p.exists():
-            os.startfile(p)
+        reveal_in_explorer(p)
 
     def _add_candidate(self, word):
         canon, ok = QInputDialog.getText(

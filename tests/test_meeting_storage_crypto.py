@@ -17,6 +17,28 @@ from whisper_core.meeting import storage_crypto as crypto
 _HAS_CRYPTO = importlib.util.find_spec("cryptography") is not None
 
 
+def _ciphertext_chunks(path):
+    data = Path(path).read_bytes()
+    header_size = 1 + len(crypto._MAGIC) + crypto._FILE_ID_BYTES
+    if len(data) < header_size or data[1:1 + len(crypto._MAGIC)] != crypto._MAGIC:
+        raise AssertionError("invalid encrypted container header")
+    chunks = []
+    offset = header_size
+    while offset < len(data):
+        if len(data) - offset < 4:
+            raise AssertionError("truncated encrypted chunk length")
+        size = int.from_bytes(data[offset:offset + 4], "big")
+        offset += 4
+        end = offset + size
+        if end > len(data):
+            raise AssertionError("truncated encrypted chunk")
+        chunks.append(data[offset:end])
+        offset = end
+    if not chunks:
+        raise AssertionError("encrypted container has no chunks")
+    return chunks
+
+
 class DPAPITests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "DPAPI існує лише у Windows")
     def test_wrap_unwrap_round_trip(self):
@@ -47,6 +69,32 @@ class StreamingAesGcmTests(unittest.TestCase):
                      crypto.CHUNK_SIZE + 1, crypto.CHUNK_SIZE * 3 + 123):
             with self.subTest(size=size):
                 self._round_trip(os.urandom(size))
+
+    def test_encrypt_bytes_repeated_full_chunks_have_distinct_ciphertext_bodies(self):
+        block = bytes(range(256)) * (crypto.CHUNK_SIZE // 256)
+        payload = block * 3 + b"final"
+        with tempfile.TemporaryDirectory() as tmp:
+            encrypted = Path(tmp) / "history.jsonl.enc"
+            crypto.encrypt_bytes(
+                payload, encrypted, os.urandom(32), context="history/history.jsonl")
+            chunks = _ciphertext_chunks(encrypted)
+            self.assertEqual(len(chunks), 4)
+            bodies = [chunk[:-crypto._TAG_BYTES] for chunk in chunks[:3]]
+            self.assertTrue(all(len(body) == crypto.CHUNK_SIZE for body in bodies))
+            self.assertEqual(len(set(bodies)), len(bodies))
+
+    def test_encrypt_bytes_adjacent_identical_records_have_distinct_ciphertext(self):
+        line = b'{"text":"same plaintext"}\n'
+        record = (line * (crypto.CHUNK_SIZE // len(line) + 1))[:crypto.CHUNK_SIZE]
+        with tempfile.TemporaryDirectory() as tmp:
+            encrypted = Path(tmp) / "history.jsonl.enc"
+            crypto.encrypt_bytes(
+                record * 2, encrypted, os.urandom(32),
+                context="history/history.jsonl")
+            chunks = _ciphertext_chunks(encrypted)
+            self.assertEqual(len(chunks), 2)
+            bodies = [chunk[:-crypto._TAG_BYTES] for chunk in chunks]
+            self.assertEqual(len(set(bodies)), 2)
 
     def test_tamper_raises_authenticated_decryption_error(self):
         from cryptography.exceptions import InvalidTag
@@ -186,7 +234,9 @@ class VaultKeySafetyTests(unittest.TestCase):
                     thread.join()
             self.assertEqual(errors, [])
             self.assertEqual(len(results), 8)
-            self.assertEqual(len(set(results)), 1)
+            # DEK кешується як bytearray (панічне блокування зануляє його на
+            # місці) — нехешовний, тож порівнюємо вміст, а не set() напряму.
+            self.assertEqual(len({bytes(r) for r in results}), 1)
 
     def test_missing_vaultkey_with_encrypted_artifact_is_explicit_key_loss(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,6 +247,61 @@ class VaultKeySafetyTests(unittest.TestCase):
                 crypto.ensure_dek(root)
             self.assertIn(".vaultkey", str(raised.exception))
             self.assertFalse((root / crypto.KEY_FILE).exists())
+
+    def test_dpapi_dek_is_cached_in_place_and_panic_zeroes_it(self):
+        """Головна зміна фікса: DPAPI-ключ ТЕЖ кешується — інакше панічному
+        блокуванню немає чого занулювати. Перевіряємо саме шлях промаху кешу
+        (_load_dek): після wipe два виклики мають повернути той самий об'єкт,
+        а наступний wipe — занулити його на місці."""
+        saved = dict(crypto._PASSWORD_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "meetings"
+                with mock.patch.object(crypto, "_dpapi_protect", side_effect=lambda dek: dek), \
+                     mock.patch.object(crypto, "_dpapi_unprotect", side_effect=lambda dek: dek):
+                    crypto.ensure_dek(root)          # створення сховища
+                    crypto.wipe_password_cache()     # кеш порожній → далі шлях _load_dek
+                    first = crypto.ensure_dek(root)
+                    second = crypto.ensure_dek(root)
+                    self.assertIs(second, first)
+                    self.assertIsInstance(first, bytearray)
+                    cache_key = str(root.resolve())
+                    self.assertIs(crypto._PASSWORD_CACHE.get(cache_key), first)
+                    crypto.wipe_password_cache()
+                    self.assertEqual(bytes(first), bytes(32))
+                    self.assertNotIn(cache_key, crypto._PASSWORD_CACHE)
+        finally:
+            crypto._PASSWORD_CACHE.clear()
+            crypto._PASSWORD_CACHE.update(saved)
+
+    def test_lock_vault_zeroes_cached_dek_for_holders(self):
+        """«Заблокувати зараз» — та сама гігієна, що й паніка: тримачі
+        попереднього посилання бачать нулі, а не живий секрет."""
+        saved = dict(crypto._PASSWORD_CACHE)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "meetings"
+                with mock.patch.object(crypto, "_dpapi_protect", side_effect=lambda dek: dek), \
+                     mock.patch.object(crypto, "_dpapi_unprotect", side_effect=lambda dek: dek):
+                    dek = crypto.ensure_dek(root)
+                    crypto.lock_vault(root)
+                    self.assertEqual(bytes(dek), bytes(32))
+                    self.assertNotIn(str(root.resolve()), crypto._PASSWORD_CACHE)
+        finally:
+            crypto._PASSWORD_CACHE.clear()
+            crypto._PASSWORD_CACHE.update(saved)
+
+    @unittest.skipUnless(_HAS_CRYPTO, "cryptography unavailable")
+    def test_encryption_refuses_zeroed_dek_instead_of_public_key(self):
+        """Занулений посеред роботи ключ не має мовчки давати публічно
+        відтворюваний HKDF(нулі) — чесна відмова замість шифротексту-пустышки."""
+        with self.assertRaises(crypto.VaultKeyLost):
+            crypto._derive_file_key(bytearray(32), b"\x01" * 16)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "plain.bin"
+            src.write_bytes(b"secret" * 100)
+            with self.assertRaises(crypto.VaultKeyLost):
+                crypto.encrypt_file(src, Path(tmp) / "out.enc", bytearray(32))
 
 if __name__ == "__main__":
     unittest.main()

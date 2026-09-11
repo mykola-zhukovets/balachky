@@ -688,6 +688,35 @@ def to_transcript_json(utterances) -> list:
     return out
 
 
+def subtitle_segments(utterances_json: list, speaker_names=None, *,
+                      me_label: str, others_label: str,
+                      show_source: bool = True) -> list[tuple[float, float, str]]:
+    """Машинний transcript.json → сегменти субтитрів (start, end, “Мітка: текст”)
+    для export.to_srt / export.to_vtt.
+
+    Мітка — та сама, що в .txt/.md (``_speaker_label``): власне ім’я зі
+    ``speaker_names``, “Я”/“Співрозмовники” для джерел; діаризований мовець
+    без імені → ``others_label`` без номера (рішення 30.07); одна доріжка
+    (``single``) — без мітки, як у текстовому експорті. Порожні репліки і
+    репліки без часу пропускаються; порядок за ``start``; межі не змінюються.
+    ``show_source=False`` (чекбокс “Хто говорить” знято) глушить лише мітки-джерела
+    “Я”/“Співрозмовники” — власні імена лишаються, як у .txt/.md."""
+    out: list[tuple[float, float, str]] = []
+    for item in utterances_json or []:
+        text = str(item.get("text") or "").strip()
+        start, end = item.get("start"), item.get("end")
+        if not text or start is None or end is None:
+            continue
+        speaker = str(item.get("speaker") or "")
+        label = _speaker_label(speaker, me_label=me_label, others_label=others_label,
+                               speaker_names=speaker_names, show_source=show_source)
+        if label is None and show_source and speaker.startswith("speaker_"):
+            label = others_label
+        out.append((float(start), float(end), f"{label}: {text}" if label else text))
+    out.sort(key=lambda seg: seg[0])
+    return out
+
+
 def write_transcript(session_dir, utterances, *, me_label: str, others_label: str,
                      speaker_names=None, show_source: bool = True,
                      stem: str = "transcript") -> tuple:

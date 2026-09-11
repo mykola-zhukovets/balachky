@@ -27,6 +27,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .history import read_recent
+
 # Види джерел (порівнюються в коді; показ — через локалізацію у фронті).
 KIND_DICTATION = "dictation"
 KIND_FILE = "file"
@@ -139,20 +141,9 @@ class SearchIndex:
 def _history_docs(source) -> list:
     """Документи з одного history.jsonl. source може мати .history_path (Profile)
     або бути Path/str. Ім'я словника беремо з .name, якщо є."""
-    path = Path(getattr(source, "history_path", source))
     profile = str(getattr(source, "name", "") or "")
     out: list = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return out
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for line, rec in read_recent(source):
         text = (rec.get("final") or rec.get("raw") or "").strip()
         if not text:
             continue

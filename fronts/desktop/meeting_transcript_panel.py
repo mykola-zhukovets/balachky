@@ -32,17 +32,24 @@ from __future__ import annotations
 import bisect
 import re
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QTextCharFormat, QTextLayout, QTextOption
+from PySide6.QtCore import (
+    QAbstractListModel, QEvent, QModelIndex, QPointF, QRect, QSize, Qt,
+    QSortFilterProxyModel, Signal,
+)
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QTextCharFormat, QTextLayout, QTextOption
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QLabel, QLineEdit, QListView,
-    QStyledItemDelegate, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListView, QScrollArea, QStyledItemDelegate, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from . import theme
 from .i18n import tr
 from .player import _IconButton
 from whisper_core.meeting.postprocess import SPK_ME, SPK_OTHERS, _speaker_label
+from whisper_core.meeting.speaker_nav import (
+    next_speaker_utterance_ms, prev_speaker_utterance_ms,
+)
 
 _ACTIVE_ROLE = Qt.UserRole + 1
 # Діапазон (char_start, char_len) активного слова в u.text активної репліки —
@@ -108,6 +115,31 @@ def _fmt_stamp(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
+def _badge_rect(row_rect: QRect) -> QRect:
+    """Прямокутник кольорового кружечка мовця в межах рядка ``row_rect`` —
+    ЄДИНЕ джерело істини для малювання (``_UtteranceDelegate.paint``) і
+    hit-test кліку по бейджу (``TranscriptPanel._badge_hit``): рахувати
+    геометрію бейджа двічі в різних місцях — гарантований дрейф при
+    наступній зміні відступів."""
+    x = row_rect.x() + _PAD
+    y = row_rect.y() + _PAD + 5
+    return QRect(x, y, _BADGE_D, _BADGE_D)
+
+
+def _dot_icon(color: str, d: int = _BADGE_D) -> QIcon:
+    """Суцільний кружечок кольору мовця (``_speaker_color``) як ``QIcon`` —
+    той самий бейдж, що малює делегат рядка, тепер на чіпі фільтра."""
+    pixmap = QPixmap(d, d)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(0, 0, d - 1, d - 1)
+    painter.end()
+    return QIcon(pixmap)
+
+
 class UtteranceListModel(QAbstractListModel):
     """Легка модель над списком ``Utterance`` — жодних Qt-віджетів на репліку.
     ``speaker_names`` — власні імена мовців (діаризація/multimic), як у
@@ -140,6 +172,12 @@ class UtteranceListModel(QAbstractListModel):
         self._matches = []
         self._active_match_idx = -1
         self._row_matches = {}
+        # Предикат видимості рядка (Етап 4 спеки — пошук враховує фільтр
+        # мовця): ``None`` — усі рядки видимі; інакше ``predicate(row) -> bool``.
+        # Панель передає сюди ``TranscriptFilterProxyModel.filterAcceptsRow``
+        # (обгорнутий під сигнатуру одного аргументу) — ОДНЕ джерело істини
+        # для того, що саме приховано фільтром, без дублювання умови тут.
+        self._visible_predicate = None
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self._utterances)
@@ -177,6 +215,27 @@ class UtteranceListModel(QAbstractListModel):
         return _speaker_label(
             speaker, me_label=self._me_label, others_label=self._others_label,
             speaker_names=self._speaker_names, show_source=True)
+
+    def speaker_counts(self):
+        """``[(код_мовця, кількість_реплік), ...]`` у порядку першої появи
+        мовця в нараді — джерело лічильників чипів фільтра мовців."""
+        order = []
+        counts = {}
+        for u in self._utterances:
+            if u.speaker not in counts:
+                counts[u.speaker] = 0
+                order.append(u.speaker)
+            counts[u.speaker] += 1
+        return [(speaker, counts[speaker]) for speaker in order]
+
+    def set_speaker_names(self, speaker_names) -> None:
+        """Оновити власні імена мовців (перейменування у діаризації/
+        multimic) — фільтр і дані лишаються за КОДОМ мовця, змінюється лише
+        видима мітка; делегат перечитує її з наступним перемальовуванням."""
+        self._speaker_names = dict(speaker_names or {})
+        if self._utterances:
+            last = len(self._utterances) - 1
+            self.dataChanged.emit(self.index(0, 0), self.index(last, 0))
 
     def row_for_ms(self, pos_ms: int) -> int:
         """Bisect по стартах: остання репліка, чий старт <= pos_ms, і лише
@@ -255,13 +314,29 @@ class UtteranceListModel(QAbstractListModel):
         ігнорується (``lower()`` з обох боків). Порожній/пробільний запит —
         збігів немає, без винятків. Активним стає перший збіг (індекс 0), як
         і очікує рядок пошуку одразу після введення тексту."""
+        self._search_query = (query or "").strip().lower()
+        self._recompute_matches()
+
+    def set_visible_filter(self, predicate) -> None:
+        """Встановити/зняти предикат видимості рядка і перерахувати збіги
+        пошуку під поточний запит (текст запиту НЕ втрачається — лише
+        перелік збігів звужується/розширюється). ``predicate=None`` — усі
+        рядки видимі (фільтр мовця знято)."""
+        self._visible_predicate = predicate
+        self._recompute_matches()
+
+    def _is_row_visible(self, row: int) -> bool:
+        return self._visible_predicate is None or self._visible_predicate(row)
+
+    def _recompute_matches(self) -> None:
         old_rows = set(self._row_matches.keys())
-        q = (query or "").strip().lower()
-        self._search_query = q
+        q = self._search_query
         matches = []
         row_matches = {}
         if q:
             for row, u in enumerate(self._utterances):
+                if not self._is_row_visible(row):
+                    continue
                 text_lower = (u.text or "").lower()
                 found = []
                 start = 0
@@ -316,6 +391,157 @@ class UtteranceListModel(QAbstractListModel):
         return -1
 
 
+class TranscriptFilterProxyModel(QSortFilterProxyModel):
+    """Проксі над ``UtteranceListModel``: приховує репліки чужих мовців —
+    БЕЗ дублювання даних джерела (навігація за мовцями, спека 31.07 §5).
+    ``filterAcceptsRow`` — O(1) перевірка коду мовця; сортування не
+    застосовується, хронологічний порядок джерела лишається незайманим.
+    ``speaker=None`` — фільтр вимкнено, видно всі репліки."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._speaker = None
+
+    def set_speaker_filter(self, speaker) -> None:
+        if speaker == self._speaker:
+            return
+        self._speaker = speaker
+        # invalidateFilter()/invalidateRowsFilter() — застарілі в цій версії
+        # PySide6; invalidate() лишається публічним і безпечним (сортування
+        # тут не застосовуємо, тож повторна оцінка сорту — нульова ціна).
+        self.invalidate()
+
+    def speaker_filter(self):
+        return self._speaker
+
+    def filterAcceptsRow(self, source_row, source_parent) -> bool:
+        if self._speaker is None:
+            return True
+        model = self.sourceModel()
+        u = model.utterance_at(source_row) if model is not None else None
+        return u is not None and u.speaker == self._speaker
+
+    # ---- делегат і панель звертаються до цих методів однаково що на
+    # джерелі (``UtteranceListModel``), що на проксі — без розгалужень ----
+    def utterance_at(self, row: int):
+        model = self.sourceModel()
+        if model is None:
+            return None
+        source_index = self.mapToSource(self.index(row, 0))
+        return model.utterance_at(source_index.row())
+
+    def speaker_label(self, speaker: str) -> "str | None":
+        model = self.sourceModel()
+        return model.speaker_label(speaker) if model is not None else None
+
+
+class _SpeakerChip(QToolButton):
+    """Чіп-кнопка фільтра мовця в шапці панелі: кольоровий кружечок (крім
+    чипа «Усі») + мітка + лічильник реплік. ``speaker`` — код мовця
+    (``None`` — чіп «Усі», без фільтра)."""
+
+    def __init__(self, speaker, parent=None):
+        super().__init__(parent)
+        self.speaker = speaker
+        self.setCheckable(True)
+        self.setAutoRaise(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self._apply_style()
+        theme.register_restyle(self._apply_style)
+
+    def focusInEvent(self, event) -> None:
+        # Ряд чипів живе у QScrollArea: стрілками фокус іде далі за видиму
+        # область, тож підтягуємо чіп у в'юпорт, інакше людина не бачить,
+        # що саме обирає.
+        super().focusInEvent(event)
+        area = self.parent()
+        while area is not None and not isinstance(area, QScrollArea):
+            area = area.parent()
+        if area is not None:
+            area.ensureWidgetVisible(self, 8, 0)
+
+    def _apply_style(self) -> None:
+        # Колір мовця береться з теми, тож іконку теж перебудовуємо: інакше
+        # після зміни теми кружечок чипа і бейдж у списку різних кольорів.
+        if self.speaker is not None:
+            self.setIcon(_dot_icon(_speaker_color(self.speaker)))
+        self.setStyleSheet(
+            "QToolButton { border: 1px solid transparent; border-radius: 11px;"
+            " padding: 3px 10px; background: transparent; }"
+            f"QToolButton:checked {{ background: {theme._GOLD_35};"
+            f" border: 1px solid {theme.GOLD}; }}"
+            f"QToolButton:focus {{ border: 1px solid {theme.GOLD}; }}")
+
+
+class SpeakerFilterBar(QWidget):
+    """Ряд чипів фільтра мовців у шапці ``TranscriptPanel``: ``[Усі (N)]``
+    плюс по чипу на кожного мовця з наради (лічильник реплік у дужках).
+    Активний чіп — рівно один (``QButtonGroup`` ексклюзивний). Клік по чипу
+    → ``speakerSelected(str | None)`` (``None`` — «Усі»)."""
+
+    speakerSelected = Signal(object)     # код мовця (str) або None («Усі»)
+
+    def __init__(self, model: UtteranceListModel, parent=None):
+        super().__init__(parent)
+        self._model = model
+        self._chips: dict = {}
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(6)
+        self.rebuild()
+
+    def rebuild(self) -> None:
+        """Перебудувати чіпи з нуля — склад мовців наради не змінюється
+        протягом життя панелі, тож викликається лише один раз при побудові."""
+        for chip in self._chips.values():
+            self._group.removeButton(chip)
+            self._row.removeWidget(chip)
+            chip.deleteLater()
+        self._chips = {}
+
+        total = len(self._model._utterances)
+        all_chip = _SpeakerChip(None, self)
+        all_chip.setText(f'{tr("meeting_speaker_filter_all")} ({total})')
+        all_chip.setAccessibleName(tr("meeting_speaker_filter_all"))
+        all_chip.setChecked(True)
+        all_chip.clicked.connect(lambda: self.speakerSelected.emit(None))
+        self._group.addButton(all_chip)
+        self._row.addWidget(all_chip)
+        self._chips[None] = all_chip
+
+        for speaker, count in self._model.speaker_counts():
+            label = self._model.speaker_label(speaker) or speaker
+            chip = _SpeakerChip(speaker, self)
+            chip.setIcon(_dot_icon(_speaker_color(speaker)))
+            chip.setIconSize(QSize(_BADGE_D, _BADGE_D))
+            chip.setText(f"{label} ({count})")
+            chip.setToolTip(tr("meeting_speaker_filter_hint"))
+            chip.setAccessibleName(f'{tr("meeting_speaker_filter_hint")}: {label}')
+            chip.clicked.connect(lambda _=False, s=speaker: self.speakerSelected.emit(s))
+            self._group.addButton(chip)
+            self._row.addWidget(chip)
+            self._chips[speaker] = chip
+        self._row.addStretch()
+
+    def refresh_labels(self) -> None:
+        """Перебудувати ЛИШЕ текст чипів (після перейменування мовця через
+        ``speaker_names``) — активний вибір і код мовця кожного чипа не
+        чіпаємо, змінюється тільки видима мітка й лічильник."""
+        counts = dict(self._model.speaker_counts())
+        for speaker, chip in self._chips.items():
+            if speaker is None:
+                total = len(self._model._utterances)
+                chip.setText(f'{tr("meeting_speaker_filter_all")} ({total})')
+                continue
+            label = self._model.speaker_label(speaker) or speaker
+            count = counts.get(speaker, 0)
+            chip.setText(f"{label} ({count})")
+            chip.setAccessibleName(f'{tr("meeting_speaker_filter_hint")}: {label}')
+
+
 class _UtteranceDelegate(QStyledItemDelegate):
     """Малює бейдж мовця + тайм-код + текст репліки напряму ``QPainter`` —
     без жодного дочірнього віджета на рядок (тисячі реплік лишаються
@@ -346,8 +572,7 @@ class _UtteranceDelegate(QStyledItemDelegate):
             color = _speaker_color(u.speaker)
             painter.setBrush(QColor(color))
             painter.setPen(Qt.NoPen)
-            dot_y = y + 5
-            painter.drawEllipse(x, dot_y, _BADGE_D, _BADGE_D)
+            painter.drawEllipse(_badge_rect(rect))
             painter.setPen(QColor(color))
             font = painter.font()
             font.setBold(True)
@@ -540,12 +765,29 @@ class TranscriptPanel(QWidget):
     старту репліки."""
 
     seekRequested = Signal(int)
+    # Клік по чипу мовця / перемикачу «Грати лише обраного» / зміна зазору —
+    # VideoPlayerDialog перераховує склеєні відрізки відтворення (speaker_nav).
+    playbackSettingsChanged = Signal()
+
+    # Варіанти зазору склеювання пауз (спека 31.07 §3.3): 5 с — канонічний
+    # дефолт, решта — швидкий вибір у комбо поруч.
+    _GAP_CHOICES_S = (1, 3, 5, 10)
+    _GAP_DEFAULT_INDEX = 2
 
     def __init__(self, utterances, speaker_names=None, parent=None):
         super().__init__(parent)
         self._model = UtteranceListModel(
             utterances, speaker_names,
             me_label=tr("meeting_speaker_me"), others_label=tr("meeting_speaker_others"))
+        self._proxy = TranscriptFilterProxyModel(self)
+        self._proxy.setSourceModel(self._model)
+        self._current_speaker = None
+        self._solo_enabled = False
+        self._gap_seconds = float(self._GAP_CHOICES_S[self._GAP_DEFAULT_INDEX])
+        # Позиція останнього натискання миші у в'юпорті списку — потрібна для
+        # hit-test бейджа мовця (сигнал ``clicked`` несе лише QModelIndex, без
+        # координат); заповнюється фільтром подій на в'юпорті нижче.
+        self._last_click_pos = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -570,6 +812,64 @@ class TranscriptPanel(QWidget):
         header.addWidget(self._word_hilite_btn)
         root.addLayout(header)
 
+        # Чіпи фільтра мовців: [Усі (N)] [● Я (n)] [● Олексій (n)] … — у
+        # прокручуваному ряду: НАРАДА з десятком мовців не має роздувати
+        # мінімальну ширину панелі (вона живе у сплітері поруч із відео).
+        self._filter_bar = SpeakerFilterBar(self._model, self)
+        self._filter_bar.speakerSelected.connect(self._on_speaker_selected)
+        filter_scroll = QScrollArea(self)
+        filter_scroll.setWidgetResizable(True)
+        filter_scroll.setFrameShape(QFrame.NoFrame)
+        filter_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        filter_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        filter_scroll.setAccessibleName(tr("meeting_speaker_filter_row"))
+        filter_scroll.setWidget(self._filter_bar)
+        # Висота: рівно ряд чипів, а коли мовців стільки, що з'являється
+        # горизонтальний скролбар, — ще й місце під нього. Інакше скролбар
+        # з'їдав би висоту ряду і чипи обрізались до кількох пікселів.
+        self._filter_scroll = filter_scroll
+        filter_scroll.horizontalScrollBar().rangeChanged.connect(
+            lambda *_: self._fit_filter_row_height())
+        self._fit_filter_row_height()
+        root.addWidget(filter_scroll)
+
+        # Навігація за мовцем: Попередня/Наступна репліка обраного (чи будь-
+        # якого — «Усі») мовця, і режим «Грати лише обраного» зі зазором.
+        nav_row = QHBoxLayout()
+        nav_row.setSpacing(6)
+        self._speaker_prev_btn = _IconButton(
+            "fa6s.backward-step", tr("meeting_speaker_prev"), parent=self)
+        self._speaker_prev_btn.clicked.connect(self._on_speaker_prev_clicked)
+        nav_row.addWidget(self._speaker_prev_btn)
+        self._speaker_next_btn = _IconButton(
+            "fa6s.forward-step", tr("meeting_speaker_next"), parent=self)
+        self._speaker_next_btn.clicked.connect(self._on_speaker_next_clicked)
+        nav_row.addWidget(self._speaker_next_btn)
+
+        self._solo_btn = QToolButton(self)
+        self._solo_btn.setText(tr("meeting_speaker_solo"))
+        self._solo_btn.setAccessibleName(tr("meeting_speaker_solo"))
+        self._solo_btn.setCheckable(True)
+        self._solo_btn.setCursor(Qt.PointingHandCursor)
+        self._solo_btn.setStyleSheet(
+            "QToolButton { border: 1px solid transparent; border-radius: 6px;"
+            " padding: 4px 10px; }"
+            f"QToolButton:checked {{ background: {theme._GOLD_35};"
+            f" border: 1px solid {theme.GOLD}; }}")
+        self._solo_btn.toggled.connect(self._on_solo_toggled)
+        nav_row.addWidget(self._solo_btn)
+
+        self._gap_combo = QComboBox(self)
+        self._gap_combo.setAccessibleName(tr("meeting_speaker_gap"))
+        self._gap_combo.setToolTip(tr("meeting_speaker_gap"))
+        for secs in self._GAP_CHOICES_S:
+            self._gap_combo.addItem(tr("meeting_speaker_gap_s", n=secs), secs)
+        self._gap_combo.setCurrentIndex(self._GAP_DEFAULT_INDEX)
+        self._gap_combo.currentIndexChanged.connect(self._on_gap_changed)
+        nav_row.addWidget(self._gap_combo)
+        nav_row.addStretch()
+        root.addLayout(nav_row)
+
         # Рядок пошуку (Ctrl+F) — прихований до першого виклику open_search().
         self._search_bar = InMeetingSearchBar(self)
         self._search_bar.hide()
@@ -587,19 +887,64 @@ class TranscriptPanel(QWidget):
         self._view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._view.setAccessibleName(tr("meeting_transcript_panel_title"))
         self._view.clicked.connect(self._on_clicked)
+        self._view.viewport().installEventFilter(self)
         root.addWidget(self._view, stretch=1)
 
+        # Пошук рахує лише ВИДИМІ рядки (Етап 4 спеки): предикат — та сама
+        # ``TranscriptFilterProxyModel.filterAcceptsRow``, яку в'ю вже
+        # використовує для приховування чужих реплік, тож немає другого
+        # місця, де умова "цей рядок видно" могла б розійтися з першим.
+        self._sync_visible_filter()
+
         theme.register_restyle(self._restyle)
+
+    def eventFilter(self, obj, event):
+        if obj is self._view.viewport() and event.type() == QEvent.MouseButtonPress:
+            pos = event.position() if hasattr(event, "position") else event.pos()
+            self._last_click_pos = pos.toPoint() if hasattr(pos, "toPoint") else pos
+        return super().eventFilter(obj, event)
+
+    def _fit_filter_row_height(self) -> None:
+        hbar = self._filter_scroll.horizontalScrollBar()
+        extra = hbar.sizeHint().height() if hbar.maximum() > hbar.minimum() else 0
+        self._filter_scroll.setFixedHeight(self._filter_bar.sizeHint().height() + extra)
 
     def _restyle(self) -> None:
         # Делегат читає theme.* напряму при кожному малюванні — потрібен лише
         # форс-репейнт після зміни теми (день/ніч), сам колір не кешується.
         self._view.viewport().update()
 
-    def _on_clicked(self, index):
-        u = self._model.utterance_at(index.row())
-        if u is not None:
-            self.seekRequested.emit(int(round(u.start * 1000)))
+    def _on_clicked(self, index, pos=None):
+        if pos is None:
+            pos = self._last_click_pos
+        source_index = index
+        if self._view.model() is self._proxy:
+            source_index = self._proxy.mapToSource(index)
+        u = self._model.utterance_at(source_index.row())
+        if u is None:
+            return
+        if pos is not None and self._badge_hit(index, pos, u):
+            self._select_speaker_chip(u.speaker)
+            return
+        self.seekRequested.emit(int(round(u.start * 1000)))
+
+    def _badge_hit(self, view_index, pos, u) -> bool:
+        """Клацання влучило в кольоровий бейдж мовця цього рядка? Без мітки
+        мовця (одна доріжка) бейджа немає — делегат його не малює, тож і тут
+        завжди ``False``."""
+        if not self._model.speaker_label(u.speaker):
+            return False
+        row_rect = self._view.visualRect(view_index)
+        return _badge_rect(row_rect).contains(pos)
+
+    def _select_speaker_chip(self, speaker) -> None:
+        """Клік по бейджу мовця в рядку — те саме, що клік по його чипу в
+        шапці: чіп стає активним (ексклюзивна група сама знімає позначку зі
+        старого), і вмикається фільтр за цим мовцем."""
+        chip = self._filter_bar._chips.get(speaker)
+        if chip is not None:
+            chip.setChecked(True)
+        self._on_speaker_selected(speaker)
 
     def _on_word_hilite_toggled(self, checked: bool) -> None:
         self._model.set_word_highlight_enabled(checked)
@@ -608,13 +953,77 @@ class TranscriptPanel(QWidget):
         """Викликати на кожен ``positionChanged`` плеєра: знаходить активну
         репліку й активне слово (O(log N) обидва — bisect) і, якщо активний
         РЯДОК змінився, прокручує до нього (лише коли він поза видимою
-        областю; зміна самого слова в тій самій репліці прокрутку не чіпає)."""
+        областю; зміна самого слова в тій самій репліці прокрутку не чіпає).
+        Позицію запам’ятовуємо і без активного рядка — кнопки Попередня/
+        Наступна репліка мовця рахують від неї, навіть у паузі між репліками."""
         old_row = self._model._active_row
         row = self._model.row_for_ms(pos_ms)
         self._model.set_active_pos(pos_ms)
         if row != old_row and row >= 0:
             idx = self._model.index(row, 0)
-            self._view.scrollTo(idx, QAbstractItemView.EnsureVisible)
+            if self._view.model() is self._proxy:
+                idx = self._proxy.mapFromSource(idx)
+            if idx.isValid():
+                self._view.scrollTo(idx, QAbstractItemView.EnsureVisible)
+
+    # ------------------------------------------------------------- фільтр за мовцем
+    def current_speaker_filter(self):
+        """Код обраного мовця, або ``None`` — активний чіп «Усі»."""
+        return self._current_speaker
+
+    def solo_enabled(self) -> bool:
+        """Увімкнено перемикач «Грати лише обраного»."""
+        return self._solo_enabled
+
+    def gap_seconds(self) -> float:
+        """Поточний зазор склеювання пауз (секунди) з комбо вибору."""
+        return self._gap_seconds
+
+    def set_speaker_names(self, speaker_names) -> None:
+        """Перейменування мовця (діаризація/multimic): оновити мітки моделі
+        й підписи чипів. Фільтр лишається за КОДОМ мовця — активний вибір
+        і склад видимих рядків перейменування не чіпає."""
+        self._model.set_speaker_names(speaker_names)
+        self._filter_bar.refresh_labels()
+
+    def _on_speaker_selected(self, speaker) -> None:
+        self._current_speaker = speaker
+        self._proxy.set_speaker_filter(speaker)
+        want_proxy = speaker is not None
+        current_is_proxy = self._view.model() is self._proxy
+        if want_proxy != current_is_proxy:
+            self._view.setModel(self._proxy if want_proxy else self._model)
+        # Фільтр мовця змінив набір видимих рядків — пошук (якщо активний)
+        # рахує наново лише те, що зараз видно (Етап 4 спеки); сам текст
+        # запиту в полі не чіпаємо.
+        self._sync_visible_filter()
+        current, total = self._model.search_status()
+        self._search_bar.set_count_text(current, total)
+        self.playbackSettingsChanged.emit()
+
+    def _sync_visible_filter(self) -> None:
+        self._model.set_visible_filter(
+            lambda row: self._proxy.filterAcceptsRow(row, QModelIndex()))
+
+    def _on_speaker_prev_clicked(self) -> None:
+        ms = prev_speaker_utterance_ms(
+            self._model._last_pos_ms, self._model._utterances, self._current_speaker)
+        if ms is not None:
+            self.seekRequested.emit(ms)
+
+    def _on_speaker_next_clicked(self) -> None:
+        ms = next_speaker_utterance_ms(
+            self._model._last_pos_ms, self._model._utterances, self._current_speaker)
+        if ms is not None:
+            self.seekRequested.emit(ms)
+
+    def _on_solo_toggled(self, checked: bool) -> None:
+        self._solo_enabled = checked
+        self.playbackSettingsChanged.emit()
+
+    def _on_gap_changed(self, index: int) -> None:
+        self._gap_seconds = float(self._gap_combo.itemData(index))
+        self.playbackSettingsChanged.emit()
 
     # ------------------------------------------------------------- пошук (Ctrl+F)
     def open_search(self) -> None:
@@ -649,9 +1058,17 @@ class TranscriptPanel(QWidget):
 
     def _reveal_match_row(self, row: int) -> None:
         """Прокрутити список до збігу й синхронно перемотати плеєр на старт
-        репліки — той самий канал ``seekRequested``, що й клацання по репліці."""
+        репліки — той самий канал ``seekRequested``, що й клацання по репліці.
+        Збіги рахуються лише по видимих рядках (``set_visible_filter``), тож
+        невалідний індекс у проксі — захисна гілка: такий збіг НЕ перемотує
+        відео, щоб плеєр не стрибав на репліку, якої в списку не видно."""
         idx = self._model.index(row, 0)
-        self._view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
+        view_idx = idx
+        if self._view.model() is self._proxy:
+            view_idx = self._proxy.mapFromSource(idx)
+        if not view_idx.isValid():
+            return
+        self._view.scrollTo(view_idx, QAbstractItemView.PositionAtCenter)
         u = self._model.utterance_at(row)
         if u is not None:
             self.seekRequested.emit(int(round(u.start * 1000)))

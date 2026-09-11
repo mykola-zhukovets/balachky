@@ -246,7 +246,7 @@ class SplashThreadSmokeTests(unittest.TestCase):
             return sentinel
 
         ticks = []
-        with mock.patch.object(appmod, "Engine", side_effect=slow_engine):
+        with mock.patch.object(appmod, "make_engine", side_effect=slow_engine):
             box = {}
             loop = QEventLoop()
             t = QTimer()

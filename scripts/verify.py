@@ -57,10 +57,13 @@ def sha256_of_file(path, chunk: int = _CHUNK) -> str:
     return h.hexdigest()
 
 
-def record_hash(seq, event_type, ts, artifacts, note, prev) -> str:
+def record_hash(seq, event_type, ts, artifacts, note, prev,
+                signature_policy=None) -> str:
     """SHA-256 канонічного вмісту запису — дзеркало audit_log._record_hash."""
     content = {"seq": seq, "type": event_type, "ts": ts,
                "artifacts": artifacts, "note": note, "prev": prev}
+    if signature_policy is not None:
+        content["signature_policy"] = signature_policy
     canonical = json.dumps(content, ensure_ascii=False, sort_keys=True,
                            separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
@@ -191,9 +194,16 @@ def verify(session_dir: Path, log_path: Path, *,
                 "event_count": len(events), "broken_index": i,
                 "broken_seq": rec.get("seq"),
                 "reason": "seq_index_mismatch"}
+        if "signature_policy" in rec and (
+                i != 0 or rec.get("signature_policy") != "required"):
+            return "broken", {
+                "event_count": len(events), "broken_index": i,
+                "broken_seq": rec.get("seq"),
+                "reason": "invalid_signature_policy"}
         digest = record_hash(rec["seq"], rec["type"], rec["ts"],
                              rec.get("artifacts") or {}, rec.get("note"),
-                             rec.get("prev", ""))
+                             rec.get("prev", ""),
+                             rec.get("signature_policy"))
         if digest != rec.get("hash") or rec.get("prev", "") != prev:
             return "broken", {
                 "event_count": len(events), "broken_index": i,
@@ -222,6 +232,8 @@ def verify(session_dir: Path, log_path: Path, *,
     # ── 3. Ed25519 підписи ──
     first_auth = events[0].get("auth") if events else None
     is_signed = isinstance(first_auth, dict)
+    policy_required = (
+        events[0].get("signature_policy") == "required")
 
     if not is_signed:
         # ЗМІШАНИЙ ЖУРНАЛ (§7.2, follow-up крипто-рецензії): нульова подія без
@@ -234,6 +246,11 @@ def verify(session_dir: Path, log_path: Path, *,
                     "event_count": len(events), "broken_index": i,
                     "broken_seq": rec.get("seq", i),
                     "reason": "mixed_auth_journal"}
+        if policy_required:
+            return "broken", {
+                "event_count": len(events), "broken_index": 0,
+                "broken_seq": events[0].get("seq", 0),
+                "reason": "signed_stripped"}
         # Заявлений очікуваний ключ + непідписаний журнал = ВІДМОВА, не «legacy».
         # Той, хто вказав --expect-key-id / --trusted-key, стверджує «тут має
         # бути підпис ключем X». Чесна відповідь — «підпису немає», окремим
@@ -387,8 +404,15 @@ def verify_evidence(evidence_dir: Path, *,
     # критерії приймання 3/4/8).
     log_path = evidence_dir / _LOG_NAME
     journal_events = read_events(log_path)
-    journal_signed = (bool(journal_events)
-                      and isinstance(journal_events[0].get("auth"), dict))
+    journal_policy_required = (
+        bool(journal_events)
+        and journal_events[0].get("signature_policy") == "required")
+    journal_has_auth = (
+        bool(journal_events)
+        and isinstance(journal_events[0].get("auth"), dict))
+    if journal_policy_required and not journal_has_auth:
+        return "broken", {"reason": "signed_stripped"}
+    journal_signed = journal_has_auth or journal_policy_required
 
     signer_info = manifest.get("signer")
     signer_present = (isinstance(signer_info, dict)
@@ -672,6 +696,9 @@ def main(argv=None) -> int:
             d.get("broken_seq")))
         print("підписана. Справжній старий журнал таким бути не може —")
         print("підпис зняли з першої події, щоб приховати, що журнал підписаний.")
+    elif reason == "signed_stripped":
+        print("signed_stripped: журнал вимагає підписів, але блоки auth видалено.")
+        print("Це розпідписання журналу — доказовість НЕ підтверджено.")
     elif reason == "log_id_mismatch":
         print("log_id не збігається між подіями: seq={}.".format(
             d.get("broken_seq")))

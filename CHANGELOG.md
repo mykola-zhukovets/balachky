@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Українською:**
+- **Віддалене диктування через особистого Telegram-бота.** Можливість надсилати голосові повідомлення з телефона приватному боту та отримувати розпізнавання локальною моделлю Whisper на комп'ютері без сторонніх хмарних сервісів.
+- **Окремий блок історії для віддалених записів.** Голосові з інших пристроїв відображаються в окремій секції вкладки «Історія».
+- **Новий рушій розпізнавання Parakeet (NVIDIA, sherpa-onnx).** Пресет для української та ще 24 європейських мов: працює на процесорі без відеокарти; на наших записах українською робив менше помилок за швидку модель. Пакет ~670 МБ завантажується за згодою з перевіркою кожного файла; ліцензія CC-BY-4.0 показана перед завантаженням.
+- **Пресет розпізнавання large-v2** як альтернатива найточнішій моделі (для записів, де та домислює слова); перевірка цілісності файлів така сама, як в інших пресетів.
+- **Субтитри наради у форматах .srt і .vtt.** Пункти в меню “Експортувати в…”: готовий файл субтитрів з іменами мовців для відеоплеєра або сайту; чекбокс “Хто говорить” діє й на них.
+- **Фільтр мовців у вікні відтворення наради.** Чипи з іменами й лічильниками залишають у розшифровці лише репліки обраної людини; кнопки переходу між її репліками; режим “Грати лише обраного” пропускає чужі виступи, склеюючи паузи коротші за обраний зазор (1, 3, 5 або 10 секунд).
+
+**In English:**
+- **Remote dictation via personal Telegram bot.** Send voice messages from your phone to a private bot and receive local Whisper STT transcriptions from your PC without cloud providers.
+- **Separate history section for remote transcripts.** Voice messages from external devices are organized in a dedicated section on the History page.
+- **New recognition engine: Parakeet (NVIDIA, via sherpa-onnx).** A preset for Ukrainian and 24 other European languages that runs on the processor without a graphics card; on our Ukrainian recordings it made fewer mistakes than the fast model. The ~670 MB package is downloaded with consent and every file is verified; the CC-BY-4.0 license is shown before the download.
+- **large-v2 recognition preset** as an alternative to the most accurate model (for recordings where that one invents words); files are integrity-checked like the other presets.
+- **Meeting subtitles in .srt and .vtt.** New items in the “Export to…” menu produce a subtitle file with speaker names for a video player or a website; the “Who is speaking” checkbox applies to them as well.
+- **Speaker filter in the meeting playback window.** Chips with names and line counts keep only the selected person’s lines in the transcript; step buttons move between their lines; a “Play only the selected speaker” mode skips everyone else, stitching pauses shorter than the chosen gap (1, 3, 5 or 10 seconds).
+
+
+### Changed
+
+**Українською:**
+- Розміри тек моделей у Центрі моделей більше не перераховуються обходом диска щоразу — кешуються за відбитком теки й оновлюються після встановлення чи видалення.
+
+**In English:**
+- Model folder sizes in the Models Hub are no longer recomputed by walking the disk on every refresh; they are cached by folder fingerprint and refreshed after install or delete.
+
+### Security
+
+**Українською:**
+- Бібліотеку cryptography оновлено до 50.x (CVE-2026-69247 у PKCS#7, який програма не використовує) і aiohttp до 3.14.3 (виправлення парсера відповідей і WebSocket у транзитивній залежності Telegram-бота).
+- **Панічне блокування тепер чесне і повніше.** Занулює ключі шифрування нарад у пам’яті на місці (раніше лише прибирав записи — у режимі за замовчуванням робив нічого), прибирає збережені голоси співрозмовників (voices.json і чергу необроблених зразків), а якщо якусь дію не вдалося довершити — називає її у повідомленні. Тексти більше не обіцяють неможливого: чесно названо межу (файл підкачки, дамп пам’яті, розпочата робота).
+
+**In English:**
+- cryptography updated to 50.x (CVE-2026-69247 in PKCS#7 decryption, which the app does not use) and aiohttp to 3.14.3 (response-parser and WebSocket fixes in the Telegram bot's transitive dependency).
+- **Panic lock is now honest and more thorough.** It zeroes meeting encryption keys in memory in place (before it only dropped dictionary entries — in the default mode it did nothing), removes saved voiceprints of interlocutors (voices file and the pending-samples queue), and if any action could not be completed, it names it in the message. Texts no longer promise the impossible: the limit (page file, memory dump, work already in progress) is stated honestly.
+
 ---
 
 ## [1.2.4.3-beta] - 2026-08-02

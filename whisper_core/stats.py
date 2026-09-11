@@ -31,6 +31,17 @@ def _day_ordinal(ts) -> int:
     return date(lt.tm_year, lt.tm_mon, lt.tm_mday).toordinal()
 
 
+def _iter_records(source):
+    if isinstance(source, (list, tuple)):
+        for item in source:
+            if isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], dict):
+                yield item[0], item[1]
+            elif isinstance(item, dict):
+                yield "", item
+    else:
+        yield from read_recent(source)
+
+
 def streak_days(source, now=None) -> int:
     """Скільки днів поспіль (включно з сьогодні) є хоча б один запис у історії.
 
@@ -41,7 +52,7 @@ def streak_days(source, now=None) -> int:
     if now is None:
         now = time.time()
     days = set()
-    for _line, rec in read_recent(source):
+    for _line, rec in _iter_records(source):
         ts = rec.get("ts")
         if isinstance(ts, (int, float)) and not isinstance(ts, bool):
             days.add(_day_ordinal(ts))
@@ -64,7 +75,8 @@ def streak_days(source, now=None) -> int:
 def summarize(source, now=None):
     """Підсумок історії: сьогодні / останні 7 днів / за весь час.
 
-    source — Profile (має .history_path), Path або str зі шляхом до history.jsonl.
+    source — Profile (має .history_path), Path, str зі шляхом до history.jsonl
+    або вже завантажений список записів.
     now — поточний unix-час (для тестів); None → time.time().
 
     Повертає dict {'today', 'week', 'all'}, де кожен — {'records', 'words'}:
@@ -84,7 +96,7 @@ def summarize(source, now=None):
         "week": {"records": 0, "words": 0},
         "all": {"records": 0, "words": 0},
     }
-    for _line, rec in read_recent(source):
+    for _line, rec in _iter_records(source):
         text = rec.get("final") or rec.get("raw") or ""
         words = len(text.split())
         buckets["all"]["records"] += 1

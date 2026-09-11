@@ -11,7 +11,7 @@
     python tests/render_note_smoke.py
 
 Скріншоти станів (idle/recording/busy/із текстом) — у
-C:\\Users\\nikol\\Desktop\\balachky-diag\\note\\.
+%USERPROFILE%\\Desktop\\balachky-diag\\note\\.
 """
 import os
 import sys

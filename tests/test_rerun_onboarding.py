@@ -119,7 +119,10 @@ class WizardPrefillTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self, **kwargs):
-        wiz = onboarding.FirstRunWizard(**kwargs)
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(onboarding, "_has_network", return_value=True):
+            wiz = onboarding.FirstRunWizard(**kwargs)
         self.addCleanup(wiz.deleteLater)
         return wiz
 

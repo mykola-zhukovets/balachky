@@ -22,8 +22,10 @@ from whisper_core.models import (
     PINNED_OK, OTHER_REVISION_PRESENT,
 )
 from .i18n import tr
-from .onboarding import (DownloadWorker, _MB, _reap_worker,
+from .onboarding import (DownloadWorker, SherpaDownloadWorker, _MB, _reap_worker,
                          _model_search_dirs)
+from whisper_core.stt_presets import engine_kind
+from whisper_core import stt_sherpa_models as sherpa_models
 
 
 class RecoveryDialog(QDialog):
@@ -39,6 +41,10 @@ class RecoveryDialog(QDialog):
         # None → рушій візьме пінований коміт (після докачки); sha → офлайн-старт
         # наявної ревізії (revision=None+local_files_only може не знайти без refs/main)
         self.revision_override = None
+        # feature/stt-sherpa-parakeet: пакет другого рушія — не HF-кеш, тож
+        # офлайн-дії «вказати папку» / «перевірити папки» до нього не стосуються,
+        # а докачку робить SherpaDownloadWorker; ліцензію ваг показуємо чесно.
+        self._sherpa = engine_kind(cfg.model_name) == "sherpa"
 
         state = resolve_model_state(cfg)
         self._local_sha = (state.revision
@@ -65,6 +71,18 @@ class RecoveryDialog(QDialog):
         note.setProperty("muted", True)
         note.setWordWrap(True)
         lay.addWidget(note)
+        if self._sherpa:
+            package = sherpa_models.package_for(cfg.model_name)
+            self._license_note = QLabel(tr("rec_license_line",
+                                           license=package.license_name,
+                                           url=package.page_url))
+            self._license_note.setProperty("muted", True)
+            self._license_note.setWordWrap(True)
+            self._license_note.setOpenExternalLinks(True)
+            self._license_note.setAccessibleName(tr("rec_license_line",
+                                                    license=package.license_name,
+                                                    url=package.page_url))
+            lay.addWidget(self._license_note)
 
         # прогрес докачки — прихований, доки не натиснуть «Завантажити»
         self._status = QLabel("")
@@ -108,11 +126,12 @@ class RecoveryDialog(QDialog):
         actions.setSpacing(8)
         if self._local_sha:
             actions.addWidget(self._use_btn)
-        offline_row = QHBoxLayout()
-        offline_row.setSpacing(8)
-        offline_row.addWidget(self._pick_btn)
-        offline_row.addWidget(self._scan_btn)
-        actions.addLayout(offline_row)
+        if not self._sherpa:
+            offline_row = QHBoxLayout()
+            offline_row.setSpacing(8)
+            offline_row.addWidget(self._pick_btn)
+            offline_row.addWidget(self._scan_btn)
+            actions.addLayout(offline_row)
         actions.addWidget(self._cancel)
         actions.addWidget(self._dl_btn)
         lay.addLayout(actions)
@@ -129,6 +148,8 @@ class RecoveryDialog(QDialog):
         знімає БЕЗ мережі. revision: None → пінований коміт; sha → наявна ревізія.
         Ідемпотентно (не-лінки пропускає) і безпечно: будь-який збій лишає знімок
         як є — далі спрацює звичайна докачка/повтор Engine у app.py."""
+        if self._sherpa:
+            return                      # пакет не в HF-кеші — нема чого дереференсити
         rev = (revision if revision is not None
                else revision_for(self._cfg.model_name))
         try:
@@ -215,9 +236,12 @@ class RecoveryDialog(QDialog):
         self._cancel.setEnabled(True)
         self._cancel.show()
         self._detach_worker()             # retry завжди будує СВІЖИЙ воркер
-        self._worker = DownloadWorker(repo_for(self._cfg.model_name),
-                                      resolve_cache_dir(self._cfg.model_dir),
-                                      revision_for(self._cfg.model_name))
+        if self._sherpa:
+            self._worker = SherpaDownloadWorker(self._cfg.model_name)
+        else:
+            self._worker = DownloadWorker(repo_for(self._cfg.model_name),
+                                          resolve_cache_dir(self._cfg.model_dir),
+                                          revision_for(self._cfg.model_name))
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
@@ -283,8 +307,11 @@ class RecoveryDialog(QDialog):
         """Після збою/скасування — знову дати вибір (не закривати діалог)."""
         if self._local_sha:
             self._use_btn.show()
-        self._pick_btn.show()
-        self._scan_btn.show()
+        if not self._sherpa:
+            # у sherpa-режимі цих кнопок нема в layout — show() зробив би з них
+            # окремі top-level вікна (суд 07.09)
+            self._pick_btn.show()
+            self._scan_btn.show()
         self._dl_btn.setText(tr("onb_retry"))
         self._dl_btn.show()
 

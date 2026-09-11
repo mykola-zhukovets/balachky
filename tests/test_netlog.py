@@ -53,6 +53,20 @@ class NetlogCore(unittest.TestCase):
         rows = netlog.entries(path=self.path)
         self.assertEqual(rows[0]["host"], "api.github.com")
 
+    def test_telegram_is_a_known_opt_in_kind(self):
+        import json
+        row = netlog.record("api.telegram.org", kind=netlog.TELEGRAM,
+                            allowed=True, detail="voice-download", path=self.path)
+        self.assertEqual(row["kind"], "telegram")
+        self.assertTrue(row["allowed"])
+        self.assertNotIn("token", json.dumps(row).lower())
+
+    def test_unknown_kind_stays_flagged(self):
+        row = netlog.record("example.test", kind="telegram-typo",
+                            allowed=True, path=self.path)
+        self.assertEqual(row["kind"], netlog.OTHER)
+        self.assertFalse(row["allowed"])
+
     def test_unexpected_connection_is_flagged(self):
         # Будь-що поза нашими точками (kind=OTHER) → allowed=False = помітно.
         netlog.record("example.com", path=self.path)

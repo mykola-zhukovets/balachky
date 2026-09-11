@@ -117,5 +117,35 @@ class CanonForbiddenWords(unittest.TestCase):
         wiz.deleteLater()
 
 
+class PanicKeyTextStatesLimitNotGuarantee(unittest.TestCase):
+    """Текст про панічне вивантаження ключів шифрування описує дію, а не
+    гарантію (аудит fix/panic-truth-and-biometrics): жодного «повністю»,
+    «назавжди», «безслідно», і обов'язково є чесна межа («не гарантує»)."""
+
+    _ABSOLUTE_WORDS = ("повністю", "назавжди", "безслідно")
+    _KEYS = ("hint_panic_hotkey", "panic_step_keys")
+
+    def test_no_absolute_wording_uk(self):
+        for key in self._KEYS:
+            value = UK[key]
+            for word in self._ABSOLUTE_WORDS:
+                self.assertNotIn(word, value,
+                                  f"{key}: обіцянка-гарантія «{word}» замість чесної дії")
+
+    def test_no_absolute_wording_en(self):
+        en_words = ("completely", "permanently", "forever", "guaranteed")
+        for key in self._KEYS:
+            value = EN[key].lower()
+            for word in en_words:
+                self.assertNotIn(word, value,
+                                  f"{key}: promise-like wording '{word}' instead of an honest action")
+
+    def test_hint_states_the_limit(self):
+        self.assertIn("не гаранту", UK["hint_panic_hotkey"],
+                      "hint_panic_hotkey має чесно називати межу занулення ключів")
+        self.assertIn("does not guarantee", EN["hint_panic_hotkey"],
+                      "hint_panic_hotkey must state the zeroing limit honestly")
+
+
 if __name__ == "__main__":
     unittest.main()

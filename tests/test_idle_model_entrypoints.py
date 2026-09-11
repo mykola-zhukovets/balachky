@@ -229,7 +229,7 @@ class IdleModelEntryPointTests(unittest.TestCase):
         unavailable = ModelRevisionUnavailable(
             "large-v3-turbo", "models", "revision", False)
 
-        with patch("fronts.desktop.app.Engine", side_effect=unavailable):
+        with patch("fronts.desktop.app.make_engine", side_effect=unavailable):
             with self.assertRaises(ModelRevisionUnavailable):
                 lifecycle.ensure_loaded()
 
@@ -244,7 +244,7 @@ class IdleModelEntryPointTests(unittest.TestCase):
             app, DesktopApp._load_stt_model.__get__(app))
         self.assertTrue(self._force_unload(lifecycle))
 
-        with patch("fronts.desktop.app.Engine",
+        with patch("fronts.desktop.app.make_engine",
                    side_effect=RuntimeError("CUDA unavailable")):
             with self.assertRaisesRegex(RuntimeError, "CUDA unavailable"):
                 lifecycle.ensure_loaded()

@@ -17,6 +17,9 @@ class _Cfg:
     # приватне поле — НЕ має потрапити у звіт
     meeting_dir = r"X:\Робочі-наради"
     watch_dir = r"X:\Тека-спостереження"
+    bot_token = "123456:must-never-enter-report"
+    telegram_user_id = 1234567890123
+    telegram_chat_id = 1234567890123
 
 
 class BuildReportZip(unittest.TestCase):
@@ -57,6 +60,9 @@ class BuildReportZip(unittest.TestCase):
         self.assertNotIn("Робочі-наради", dump)
         self.assertNotIn("meeting_dir", dump)
         self.assertNotIn("watch_dir", dump)
+        self.assertNotIn("must-never-enter-report", dump)
+        self.assertNotIn("telegram_user_id", dump)
+        self.assertNotIn("telegram_chat_id", dump)
 
     def test_works_without_log_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

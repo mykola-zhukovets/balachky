@@ -219,7 +219,7 @@ SPEECH-TO-TEXT MODELS — NOT bundled, downloaded on first run
   They are fetched once, from the Hugging Face Hub, during first-run
   onboarding (a pinned commit revision is requested for supply-chain
   integrity); normal launches load them from the local cache with no
-  network access. The two models the app offers:
+  network access. The Whisper models the app offers:
 
     Whisper large-v3-turbo (CTranslate2 conversion)
       Repo: mobiuslabsgmbh/faster-whisper-large-v3-turbo
@@ -237,6 +237,20 @@ SPEECH-TO-TEXT MODELS — NOT bundled, downloaded on first run
   weights; use of the downloaded models is governed by the upstream
   Whisper (OpenAI, MIT) terms. See each model's Hugging Face page for the
   authoritative license of that specific conversion.
+
+  OPTIONAL second recognition engine (sherpa-onnx), downloaded on explicit
+  user request from an immutable Hugging Face revision (size and SHA-256 of
+  every file are verified before activation):
+
+    NVIDIA Parakeet-TDT-0.6B-v3 (int8 ONNX conversion for sherpa-onnx)
+      Weights: nvidia/parakeet-tdt-0.6b-v3 — Creative Commons Attribution 4.0
+        https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+        https://creativecommons.org/licenses/by/4.0/
+      ONNX files: csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+        (community conversion of the same weights for sherpa-onnx)
+      Attribution: "Parakeet-TDT-0.6B-v3" by NVIDIA Corporation, licensed
+      under CC BY 4.0. The application neither bundles nor relicenses the
+      weights; the license is shown to the user before the download.
 
 TEXT POST-PROCESSING COMPONENTS — NOT bundled, downloaded on demand
   (feature/punctuation-plus) Two OPTIONAL, experimental post-processing

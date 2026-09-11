@@ -20,9 +20,10 @@ append відкидає лише незавершений хвіст і вклю
      "hash": "<sha256 канонічного вмісту цього запису>"}
 
 Хеш запису рахується за канонічним JSON полів (seq, type, ts, artifacts, note,
-prev) — тими самими, що серіалізуються, тож перерахунок під час верифікації
-відтворює ту саму цифру. ``prev`` входить у вміст, тому зміна раннього запису
-міняє його hash і рве ``prev`` усіх наступних.
+prev), а для першої події signed-журналу також ``signature_policy`` — тими
+самими, що серіалізуються, тож перерахунок під час верифікації відтворює ту
+саму цифру. ``prev`` входить у вміст, тому зміна раннього запису міняє його hash
+і рве ``prev`` усіх наступних.
 
 SHA-256 файлів рахуємо потоково (як whisper_core.updater.sha256_of), не тримаючи
 файл у пам'яті — ті самі 2-годинні WAV наради.
@@ -45,6 +46,7 @@ _HEAD_POLICY_NOTE_KEY = "_audit_head_policy"
 _TOMBSTONE_VERSION = 2
 _CHUNK = 1 << 20  # 1 MiB
 _APPEND_LOCK_TIMEOUT_SECONDS = 10.0
+_SIGNATURE_POLICY_REQUIRED = "required"
 
 
 class AuditLogCorrupt(Exception):
@@ -90,12 +92,15 @@ def sha256_of(path, chunk: int = _CHUNK) -> str:
 
 
 def _record_hash(seq: int, event_type: str, ts: float,
-                 artifacts: dict, note: object, prev: str) -> str:
+                 artifacts: dict, note: object, prev: str,
+                 signature_policy=None) -> str:
     """SHA-256 канонічного вмісту запису. sort_keys + фіксовані роздільники →
     та сама цифра при перерахунку під час верифікації, незалежно від порядку
     ключів у dict."""
     content = {"seq": seq, "type": event_type, "ts": ts,
                "artifacts": artifacts, "note": note, "prev": prev}
+    if signature_policy is not None:
+        content["signature_policy"] = signature_policy
     canonical = json.dumps(content, ensure_ascii=False, sort_keys=True,
                            separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
@@ -313,6 +318,12 @@ def _check_deleted_identity(session_dir: Path, events, event_type: str,
 
 def _make_record(events, event_type: str, ts: float, artifacts: dict,
                  note: object, signer, log_id, require_signature: bool) -> dict:
+    first_event = events[0] if events and isinstance(events[0], dict) else {}
+    first_auth = first_event.get("auth") if isinstance(first_event, dict) else None
+    policy_required = (
+        isinstance(first_event, dict)
+        and first_event.get("signature_policy") == _SIGNATURE_POLICY_REQUIRED
+    )
     seq = (events[-1]["seq"] + 1) if events else 0
     prev = events[-1]["hash"] if events else ""
     if not events:
@@ -324,30 +335,57 @@ def _make_record(events, event_type: str, ts: float, artifacts: dict,
                 _HEAD_POLICY_NOTE_KEY: _HEAD_POLICY_VERSION,
                 "value": note,
             }
-    digest = _record_hash(seq, event_type, ts, artifacts, note, prev)
+    signature_policy = (
+        _SIGNATURE_POLICY_REQUIRED
+        if seq == 0 and signer is not None else None
+    )
+    digest = _record_hash(
+        seq, event_type, ts, artifacts, note, prev, signature_policy)
     record = {"seq": seq, "type": event_type, "ts": ts,
               "artifacts": artifacts, "note": note, "prev": prev, "hash": digest}
+    if signature_policy is not None:
+        record["signature_policy"] = signature_policy
 
-    is_signed_journal = (events and isinstance(events[0], dict)
-                         and "auth" in events[0])
+    is_signed_journal = bool(
+        events and (isinstance(first_auth, dict) or policy_required))
+    if policy_required and not isinstance(first_auth, dict):
+        raise AuditLogCorrupt(
+            "Підписи з журналу знято (signed_stripped): нові події "
+            "не дописуються")
     if require_signature and signer is None:
-        raise ValueError("require_signature=True, але signer не передано")
+        raise ValueError(
+            "require_signature=True, але signer не передано")
     if is_signed_journal and signer is None:
         from .signing import SigningKeyMissing
         raise SigningKeyMissing(
             "Журнал підписаний — дописати без signer неможливо (§7.1)")
     if signer is not None:
-        from .signing import sign_audit_record, new_log_id
+        from .signing import (
+            SigningKeyMissing, new_log_id, public_keys_for_journal,
+            sign_audit_record)
+        if is_signed_journal:
+            journal_key_id = (
+                first_auth.get("key_id", "")
+                if isinstance(first_auth, dict) else "")
+            journal_public_key = public_keys_for_journal(
+                [first_event]).get(journal_key_id)
+            if (journal_public_key is None
+                    or signer.key_id != journal_key_id
+                    or signer.public_key_bytes != journal_public_key):
+                raise SigningKeyMissing(
+                    "Активний ключ підпису не відповідає public key "
+                    "першої події журналу; append зупинено")
         if log_id is None:
             if is_signed_journal:
-                for event in events:
-                    auth = event.get("auth")
+                for ev in events:
+                    auth = ev.get("auth") if isinstance(ev, dict) else None
                     if isinstance(auth, dict) and auth.get("log_id"):
                         log_id = auth["log_id"]
                         break
             if log_id is None:
                 log_id = new_log_id()
-        record["auth"] = sign_audit_record(record, signer, log_id)
+        auth = sign_audit_record(record, signer, log_id)
+        record["auth"] = auth
     return record
 
 
@@ -481,6 +519,16 @@ def append_event(session_dir, event_type: str, *, artifacts: dict = None,
                 raise AuditLogCorrupt(
                     "Журнал цілісності наради пошкоджено: нові події не "
                     "дописуються, доказовий пакет покаже BROKEN")
+
+            first_event = events[0] if events and isinstance(events[0], dict) else {}
+            first_auth = first_event.get("auth")
+            if (events and not isinstance(first_auth, dict)
+                    and any(isinstance(event, dict)
+                            and event.get("auth") is not None
+                            for event in events[1:])):
+                raise AuditLogCorrupt(
+                    "Змішаний журнал (mixed_auth_journal): нові події "
+                    "не дописуються")
 
             records = []
             if recovery is not None:
@@ -694,11 +742,21 @@ def verify_chain(session_dir) -> ChainResult:
             return ChainResult(status=STATUS_BROKEN, event_count=len(events),
                                broken_seq=rec.get("seq"), events=events,
                                parse_error="seq != index at line {}".format(i))
+        if "signature_policy" in rec and (
+                i != 0
+                or rec.get("signature_policy")
+                != _SIGNATURE_POLICY_REQUIRED):
+            return ChainResult(
+                status=STATUS_BROKEN, event_count=len(events),
+                broken_seq=rec.get("seq", i), events=events,
+                auth_status="signed_invalid",
+                parse_error="invalid signature_policy at seq={}".format(i))
         try:
             seq = rec["seq"]
             digest = _record_hash(seq, rec["type"], rec["ts"],
                                   rec.get("artifacts") or {}, rec.get("note"),
-                                  rec.get("prev", ""))
+                                  rec.get("prev", ""),
+                                  rec.get("signature_policy"))
         except (KeyError, TypeError):
             return ChainResult(status=STATUS_BROKEN, event_count=len(events),
                                broken_seq=rec.get("seq", i) if isinstance(rec, dict) else i,
@@ -744,6 +802,9 @@ def verify_chain(session_dir) -> ChainResult:
     head_hash = events[-1]["hash"] if events else ""
     first_auth = events[0].get("auth") if events else None
     is_signed = isinstance(first_auth, dict)
+    policy_required = (
+        events[0].get("signature_policy")
+        == _SIGNATURE_POLICY_REQUIRED)
 
     if not is_signed:
         # ЗМІШАНИЙ ЖУРНАЛ (§7.2): нульова подія без ``auth``, а пізніші події
@@ -759,6 +820,14 @@ def verify_chain(session_dir) -> ChainResult:
                     parse_error="mixed_auth_journal: unsigned first event, "
                                 "signed event at seq={}".format(i),
                     **checkpoint_fields)
+        if policy_required:
+            return ChainResult(
+                status=STATUS_BROKEN, event_count=len(events),
+                broken_seq=0, events=events,
+                auth_status="signed_stripped", head_hash=head_hash,
+                parse_error="signed_stripped: signature_policy=required "
+                            "without auth",
+                **checkpoint_fields)
         # Старий unsigned журнал — не broken і не signed
         return ChainResult(
             status=verified_status, event_count=len(events),

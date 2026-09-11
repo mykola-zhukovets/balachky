@@ -144,7 +144,10 @@ class SkipButtonOnDownloadStepTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
 
         def _cleanup():
@@ -250,7 +253,10 @@ class ResumeHintTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def test_hint_visible_on_download_step(self):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         self.addCleanup(lambda: (wiz.done(0), wiz.deleteLater()))
 
@@ -326,7 +332,10 @@ class OnboardingExtraFeaturesStepTests(unittest.TestCase):
         cls._app = QApplication.instance() or QApplication([])
 
     def _wizard(self):
-        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False):
+        # мережа підмінена: конструктор ходить у неї на кроці «Додаткові
+        # можливості», інакше тест залежав би від онлайну раннера (issue #36)
+        with patch.object(FirstRunWizard, "_gpu_step_possible", return_value=False), \
+                patch("fronts.desktop.onboarding._has_network", return_value=True):
             wiz = FirstRunWizard()
         self.addCleanup(lambda: (wiz.done(0), wiz.deleteLater()))
         return wiz
