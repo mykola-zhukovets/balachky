@@ -9,7 +9,7 @@
 
 | Інструмент | Аргументи | Що робить |
 |---|---|---|
-| `transcribe_file` | `path`, `model?`, `lang?`, `profile?` | Розшифрувати аудіофайл; текст + сегменти з таймкодами |
+| `transcribe_file` | `path`, `model?`, `lang?`, `profile?`, `task?`, `translate?` | Розшифрувати або перекласти (UA → EN) аудіофайл; текст + сегменти |
 | `search_history` | `query` | Пошук по історії розшифровок усіх профілів |
 | `list_dictionary` | `profile?` | Перелік термінів словника профілю |
 | `add_dictionary_term` | `canon`, `variant?`, `profile?` | Додати термін у словник |
@@ -23,8 +23,9 @@
 ## Запуск (dev)
 
 ```
-python -m whisper_core.mcp_server
+python -m fronts.mcp
 ```
+(або `python -m whisper_core.mcp_server`)
 
 Сервер читає JSON-RPC 2.0 повідомлення по одному на рядок зі stdin і пише
 відповіді у stdout (потоки перевлаштовуються на UTF-8 — обовʼязково для укр. тексту

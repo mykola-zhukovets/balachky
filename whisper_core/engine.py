@@ -218,7 +218,7 @@ class Engine:
             ) from e
 
     def transcribe(self, audio, terms: Terms | None = None, *,
-                   include_word_timestamps=False, should_cancel=None):
+                   include_word_timestamps=False, should_cancel=None, task=None):
         """audio: шлях | BytesIO | ndarray. → (raw, final, duration_s, words, segments).
 
         words: [(слово, ймовірність), ...] по всіх сегментах — для підсвітки
@@ -227,6 +227,12 @@ class Engine:
         segments: [(start, end, text), ...] — таймкоди сегментів для експорту
         в субтитри/docx (текст уже з виправленими за словником термінами)."""
         terms = terms or Terms()
+        if task is None:
+            if getattr(self.cfg, "translate_to_en", False) or getattr(self.cfg, "transcription_task", "transcribe") == "translate":
+                task = "translate"
+            else:
+                task = getattr(self.cfg, "transcription_task", "transcribe")
+        task = "translate" if str(task).strip().lower() == "translate" else "transcribe"
         # VAD (Silero) відсікає тишу/шум перед розпізнаванням. threshold і
         # min_silence — з конфігу (feature/audio-qol: керуються в Налаштуваннях,
         # діють з наступної транскрипції без перезапуску). getattr — сумісність зі
@@ -236,6 +242,7 @@ class Engine:
         # (whisper_core.languages), тож усі фронти поводяться однаково.
         segments, info = self.model.transcribe(
             audio, language=transcribe_language_arg(self.cfg.language),
+            task=task,
             beam_size=self.cfg.beam_size,
             hotwords=terms.hotwords or None, initial_prompt=terms.initial_prompt or None,
             vad_filter=True,

@@ -2353,8 +2353,20 @@ class SettingsPage(QWidget):
         lang.currentIndexChanged.connect(
             lambda _i, c=lang: self.controller.set_language(c.currentData()))
         lang.setMaximumWidth(_CTRL_MAX)
+        lang_col = QVBoxLayout()
+        lang_col.setSpacing(6)
+        lang_col.addWidget(lang)
+        self._translate_to_en = QCheckBox(tr("set_translate_to_en"))
+        self._translate_to_en.setToolTip(tr("set_translate_to_en_hint"))
+        self._translate_to_en.setAccessibleName(tr("set_translate_to_en"))
+        self._translate_to_en.setChecked(
+            bool(getattr(cfg, "translate_to_en", False)
+                 or getattr(cfg, "transcription_task", "transcribe") == "translate"))
+        self._translate_to_en.toggled.connect(
+            lambda checked: self.controller.set_translate_to_en(checked))
+        lang_col.addWidget(self._translate_to_en)
         g.addWidget(_form_label(tr("set_dict_lang")), 2, 0)
-        g.addWidget(lang, 2, 1)
+        g.addLayout(lang_col, 2, 1)
 
         # feature/gpu: рантайм може бути докачаний (cuda_runtime) або системний.
         # Радіо GPU активне, коли рантайм реально доступний. Коли NVIDIA є, а

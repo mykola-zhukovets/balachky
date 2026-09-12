@@ -67,14 +67,12 @@ _PAD = 10
 _WORD_RE = re.compile(r"\S+")
 
 
-def _word_spans_for(text: str, start_s: float, end_s: float):
+def _word_spans_for(text: str, start_s: float, end_s: float, words=None):
     """(char_start, char_len, start_ms, end_ms) для кожного слова репліки.
 
-    Пословних позначок часу з конвеєра ``Utterance`` сьогодні не несе (лише
-    ``word_ids`` — посилання на ledger, без таймкодів на боці UI).
-    Тому час слова синтезуємо рівномірним діленням тривалості репліки на
-    кількість слів — той самий фолбек, що ``_synthesize_timed_words`` у
-    ``meeting_pipeline.py`` застосовує для ASR-сегментів без пословних міток."""
+    Якщо в репліці є пословні мітки (words), використовуємо їхні точні старти/кінці;
+    інакше ділимо тривалість репліки рівномірно на кількість слів — фолбек,
+    як у _synthesize_timed_words у meeting_pipeline.py."""
     matches = list(_WORD_RE.finditer(text or ""))
     n = len(matches)
     if n == 0:
@@ -82,6 +80,21 @@ def _word_spans_for(text: str, start_s: float, end_s: float):
     start_ms = int(round(start_s * 1000))
     end_ms = int(round(end_s * 1000))
     dur = max(0, end_ms - start_ms)
+
+    if words and len(words) == n:
+        spans = []
+        for m, w in zip(matches, words):
+            if isinstance(w, dict):
+                ws = int(round(float(w.get("start", start_s)) * 1000))
+                we = int(round(float(w.get("end", end_s)) * 1000))
+            elif isinstance(w, (tuple, list)) and len(w) >= 3:
+                ws = int(round(float(w[1]) * 1000))
+                we = int(round(float(w[2]) * 1000))
+            else:
+                ws, we = start_ms, end_ms
+            spans.append((m.start(), m.end() - m.start(), ws, we))
+        return spans
+
     spans = []
     for i, m in enumerate(matches):
         w_start = start_ms + (dur * i) // n
@@ -163,7 +176,8 @@ class UtteranceListModel(QAbstractListModel):
         # Символьні й часові межі слів — рахуються ОДИН раз при ініціалізації
         # моделі (не читати/парсити текст повторно на кожен тик).
         self._word_spans = [
-            _word_spans_for(u.text, u.start, u.end) for u in self._utterances]
+            _word_spans_for(u.text, u.start, u.end, getattr(u, "words", None))
+            for u in self._utterances]
         self._word_starts_ms = [
             [s[2] for s in spans] for spans in self._word_spans]
         # Пошук у нараді (Ctrl+F): плаский хронологічний список збігів
@@ -266,6 +280,15 @@ class UtteranceListModel(QAbstractListModel):
         if pos_ms <= spans[idx][3]:
             return idx
         return -1
+
+    def word_start_ms_for_char(self, row: int, char_pos: int) -> int | None:
+        """Повертає start_ms слова за символьною позицією в тексті репліки."""
+        if not (0 <= row < len(self._word_spans)):
+            return None
+        for char_start, char_len, w_start, _w_end in self._word_spans[row]:
+            if char_start <= char_pos < char_start + char_len:
+                return w_start
+        return None
 
     def set_word_highlight_enabled(self, enabled: bool) -> bool:
         """Тумблер «підсвічувати слова». Вимкнено — ``word_for_ms`` більше не
@@ -926,7 +949,51 @@ class TranscriptPanel(QWidget):
         if pos is not None and self._badge_hit(index, pos, u):
             self._select_speaker_chip(u.speaker)
             return
-        self.seekRequested.emit(int(round(u.start * 1000)))
+        seek_ms = self._word_seek_ms(index, pos, source_index.row(), u)
+        self.seekRequested.emit(seek_ms)
+
+    def _word_seek_ms(self, view_index, pos, source_row: int, u) -> int:
+        fallback_ms = int(round(u.start * 1000))
+        if pos is None:
+            return fallback_ms
+        row_rect = self._view.visualRect(view_index)
+        x = row_rect.x() + _PAD
+        y = row_rect.y() + _PAD
+        header_h = 22
+        body_rect = QRect(x, y + header_h, row_rect.width() - 2 * _PAD,
+                          row_rect.height() - header_h - _PAD)
+        if not body_rect.contains(pos):
+            return fallback_ms
+        try:
+            layout = QTextLayout(u.text, self._view.font())
+            opt = QTextOption()
+            opt.setWrapMode(QTextOption.WordWrap)
+            layout.setTextOption(opt)
+            layout.beginLayout()
+            y_cur = float(body_rect.y())
+            max_y = float(body_rect.bottom())
+            hit_line = None
+            while True:
+                line = layout.createLine()
+                if not line.isValid():
+                    break
+                line.setLineWidth(body_rect.width())
+                if y_cur + line.height() > max_y + 2:
+                    break
+                line.setPosition(QPointF(body_rect.x(), y_cur))
+                if y_cur <= pos.y() <= y_cur + line.height():
+                    hit_line = line
+                    break
+                y_cur += line.height()
+            layout.endLayout()
+            if hit_line is not None:
+                char_pos = hit_line.xToCursor(float(pos.x()))
+                w_ms = self._model.word_start_ms_for_char(source_row, char_pos)
+                if w_ms is not None:
+                    return w_ms
+        except Exception:
+            pass
+        return fallback_ms
 
     def _badge_hit(self, view_index, pos, u) -> bool:
         """Клацання влучило в кольоровий бейдж мовця цього рядка? Без мітки

@@ -3080,6 +3080,12 @@ class DesktopApp(QObject):
         self.cfg.language = code # діє одразу: engine читає cfg.language на кожен виклик
         self.cfg.save()
 
+    def set_translate_to_en(self, enabled: bool):
+        """Офлайн-переклад на англійську: діє одразу при наступному диктуванні."""
+        self.cfg.translate_to_en = bool(enabled)
+        self.cfg.transcription_task = "translate" if enabled else "transcribe"
+        self.cfg.save()
+
     def set_ui_language(self, code: str):
         """Мова ІНТЕРФЕЙСУ (не диктування): зберегти; діє після перезапуску."""
         self.cfg.ui_language = code

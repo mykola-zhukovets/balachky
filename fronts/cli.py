@@ -93,6 +93,12 @@ def cmd_transcribe(args, *, root=ROOT, transcribe_fn=_engine_transcribe):
         cfg.model_name = args.model
     if args.lang:
         cfg.language = args.lang
+    if getattr(args, "translate", False):
+        cfg.transcription_task = "translate"
+        cfg.translate_to_en = True
+    elif getattr(args, "task", None):
+        cfg.transcription_task = args.task
+        cfg.translate_to_en = (args.task == "translate")
     terms = load_terms(prof.terms_path)
     raw, final, dur, _words, segs = transcribe_fn(cfg, terms, p)
     log_history(prof.history_path, raw, final, source="cli",
@@ -276,6 +282,8 @@ def build_parser():
     pt.add_argument("file", help="шлях до аудіофайлу")
     pt.add_argument("--model", help="перекрити модель (напр. large-v3)")
     pt.add_argument("--lang", help="перекрити мову розшифровки (напр. uk)")
+    pt.add_argument("--translate", action="store_true", help="перекладати аудіо англійською на льоту")
+    pt.add_argument("--task", choices=("transcribe", "translate"), default=None, help="завдання Whisper: transcribe або translate")
     pt.add_argument("--profile", help="профіль словника/пам'яті")
     pt.add_argument("--json", action="store_true", help="JSON у stdout")
 

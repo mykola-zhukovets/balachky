@@ -111,9 +111,11 @@ def _load_utterances(session_dir):
 # ───────────────────────────── інструменти ─────────────────────────────
 def _t_transcribe(a, ctx):
     ns = SimpleNamespace(file=a["path"], model=a.get("model"), lang=a.get("lang"),
-                         profile=a.get("profile"), json=True)
+                         profile=a.get("profile"), task=a.get("task"),
+                         translate=a.get("translate", False), json=True)
     return _cli_json(cli.cmd_transcribe, ns, root=ctx.root,
                      transcribe_fn=ctx.transcribe_fn)
+
 
 
 def _t_search_history(a, ctx):
@@ -186,6 +188,9 @@ TOOLS = [
                 "model": {"type": "string", "description": "Перекрити модель (напр. large-v3)"},
                 "lang": {"type": "string", "description": "Перекрити мову (напр. uk)"},
                 "profile": {"type": "string", "description": "Профіль словника/памʼяті"},
+                "task": {"type": "string", "enum": ["transcribe", "translate"],
+                         "description": "Завдання Whisper: transcribe або translate"},
+                "translate": {"type": "boolean", "description": "Офлайн-переклад на англійську на льоту"},
             },
             "required": ["path"],
         },

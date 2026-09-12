@@ -64,6 +64,8 @@ class Config:
                                     # "auto" — модель визначає сама. Нормалізація в
                                     # аргумент рушія — whisper_core.languages
                                     # (feature/multilang-asr, Т44)
+    transcription_task: str = "transcribe"  # "transcribe" (транскрипція) | "translate" (переклад на англійську)
+    translate_to_en: bool = False   # feature/translate-to-en (POST-95): переклад на англійську на льоту
     ui_language: str = "uk"         # мова ІНТЕРФЕЙСУ (uk | en); діє після перезапуску
     log_level: str = "INFO"          # routine-лог: INFO | DEBUG | WARNING
     sample_rate: int = 16000
@@ -399,6 +401,10 @@ class Config:
                                 key, type(val).__name__)
                     continue
                 setattr(c, key, val)
+        if getattr(c, "translate_to_en", False) and c.transcription_task == "transcribe":
+            c.transcription_task = "translate"
+        elif c.transcription_task == "translate":
+            c.translate_to_en = True
         telegram_ids = (c.telegram_user_id, c.telegram_chat_id)
         telegram_ids_valid = all(
             type(value) is int and 0 <= value <= 2**63 - 1
@@ -462,6 +468,7 @@ class Config:
         lines = ["# Балачки — конфігурація. Керується вікном Налаштувань; "
                  "коментарі не зберігаються. Довідка: config.example.toml"]
         keys = ["model_name", "device", "compute_type", "language",
+                "transcription_task", "translate_to_en",
                 "ui_language", "log_level", "sample_rate", "ptt_key", "ptt_mode",
                 "hotkey_backend",        # feature/native-hotkeys
                 "ptt_mouse_button",      # feature/mouse-ptt
