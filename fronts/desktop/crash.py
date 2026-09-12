@@ -89,8 +89,49 @@ def _file_handler(path):
     return handler
 
 
+class _SafeStream:
+    """Безпечний потік для sys.stdout/stderr у windowed GUI (console=False).
+    У віконному режимі без консолі запис у дефолтний потік викликає OSError: [Errno 22].
+    """
+    def __init__(self, logger_fn=None):
+        self._logger_fn = logger_fn
+
+    def write(self, s):
+        if self._logger_fn and s and s.strip():
+            try:
+                self._logger_fn(s.strip())
+            except Exception:
+                pass
+        return len(s) if s else 0
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
 def setup_logging():
     """Логи у файл: час РІВЕНЬ повідомлення. Помилка тут не валить застосунок."""
+    # Страхування stdout/stderr у windowed (console=False) PyInstaller застосунках:
+    try:
+        if sys.stdout is None or not hasattr(sys.stdout, "write"):
+            sys.stdout = _SafeStream(logging.info)
+        else:
+            sys.stdout.write("")
+            sys.stdout.flush()
+    except OSError:
+        sys.stdout = _SafeStream(logging.info)
+
+    try:
+        if sys.stderr is None or not hasattr(sys.stderr, "write"):
+            sys.stderr = _SafeStream(logging.warning)
+        else:
+            sys.stderr.write("")
+            sys.stderr.flush()
+    except OSError:
+        sys.stderr = _SafeStream(logging.warning)
+
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         fallback_error = None

@@ -7616,8 +7616,7 @@ def main():
             probe.write(b"show")
             probe.flush()
             probe.waitForBytesWritten(300)
-            print("«Балачки у Коростені» вже запущені — відкриваю наявне вікно.",
-                  flush=True)
+            logging.info("«Балачки у Коростені» вже запущені — відкриваю наявне вікно.")
             sys.exit(0)
         probe.abort()
         # пауза без блокування (sleep у GUI-петлі — зависання): QEventLoop +
@@ -7829,9 +7828,10 @@ def main():
     else:
         if not autostart:
             splash.finish_to(dapp.window)    # crossfade заставки у головне вікно
+            dapp.show_window()
         # автозапуск: splash не створювався (тихий вхід) — вікно не показуємо
-        print("«Балачки у Коростені» запущено (значок біля годинника). "
-              "Затисни клавішу запису -> говори -> відпусти.", flush=True)
+        logging.info("«Балачки у Коростені» запущено (значок біля годинника). "
+                     "Затисни клавішу запису -> говори -> відпусти.")
     sys.exit(app.exec())
 
 
