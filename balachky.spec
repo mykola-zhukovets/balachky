@@ -233,7 +233,12 @@ if not _rth_pyside.is_file():
     raise SystemExit(
         f"balachky.spec: runtime hook відсутній: {_rth_pyside}"
     )
-_sherpa_runtime_hooks = [str(_rth), str(_rth_pyside)]
+_rth_aiogram = Path(SPECPATH) / "packaging" / "pyi_rth_aiogram_sentinel.py"
+if not _rth_aiogram.is_file():
+    raise SystemExit(
+        f"balachky.spec: runtime hook відсутній: {_rth_aiogram}"
+    )
+_sherpa_runtime_hooks = [str(_rth), str(_rth_pyside), str(_rth_aiogram)]
 
 # qtawesome: шрифти іконок (fa6s…)
 datas += collect_data_files("qtawesome")
