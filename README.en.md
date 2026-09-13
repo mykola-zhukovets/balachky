@@ -11,16 +11,16 @@
 <p align="center"><sub>“Balachky” is Ukrainian for casual chats; Korosten is the town in Ukraine where the app is made.</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v1.2.4.3--beta-1f6feb" alt="Release v1.2.4.3-beta">
+  <img src="https://img.shields.io/badge/release-v1.2.4.4--beta-1f6feb" alt="Release v1.2.4.4-beta">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-6e7681" alt="Windows 10 and 11">
   <img src="https://img.shields.io/badge/processing-local-2ea043" alt="Local processing">
   <img src="https://img.shields.io/badge/license-source--available-8957e5" alt="Source-available license">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.3-beta/BalachkySetup-1.2.4.3-beta-2554A930.exe"><img src="https://img.shields.io/badge/Download_for_Windows_(.exe)-2ea043?style=for-the-badge" alt="Download Balachky v1.2.4.3 beta for Windows" height="44"></a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/download/v1.2.4.4-beta/BalachkySetup-1.2.4.4-beta-42203EA0.exe"><img src="https://img.shields.io/badge/Download_for_Windows_(.exe)-2ea043?style=for-the-badge" alt="Download Balachky v1.2.4.4 beta for Windows" height="44"></a>
   <br>
-  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.3-beta">Release details</a>
+  <a href="https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.4-beta">Release details</a>
   <br>
   <sub>Windows 10/11 · 64-bit · no account required</sub>
   <br>
@@ -29,7 +29,7 @@
 
 Balachky keeps recording and speech recognition on your computer. Once you have downloaded or imported the models and optional components you need, the main features can work without an internet connection.
 
-**100 speech-recognition languages in v1.2.4.3-beta · Automatic language detection · Interface in English and Ukrainian**
+**100 speech-recognition languages in v1.2.4.4-beta · Automatic language detection · Interface in English and Ukrainian**
 
 <a id="usage"></a>
 
@@ -101,7 +101,7 @@ The model manager shows which recognition models are installed, which one is act
 
 ### 4. Screen recording
 
-Record an entire monitor or one window from a separate work mode. In v1.2.4.3-beta, the “Area” option still records the first monitor rather than a custom crop.
+Record an entire monitor or one window from a separate work mode. In v1.2.4.4-beta, the “Area” option still records the first monitor rather than a custom crop.
 
 ### 5. Whisper without the command line
 
@@ -111,7 +111,7 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 
 - **Meeting protection:** completed meeting files can be encrypted with a separate key. Working files may remain unencrypted while recording is in progress, so the current protection state matters. Integrity records and export tools are available for later verification.
 - **Local AI protocol:** uses a separate local model and component. Its result is a draft that needs review.
-- **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.3-beta installer.
+- **Read aloud:** the interface is present, but the speech engine is not included in the public v1.2.4.4-beta installer.
 - **Recognition models:** two options join the default. `Parakeet` (NVIDIA, via sherpa-onnx) covers Ukrainian and 24 other European languages and runs on the processor — no graphics card needed; on our own 20-recording Ukrainian sample, it made fewer mistakes (4.55% of words) than the default model on a graphics card (5.84%). `large-v2` is an alternative to the most accurate model, `large-v3`, for recordings where that one invents words; on the same sample, `large-v3` measured 1.95% word errors and `large-v2` measured 3.25%. The Parakeet package (~670 MB) downloads with your consent, with every file checked, and its license (CC-BY-4.0) is shown before the download.
 - **Remote dictation via Telegram:** connect your personal bot to send voice messages from mobile devices to your PC for local STT transcription (details: [docs/TELEGRAM.md](docs/TELEGRAM.md)).
 - **Voice navigation:** built-in commands let you move between supported document fields and cells. Voice editing depends on a separate local component.
@@ -122,7 +122,7 @@ Choose recordings, a Whisper model, and a language in the Balachky window. Trans
 | Action | Internet use |
 |---|---|
 | Record, transcribe, dictate, and process meetings | No, after the required models and components are available |
-| Setup-wizard connection check | v1.2.4.3-beta makes a TCP connection to `1.1.1.1:53` when the setup wizard opens; the check does not send voice or transcripts |
+| Setup-wizard connection check | v1.2.4.4-beta makes a TCP connection to `1.1.1.1:53` when the setup wizard opens; the check does not send voice or transcripts |
 | Download a recognition model | When you choose one during setup or later |
 | Download an optional component | When you select it during setup or enable it later |
 | Check for updates | When you check manually; periodically only if automatic checks are enabled |
@@ -143,9 +143,9 @@ Your data is stored on your computer. See [Data and privacy](docs/DATA-PRIVACY.m
 
 ## Installation
 
-Balachky requires 64-bit Windows 10 or 11. The installer size is 161.8 MiB (169.6 MB; 169,609,456 bytes). Recognition models and optional components need additional disk space; the total depends on what you install.
+Balachky requires 64-bit Windows 10 or 11. The installer size is 158.7 MiB (166.4 MB; 166,392,022 bytes). Recognition models and optional components need additional disk space; the total depends on what you install.
 
-Download `BalachkySetup-1.2.4.3-beta-2554A930.exe` from the [official v1.2.4.3-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.3-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
+Download `BalachkySetup-1.2.4.4-beta-42203EA0.exe` from the [official v1.2.4.4-beta release](https://github.com/mykola-zhukovets/balachky/releases/tag/v1.2.4.4-beta) and run it. A model download requires an internet connection unless you import the files from an offline package.
 
 ### Windows SmartScreen and file verification
 
@@ -153,11 +153,11 @@ The current beta installer does not have a digital signature, so Windows SmartSc
 
 SHA-256 for this exact file:
 
-`2554A930B2BB8DA1EA27790907E0656EB8D7CD60859E3193B32926D3FA74371E`
+`42203EA0A3DAAA65C20DC8DCF967A662574A9E9DB2AD29EAC3FA9D1E9E621D0A`
 
 A matching SHA-256 confirms that your download is byte-for-byte identical to the published file. It does not, by itself, prove that a file is safe.
 
-Check this file on VirusTotal by its SHA-256: [file page](https://www.virustotal.com/gui/file/2554a930b2bb8da1ea27790907e0656eb8d7cd60859e3193b32926d3fa74371e/detection). If no report exists yet, you can submit the file yourself. A scan is an additional signal, not a substitute for verifying the SHA-256.
+Check this file on VirusTotal by its SHA-256: [file page](https://www.virustotal.com/gui/file/42203ea0a3daaa65c20dc8dcf967a662574a9e9db2ad29eac3fa9d1e9e621d0a/detection). If no report exists yet, you can submit the file yourself. A scan is an additional signal, not a substitute for verifying the SHA-256.
 
 ## Beta and commercial use
 

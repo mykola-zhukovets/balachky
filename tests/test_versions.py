@@ -14,11 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 class VersionConstantsTests(unittest.TestCase):
     def test_release_concepts_have_distinct_canonical_values(self):
         self.assertEqual(
-            getattr(whisper_core, "DISPLAY_VERSION", None), "1.2.4.3-beta")
+            getattr(whisper_core, "DISPLAY_VERSION", None), "1.2.4.4-beta")
         self.assertEqual(
-            getattr(whisper_core, "PEP440_VERSION", None), "1.2.4.3b0")
+            getattr(whisper_core, "PEP440_VERSION", None), "1.2.4.4b0")
         self.assertEqual(
-            getattr(whisper_core, "WINDOWS_FILE_VERSION", None), (1, 2, 4, 3))
+            getattr(whisper_core, "WINDOWS_FILE_VERSION", None), (1, 2, 4, 4))
         self.assertEqual(
             getattr(whisper_core, "RELEASE_CHANNEL", None), "beta")
 
@@ -27,7 +27,7 @@ class VersionConstantsTests(unittest.TestCase):
             engine_manager.CURRENT_APP_VERSION, whisper_core.DISPLAY_VERSION)
         self.assertEqual(
             engine_manager.parse_version_tuple(whisper_core.DISPLAY_VERSION),
-            (1, 2, 4, 3),
+            (1, 2, 4, 4),
         )
 
     def test_offline_package_fallback_uses_canonical_display_version(self):

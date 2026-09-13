@@ -48,6 +48,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4.4-beta] - 2026-09-13
+
+**Інсталятор / Installer:** `BalachkySetup-1.2.4.4-beta-42203EA0.exe` (158,7 МіБ / 158.7 MiB; 166,4 МБ / 166.4 MB; 166 392 022 байти / bytes)
+**SHA-256:** `42203EA0A3DAAA65C20DC8DCF967A662574A9E9DB2AD29EAC3FA9D1E9E621D0A`
+
+> Випуск із підтримкою офлайн-перекладу на льоту (UA -> EN), локальним сервером MCP, караоке-підсвіткою з переходом по словах та надійним запуском головного вікна на Windows.
+> Feature and stability release introducing real-time offline UA->EN speech translation, local MCP server, word-level karaoke sync with seeking, and robust Windows desktop window activation.
+
+### Added
+
+**Українською:**
+- **Офлайн-переклад UA -> EN на льоту (POST-95).** Прямий переклад українського мовлення англійською мовою за допомогою вбудованого завдання трансляції Whisper (`task="translate"`).
+- **Локальний MCP-сервер (Model Context Protocol).** Вбудований інструментарій для взаємодії зовнішніх ШІ-асистентів із розшифровками, історією та записами нарад.
+- **Караоке-підсвітка та перехід по словах.** Синхронізація підсвічування слів під час відтворення та миттєвий перехід до потрібного таймкоду клацанням на будь-яке слово.
+
+**In English:**
+- **Real-time offline UA->EN translation (POST-95).** Direct speech translation from Ukrainian to English leveraging Whisper's built-in translation task.
+- **Local MCP server.** Integrated Model Context Protocol tooling allowing external AI assistants to access transcripts, history, and meeting records.
+- **Karaoke word sync and seek.** Word-level highlight synchronization during playback and click-to-seek to exact timestamps.
+
+### Fixed
+
+**Українською:**
+- **Надійний запуск та виведення вікна на передній план.** Виправлено поведінку запуску з ярлика: головне вікно відновлюється зі згорнутого стану та примусово активується на передньому плані через Win32 API.
+- **Захист від помилок виводу у віконному режимі.** Додано безпечну обгортку потоків для усунення `OSError [Errno 22]` під час логування у збірках без консолі.
+- **Sentinel-хук для aiogram.** Виправлено завантаження контекстів aiogram у frozen-середовищі без помилок відсутності модуля.
+
+**In English:**
+- **Robust window activation on launch.** Fixed desktop shortcut launch behavior: the main window restores from minimized state and is brought to the foreground via Win32 API.
+- **Windowed stream OSError guard.** Added safe stream wrapper preventing `OSError [Errno 22]` in frozen windowed mode.
+- **aiogram sentinel hook.** Resolved frozen runtime import issues for aiogram contexts.
+
+---
+
 ## [1.2.4.3-beta] - 2026-08-02
 
 **Інсталятор / Installer:** `BalachkySetup-1.2.4.3-beta-2554A930.exe` (161,8 МіБ / 161.8 MiB; 169,6 МБ / 169.6 MB; 169 609 456 байтів / bytes)
