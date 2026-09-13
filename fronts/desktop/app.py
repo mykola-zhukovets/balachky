@@ -2401,9 +2401,22 @@ class DesktopApp(QObject):
             self._reload_macros()
 
     def show_window(self):
-        self.window.show()
-        self.window.raise_()
-        self.window.activateWindow()
+        w = self.window
+        if w.isMinimized():
+            w.showNormal()
+        else:
+            w.show()
+        w.raise_()
+        w.activateWindow()
+        try:
+            import ctypes
+            hwnd = int(w.winId())
+            if hwnd:
+                user32 = ctypes.windll.user32
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
         # Відкласти модалку до завершення show/activate: це також єдиний шлях
         # першого видимого відкриття після тихого --autostart.
         QTimer.singleShot(0, self.window.maybe_show_test_log_text_reminder)
